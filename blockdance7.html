@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Bitcoin Block Player — Peaks + Click-to-Pin + Help</title>
+<title>Bitcoin Block Player — Peaks + Click-to-Pin + Help + MIDI</title>
 <style>
   :root{
     --hud-bg: rgba(10,14,20,.55);
@@ -132,17 +132,18 @@
   <div class="toolbar">
     <div class="group">
       <span>Block</span>
-      <input id="height" value="840004" size="8" />
+      <input id="height" value="696969" size="8" />
       <button id="load">Load Block</button>
       <button id="test">Test Tone</button>
       <button id="play" disabled>Play</button>
       <button id="stop" disabled>Stop</button>
       <button id="clearMarks">Clear Marks</button>
+      <button id="dlmidi" disabled>Download MIDI</button>
     </div>
 
     <div class="group">
-      <label>Voices <input id="voices" type="number" value="20" min="4" max="64"></label>
-      <label>Notes/s <input id="nps" type="number" value="170" min="40" max="400"></label>
+      <label>Voices <input id="voices" type="number" value="64" min="4" max="64"></label>
+      <label>Notes/s <input id="nps" type="number" value="60" min="40" max="400"></label>
       <label>Scale
         <select id="scale">
           <option value="pentatonic" selected>pentatonic</option>
@@ -225,8 +226,8 @@ function fmtInt(n){ return Number.isFinite(n) ? Math.round(n).toLocaleString() :
 
 // ================== CONFIG ==================
 const API = "https://mempool.space/api";
-let MAX_VOICES = 20;
-let NOTES_PER_SEC = 170;
+let MAX_VOICES = 64;    // default voices
+let NOTES_PER_SEC = 60; // default speed
 let SCALE_MODE = 'pentatonic';
 let MAP_MODE   = 'default';
 const LOOKAHEAD = 0.10;
@@ -511,7 +512,6 @@ function redrawPeaks(){
   pctx.clearRect(0,0,peaksCanvas.width, peaksCanvas.height);
   for (const pt of peaksAll) drawPeakPoint(pt);
 
-  // highlight ring for active point (pinned > hovered)
   const activeIdx = (pinnedIdx >= 0 ? pinnedIdx : hoverIdx);
   if (activeIdx >= 0){
     const pt = peaksAll[activeIdx];
@@ -529,7 +529,6 @@ function redrawPeaks(){
 function addPeak(pt){
   const idx = peaksAll.push(pt) - 1;
   drawPeakPoint(pt);
-  // add to hover bins
   const bin = Math.min(HOVER_BINS-1, Math.max(0, Math.floor(pt.xNorm * HOVER_BINS)));
   hoverBins[bin].push(idx);
 }
@@ -539,7 +538,6 @@ function pingBar(i,note,tx){
   const strength = 0.6 + note.gain*0.9;
   b.pulse = Math.min(1.6, b.pulse + b.amp*strength);
 
-  // record peak if higher than this session's best
   const maxH = H*MAX_VISUAL_HEIGHT;
   const rise = Math.min(maxH, maxH * b.pulse);
   const riseNorm = clamp(rise / maxH, 0, 1);
@@ -583,7 +581,6 @@ function render(ts){
     ctx.fillRect(b.x, y, b.w, rise);
   }
 
-  // redraw persistent marks (and active ring)
   pctx.clearRect(0,0,peaksCanvas.width, peaksCanvas.height);
   redrawPeaks();
 
@@ -601,7 +598,7 @@ function drawLegend(){
   el.appendChild(label); el.appendChild(c);
 }
 
-// ================== STATS ==================
+// ================== STATS (incl. live) ==================
 function quantiles(arr){
   if (!arr.length) return {min:0,q50:0,q95:0,max:0,avg:0};
   const a = [...arr].sort((x,y)=>x-y);
@@ -748,7 +745,6 @@ peaksCanvas.addEventListener('click', (e)=>{
   }
 });
 addEventListener('keydown', (e)=>{ if (e.key === 'Escape'){ 
-  // close pinned tooltip or help modal on Esc
   if (document.getElementById('helpModal').style.display === 'block') { closeHelp(); return; }
   if (pinnedIdx >= 0){ pinnedIdx=-1; hideTip(); redrawPeaks(); } 
 }});
@@ -770,6 +766,7 @@ const btnPlay=document.getElementById('play');
 const btnStop=document.getElementById('stop');
 const btnClear=document.getElementById('clearMarks');
 const btnTest=document.getElementById('test');
+const btnDlMidi=document.getElementById('dlmidi');
 const inputHeight=document.getElementById('height');
 const voicesInput=document.getElementById('voices');
 const npsInput=document.getElementById('nps');
@@ -787,7 +784,7 @@ let txs=[];
 function enableStop(on){ btnStop.disabled = !on; }
 
 btnLoad.onclick = async () => {
-  btnPlay.disabled = true; enableStop(false); info.textContent = " loading…";
+  btnPlay.disabled = true; enableStop(false); btnDlMidi.disabled = true; info.textContent = " loading…";
   try{
     const height=parseInt(inputHeight.value,10);
     currentBlockHeight = height;
@@ -796,6 +793,7 @@ btnLoad.onclick = async () => {
     txs=list;
     info.textContent=` loaded ${height} (${hash.slice(0,12)}…) • ${txs.length} tx`;
     btnPlay.disabled = txs.length === 0;
+    btnDlMidi.disabled = txs.length === 0;
     makeBars(txs);
     renderStatsPanel(computeBlockStats(txs));
   }catch(e){ console.error(e); info.textContent=" error loading block"; }
@@ -811,8 +809,8 @@ btnTest.onclick = async () => {
 
 btnPlay.onclick = async () => {
   ensureAudio(); if (ac.state==='suspended') await ac.resume();
-  MAX_VOICES = clamp(parseInt(voicesInput.value,10)||20, 4, 64);
-  NOTES_PER_SEC = clamp(parseInt(npsInput.value,10)||170, 40, 400);
+  MAX_VOICES = clamp(parseInt(voicesInput.value,10)||64, 4, 64);
+  NOTES_PER_SEC = clamp(parseInt(npsInput.value,10)||60, 40, 400);
   SCALE_MODE = scaleSelect.value; MAP_MODE = mapSelect.value;
   if (!txs.length){ info.textContent=" no transactions loaded"; return; }
   if (currentScheduler) currentScheduler.stop(true);
@@ -827,10 +825,16 @@ themeSelect.onchange = (e) => { const v=e.target.value; if(v==='custom') updateC
 
 addEventListener('resize', ()=>{ if (txs.length) makeBars(txs); buildHoverBins(); });
 
-// Build legend and bins initially
+// Init: theme, legend, hover bins
 setTheme('bitcoin');
 drawLegend();
 buildHoverBins();
+
+// Auto-load your requested defaults on first load (audio still requires Play)
+inputHeight.value = '696969';
+voicesInput.value = '64';
+npsInput.value = '60';
+btnLoad.onclick();
 
 // ================== HELP HANDLERS ==================
 const helpBtn   = document.getElementById('helpBtn');
@@ -844,6 +848,127 @@ helpBtn.addEventListener('click', openHelp);
 helpClose.addEventListener('click', closeHelp);
 helpModal.addEventListener('click', (e)=>{ if (e.target === helpModal) closeHelp(); });
 
+/* ================== MIDI EXPORT ==================
+   Creates a Standard MIDI File (format 0) matching current settings:
+   - PPQ = 480, Tempo = 60 BPM (1s per quarter), so seconds → ticks = s * 480
+   - Note spacing = 1 / NOTES_PER_SEC
+   - Durations from txToNote (0.10..0.22s)
+   - Mapping:
+      percussion (ch10): kick=36, snare=38, hat=42
+      melodic: pluck(ch1 prog24 Nylon Gtr), strings(ch2 prog48 Strings), wind(ch3 prog73 Flute)
+*/
+btnDlMidi.addEventListener('click', ()=>{
+  if (!txs.length){ return; }
+  // reflect current UI selections
+  MAX_VOICES = clamp(parseInt(voicesInput.value,10)||64, 4, 64);
+  NOTES_PER_SEC = clamp(parseInt(npsInput.value,10)||60, 40, 400);
+  SCALE_MODE = scaleSelect.value; MAP_MODE = mapSelect.value;
+
+  const bytes = buildMidiFromTxs(txs, {
+    ppq: 480,
+    usPerQuarter: 1000000, // 60 BPM
+    nps: NOTES_PER_SEC
+  });
+  const name = `block-${currentBlockHeight||'unknown'}-nps${NOTES_PER_SEC}-v${MAX_VOICES}.mid`;
+  const blob = new Blob([bytes], {type:'audio/midi'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+});
+
+function buildMidiFromTxs(txs, opts){
+  const ppq = opts.ppq||480;
+  const usPerQN = opts.usPerQuarter||1000000; // 60 BPM
+  const dtSeconds = 1 / (opts.nps||60);
+  const dtTicks = Math.max(1, Math.round(dtSeconds * ppq));
+
+  // Collect note events with absolute tick times
+  const events = [];
+  let t = 0;
+  for (let i=0;i<txs.length;i++){
+    const tx = txs[i];
+    const note = txToNote(tx); // respects SCALE_MODE and MAP_MODE
+    // channel & pitch mapping
+    let ch = 0, pitch = Math.max(0, Math.min(127, Math.round(note.midi)));
+    if (note.instrument === 'kick'){ ch=9; pitch=36; }
+    else if (note.instrument === 'snare'){ ch=9; pitch=38; }
+    else if (note.instrument === 'hat'){ ch=9; pitch=42; }
+    else if (note.instrument === 'strings'){ ch=1; }
+    else if (note.instrument === 'wind'){ ch=2; }
+    else { ch=0; } // pluck default
+    const vel = Math.max(10, Math.min(127, Math.round(20 + (note.gain/0.5)*100)));
+    const durTicks = Math.max(1, Math.round(note.dur * ppq));
+
+    events.push({t: t,     type:'on',  ch, pitch, vel});
+    events.push({t: t+durTicks, type:'off', ch, pitch, vel:64});
+    t += dtTicks;
+  }
+
+  // Sort: time asc, then offs before ons at same tick
+  events.sort((a,b)=> (a.t-b.t) || ((a.type==='off') - (b.type==='off')) );
+
+  // Build track bytes
+  const trk = [];
+  // helpers
+  const pushVar = (v)=>{ // write variable-length quantity
+    let buffer = v & 0x7F;
+    const out = [];
+    while ((v >>= 7)) { buffer <<= 8; buffer |= ((v & 0x7F) | 0x80); }
+    while (true) { out.push(buffer & 0xFF); if (buffer & 0x80) buffer >>= 8; else break; }
+    trk.push(...out);
+  };
+  const pushBytes = (...xs)=>{ trk.push(...xs); };
+
+  // time 0 meta + programs
+  pushVar(0); pushBytes(0xFF,0x51,0x03, (usPerQN>>16)&255, (usPerQN>>8)&255, usPerQN&255); // tempo
+  // Track name (optional)
+  const name = `Block ${currentBlockHeight||''} — nps ${NOTES_PER_SEC}`;
+  const nameBytes = new TextEncoder().encode(name);
+  pushVar(0); pushBytes(0xFF,0x03, nameBytes.length, ...nameBytes);
+
+  // Program changes for melodic channels
+  // ch0 pluck -> Acoustic Guitar (nylon) prog 24
+  pushVar(0); pushBytes(0xC0 | 0, 24);
+  // ch1 strings -> String Ensemble 1 prog 48
+  pushVar(0); pushBytes(0xC0 | 1, 48);
+  // ch2 wind -> Flute prog 73
+  pushVar(0); pushBytes(0xC0 | 2, 73);
+  // ch9 (10) is percussion; no program change needed
+
+  // note events
+  let lastT = 0;
+  for (const ev of events){
+    const delta = ev.t - lastT; lastT = ev.t;
+    pushVar(Math.max(0, delta));
+    if (ev.type === 'on'){
+      pushBytes(0x90 | (ev.ch & 0x0F), ev.pitch & 0x7F, ev.vel & 0x7F);
+    } else {
+      pushBytes(0x80 | (ev.ch & 0x0F), ev.pitch & 0x7F, ev.vel & 0x7F);
+    }
+  }
+  // End of track
+  pushVar(0); pushBytes(0xFF,0x2F,0x00);
+
+  // Wrap chunks
+  function be16(n){ return [(n>>8)&255, n&255]; }
+  function be32(n){ return [(n>>>24)&255, (n>>>16)&255, (n>>>8)&255, n&255]; }
+  const header = [
+    0x4D,0x54,0x68,0x64,  // 'MThd'
+    ...be32(6),
+    ...be16(0),           // format 0
+    ...be16(1),           // one track
+    ...be16(ppq)          // division (PPQ)
+  ];
+  const trackChunk = [
+    0x4D,0x54,0x72,0x6B,  // 'MTrk'
+    ...be32(trk.length),
+    ...trk
+  ];
+  return new Uint8Array([...header, ...trackChunk]);
+}
 </script>
 </body>
 </html>
