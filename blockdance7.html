@@ -1,0 +1,789 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Bitcoin Block Player — Peaks + Click-to-Pin</title>
+<style>
+  :root{
+    --hud-bg: rgba(10,14,20,.55);
+    --hud-border: #355;
+    --hud-radius: 12px;
+    --pad: 10px;
+  }
+  html,body,canvas { margin:0; height:100%; width:100%; display:block; }
+  body { background:#0b0f14; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: fixed; inset: 10px 10px auto 10px;
+    background: var(--hud-bg);
+    border: 1px solid var(--hud-border);
+    border-radius: var(--hud-radius);
+    backdrop-filter: blur(4px);
+    color:#cfe;
+    display: grid;
+    grid-template-rows: auto auto auto;
+    gap: 6px;
+    padding: var(--pad);
+    z-index: 4;
+  }
+  .toolbar, .themerow, .statsrow { display:flex; flex-wrap: wrap; gap:10px; align-items:center; }
+  .toolbar .group, .themerow .group, .statsrow .group { display:flex; gap:8px; align-items:center; }
+  .toolbar .spacer { flex: 1 1 auto; }
+
+  button, input, select {
+    background:#0e141b; color:#cfe; border:1px solid #355;
+    padding:6px 10px; border-radius:10px; outline:none;
+  }
+  button { cursor:pointer; }
+  input[type="number"]{ width:68px; }
+  input[type="color"]{ height:28px; width:48px; padding:0; border-radius:8px; }
+
+  .sep {
+    height:1px; background:linear-gradient(to right, transparent, #355, transparent);
+    opacity:.6; margin: 2px 0;
+    grid-column: 1 / -1;
+  }
+  #legend { display:flex; align-items:center; gap:8px; }
+  #legend canvas{ border-radius:6px; border:1px solid #2b3744; }
+
+  #c     { position: fixed; inset: 0; z-index: 1; }  /* bars layer */
+  #peaks { position: fixed; inset: 0; z-index: 2; pointer-events:auto; } /* persistent peaks + hover/click */
+
+  #tip {
+    position: fixed; z-index: 5; pointer-events: none;
+    padding: 8px 10px; border-radius: 8px;
+    background: rgba(10,14,20,.92); color:#eaf6ff;
+    border: 1px solid #395268; box-shadow: 0 6px 24px rgba(0,0,0,.35);
+    font-size: 12px; line-height: 1.35; min-width: 220px; max-width: 420px; display:none;
+  }
+  #tip a { color:#8fd2ff; text-decoration:none; }
+  #tip a:hover { text-decoration:underline; }
+  .muted { opacity:.8 }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <!-- ROW 1: toolbar -->
+  <div class="toolbar">
+    <div class="group">
+      <span>Block</span>
+      <input id="height" value="840004" size="8" />
+      <button id="load">Load Block</button>
+      <button id="test">Test Tone</button>
+      <button id="play" disabled>Play</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="clearMarks">Clear Marks</button>
+    </div>
+
+    <div class="group">
+      <label>Voices <input id="voices" type="number" value="20" min="4" max="64"></label>
+      <label>Notes/s <input id="nps" type="number" value="170" min="40" max="400"></label>
+      <label>Scale
+        <select id="scale">
+          <option value="pentatonic" selected>pentatonic</option>
+          <option value="chromatic">chromatic</option>
+        </select>
+      </label>
+      <label>Map
+        <select id="map">
+          <option value="default" selected>default</option>
+          <option value="percussive">percussive</option>
+          <option value="melodic">melodic</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="spacer"></div>
+  </div>
+
+  <div class="sep"></div>
+
+  <!-- ROW 2: theme + legend -->
+  <div class="themerow">
+    <div class="group">
+      <label>Theme
+        <select id="theme">
+          <option value="bitcoin" selected>Bitcoin (oranges)</option>
+          <option value="fire">Fire</option>
+          <option value="ice">Ice</option>
+          <option value="earth">Earth</option>
+          <option value="goldsilver">Gold & Silver</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </label>
+      <div id="customRow" class="group" style="display:none">
+        <span>Custom:</span>
+        <label>Background <input type="color" id="cBg" value="#0b0f14"></label>
+        <label>Baseline <input type="color" id="cBase" value="#553c1f"></label>
+        <label>Bars Start <input type="color" id="cStart" value="#e67e22"></label>
+        <label>Bars End <input type="color" id="cEnd" value="#ffd166"></label>
+      </div>
+    </div>
+
+    <div id="legend" class="group"></div>
+    <div id="info" class="group" style="opacity:.9;"></div>
+  </div>
+
+  <div class="sep"></div>
+
+  <!-- ROW 3: collapsible stats -->
+  <div class="statsrow">
+    <details id="statsPanel" class="group" style="max-width:100%;">
+      <summary style="cursor:pointer">Stats & Mappings</summary>
+      <pre id="statsBody" style="margin:8px 0 0; white-space:pre-wrap; max-height:40vh; overflow:auto;"></pre>
+    </details>
+  </div>
+</div>
+
+<canvas id="c"></canvas>
+<canvas id="peaks"></canvas>
+<div id="tip"></div>
+
+<script>
+// ================== EARLY DEFINITIONS ==================
+let peaksAll = [];               // persistent peak marks across blocks
+let sessionMaxRiseNorm = [];     // per-session per-bar maxima
+let currentBlockHeight = null;   // set when loading a block
+
+// Hover / pin state
+const HOVER_BINS = 256;
+let hoverBins = Array.from({length:HOVER_BINS},()=>[]);
+let hoverIdx = -1;               // hovered index in peaksAll (when not pinned)
+let pinnedIdx = -1;              // pinned index in peaksAll
+let hoverPointScreen = null;     // {x,y,color,pt}
+
+// ================== UTILS ==================
+function hsl(h,s,l,a=1){ return `hsla(${Math.round(h)},${Math.round(s)}%,${Math.round(l)}%,${a})`; }
+function lerp(a,b,t){ return a + (b-a)*t; }
+function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
+function fmt(n,d=2){ return Number.isFinite(n) ? Number(n).toFixed(d) : '—'; }
+function fmtInt(n){ return Number.isFinite(n) ? Math.round(n).toLocaleString() : '—'; }
+
+// ================== CONFIG ==================
+const API = "https://mempool.space/api";
+let MAX_VOICES = 20;
+let NOTES_PER_SEC = 170;
+let SCALE_MODE = 'pentatonic';
+let MAP_MODE   = 'default';
+const LOOKAHEAD = 0.10;
+const TICK_MS   = 25;
+const BASELINE_FRACTION = 0.85;
+const MAX_VISUAL_HEIGHT = 0.70;
+
+// ================== THEMES ==================
+const THEMES = {
+  fire: { name:'Fire', background:'#0f0905', baseline:'#552b1a',
+    bars:{stops:[{t:0,h:10,s:90,l:45},{t:0.5,h:28,s:95,l:58},{t:1,h:55,s:95,l:68}]}},
+  ice: { name:'Ice', background:'#061018', baseline:'#2b4455',
+    bars:{stops:[{t:0,h:190,s:60,l:45},{t:0.5,h:200,s:80,l:60},{t:1,h:210,s:90,l:74}]}},
+  earth:{ name:'Earth', background:'#0a0f0a', baseline:'#314232',
+    bars:{stops:[{t:0,h:110,s:45,l:35},{t:0.5,h:35,s:55,l:42},{t:1,h:60,s:60,l:50}]}},
+  bitcoin:{ name:'Bitcoin', background:'#0d0b07', baseline:'#5a4320',
+    bars:{stops:[{t:0,h:25,s:95,l:46},{t:0.5,h:30,s:95,l:56},{t:1,h:35,s:95,l:66}]}},
+  goldsilver:{ name:'Gold & Silver', background:'#0e0e10', baseline:'#44464a',
+    bars:{stops:[{t:0,h:46,s:85,l:56},{t:0.5,h:35,s:40,l:65},{t:1,h:0,s:0,l:78}]}},
+  custom:{ name:'Custom', background:'#0b0f14', baseline:'#553c1f',
+    bars:{stops:[{t:0,h:30,s:85,l:52},{t:1,h:45,s:95,l:64}]}}
+};
+
+let activeTheme = THEMES.bitcoin;
+let baselineColor = activeTheme.baseline;
+
+function themeColor(t, pulse=0){
+  const stops = activeTheme.bars.stops;
+  let a = stops[0], b = stops[stops.length-1];
+  for (let i=0;i<stops.length-1;i++){
+    if (t >= stops[i].t && t <= stops[i+1].t){ a=stops[i]; b=stops[i+1]; break; }
+  }
+  const u = (t - a.t) / Math.max(1e-6, (b.t - a.t));
+  const dh = (((b.h - a.h + 540) % 360) - 180);
+  const h = a.h + dh * u;
+  const s = lerp(a.s, b.s, u);
+  const l = clamp(lerp(a.l, b.l, u) + pulse*16, 5, 92);
+  return hsl(h,s,l,1);
+}
+function setTheme(name){
+  activeTheme = structuredClone(THEMES[name]);
+  customRow.style.display = (name === 'custom') ? 'flex' : 'none';
+  document.body.style.background = activeTheme.background;
+  baselineColor = activeTheme.baseline;
+  drawLegend();
+}
+function hexToHSL(hex){
+  let r=0,g=0,b=0;
+  if (hex.length === 4){ r="0x"+hex[1]+hex[1]; g="0x"+hex[2]+hex[2]; b="0x"+hex[3]+hex[3]; }
+  else { r="0x"+hex[1]+hex[2]; g="0x"+hex[3]+hex[4]; b="0x"+hex[5]+hex[6]; }
+  r/=255; g/=255; b/=255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b);
+  let h=0,s=0,l=(max+min)/2;
+  if (max!==min){
+    const d=max-min; s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){ case r: h=(g-b)/d+(g<b?6:0); break; case g: h=(b-r)/d+2; break; case b: h=(r-g)/d+4; break; }
+    h/=6;
+  }
+  return {h:h*360, s:s*100, l:l*100};
+}
+function updateCustomFromPickers(){
+  const a = hexToHSL(cStart.value), b = hexToHSL(cEnd.value);
+  THEMES.custom.background = cBg.value;
+  THEMES.custom.baseline   = cBase.value;
+  THEMES.custom.bars.stops = [ {t:0,h:a.h,s:a.s,l:a.l}, {t:1,h:b.h,s:b.s,l:b.l} ];
+  setTheme('custom');
+}
+
+// ================== FETCH ==================
+async function getBlockHashByHeight(h){ 
+  const res = await fetch(`${API}/block-height/${h}`);
+  if(!res.ok) throw new Error("height lookup failed");
+  return (await res.text()).trim();
+}
+async function getAllBlockTxs(hash){
+  const txs = [];
+  let index = 0;
+  const r0 = await fetch(`${API}/block/${hash}/txs`);
+  if (r0.ok){ txs.push(...await r0.json()); index = 25; }
+  while(true){
+    const r = await fetch(`${API}/block/${hash}/txs/${index}`);
+    if(!r.ok) break;
+    const page = await r.json();
+    if(page.length === 0) break;
+    txs.push(...page); index += 25;
+  }
+  return txs;
+}
+
+// ================== MUSIC HELPERS ==================
+function midiToFreq(m){ return 440 * Math.pow(2,(m-69)/12); }
+const PENTA=[0,2,4,7,9];
+function quantizePentatonic(midi){
+  const base=Math.floor(midi), oct=Math.floor(base/12), deg=base%12;
+  let best=PENTA[0], min=99;
+  for(const d of PENTA){ const diff=Math.abs(d-deg); if(diff<min){min=diff;best=d;} }
+  return oct*12 + best + (midi-base);
+}
+function vsizeToMidi(vsize){
+  const v=clamp(vsize,60,6000), lv=Math.log(v);
+  let m = 100 - (lv - 4.1) * (70/(8.7-4.1)); // 30..100
+  if (SCALE_MODE==='pentatonic') m = quantizePentatonic(m);
+  return clamp(m,30,100);
+}
+function pickInstrumentByVsize(v){
+  if (MAP_MODE==='percussive'){
+    if(v<120)return'hat'; if(v<180)return'snare'; if(v<260)return'kick';
+    if(v<450)return'snare'; if(v<800)return'kick'; return'hat';
+  } else if (MAP_MODE==='melodic'){
+    if(v<140)return'pluck'; if(v<220)return'pluck'; if(v<360)return'strings';
+    if(v<600)return'strings'; if(v<900)return'wind'; return'wind';
+  }
+  if(v<110)return'hat'; if(v<170)return'snare'; if(v<260)return'kick';
+  if(v<420)return'pluck'; if(v<800)return'strings'; return'wind';
+}
+function txToNote(tx){
+  const vsize = Math.max(60, tx.vsize||tx.size||200);
+  const fee = tx.fee ?? 0, feerate = fee / vsize;
+  const midi = vsizeToMidi(vsize), freq=midiToFreq(midi);
+  const gain = clamp((feerate/30), 0.06, 0.5);
+  const dur  = clamp(0.10 + (feerate/300), 0.10, 0.22);
+  const instrument = pickInstrumentByVsize(vsize);
+  return { instrument, freq, gain, dur, vsize, feerate, fee, midi };
+}
+
+// ================== AUDIO ENGINE ==================
+let ac=null, master=null, comp=null, noiseBuffer=null;
+function ensureAudio(){
+  if (ac) return;
+  ac = new (window.AudioContext||window.webkitAudioContext)();
+  master = ac.createGain(); master.gain.value = 0.9;
+  comp = ac.createDynamicsCompressor();
+  comp.threshold.setValueAtTime(-18, ac.currentTime);
+  comp.knee.setValueAtTime(20, ac.currentTime);
+  comp.ratio.setValueAtTime(6, ac.currentTime);
+  comp.attack.setValueAtTime(0.003, ac.currentTime);
+  comp.release.setValueAtTime(0.15, ac.currentTime);
+  master.connect(comp); comp.connect(ac.destination);
+
+  const len = ac.sampleRate * 2.0;
+  noiseBuffer = ac.createBuffer(1, len, ac.sampleRate);
+  const d = noiseBuffer.getChannelData(0);
+  for (let i=0;i<len;i++) d[i] = Math.random()*2-1;
+}
+class Channel {
+  constructor(){
+    this.g = ac.createGain(); this.g.gain.value = 0.0001;
+    this.pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
+    if (this.pan){ this.g.connect(this.pan); this.pan.connect(master); } else this.g.connect(master);
+    this.freeAt = 0; this.lingeringStops=[];
+  }
+  get free(){ return ac.currentTime >= this.freeAt - 0.002; }
+  _armStop(node, t){ try{ node.stop(t); }catch{} this.lingeringStops.push(node); }
+  play(note, when, pan){
+    if (this.pan) this.pan.pan.setValueAtTime(pan, when);
+    this.g.gain.cancelScheduledValues(when);
+    this.g.gain.setValueAtTime(0.0001, when);
+    const stopAt = this[`_play_${note.instrument}`](note, when);
+    this.freeAt = stopAt + 0.02;
+  }
+  _play_hat(n,w){ const s=ac.createBufferSource(); s.buffer=noiseBuffer;
+    const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.setValueAtTime(7500,w);
+    s.connect(hp); hp.connect(this.g);
+    const g=this.g.gain; g.exponentialRampToValueAtTime(n.gain*0.4,w+0.005); g.exponentialRampToValueAtTime(0.0001,w+0.06);
+    s.start(w); this._armStop(s,w+0.08); return w+0.08; }
+  _play_snare(n,w){ const s=ac.createBufferSource(); s.buffer=noiseBuffer;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.setValueAtTime(1800,w); bp.Q.setValueAtTime(0.8,w);
+    s.connect(bp); bp.connect(this.g);
+    const g=this.g.gain; g.exponentialRampToValueAtTime(n.gain*0.6,w+0.01); g.exponentialRampToValueAtTime(0.0001,w+0.14);
+    s.start(w); this._armStop(s,w+0.16); return w+0.16; }
+  _play_kick(n,w){ const o=ac.createOscillator(); o.type='sine'; o.connect(this.g);
+    const g=this.g.gain, f0=Math.max(60,Math.min(220,n.freq/8)), f1=f0*0.45;
+    o.frequency.setValueAtTime(f0,w); o.frequency.exponentialRampToValueAtTime(f1,w+0.12);
+    g.exponentialRampToValueAtTime(Math.max(0.08,n.gain*0.8),w+0.01); g.exponentialRampToValueAtTime(0.0001,w+0.18);
+    o.start(w); this._armStop(o,w+0.2); return w+0.2; }
+  _play_pluck(n,w){ const o1=ac.createOscillator(), o2=ac.createOscillator(); o1.type=o2.type='triangle';
+    o1.frequency.setValueAtTime(n.freq*0.997,w); o2.frequency.setValueAtTime(n.freq*1.003,w);
+    o1.connect(this.g); o2.connect(this.g);
+    const g=this.g.gain; g.exponentialRampToValueAtTime(n.gain*0.5,w+0.01); g.exponentialRampToValueAtTime(0.0001,w+Math.min(0.25,n.dur*0.9));
+    const stop=w+Math.min(0.28,n.dur*1.1); o1.start(w); o2.start(w); this._armStop(o1,stop); this._armStop(o2,stop); return stop; }
+  _play_strings(n,w){ const o1=ac.createOscillator(), o2=ac.createOscillator(); o1.type=o2.type='sawtooth';
+    const lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(Math.max(800,n.freq*2.2),w);
+    o1.frequency.setValueAtTime(n.freq*0.996,w); o2.frequency.setValueAtTime(n.freq*1.004,w);
+    o1.connect(lp); o2.connect(lp); lp.connect(this.g);
+    const g=this.g.gain; g.exponentialRampToValueAtTime(n.gain*0.35,w+0.03); g.exponentialRampToValueAtTime(0.0001,w+0.45);
+    const stop=w+0.48; o1.start(w); o2.start(w); this._armStop(o1,stop); this._armStop(o2,stop); return stop; }
+  _play_wind(n,w){ const s=ac.createBufferSource(); s.buffer=noiseBuffer;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass'; const c=clamp(n.freq,200,2500);
+    bp.frequency.setValueAtTime(c,w); bp.Q.setValueAtTime(1.2,w);
+    s.connect(bp); bp.connect(this.g);
+    const g=this.g.gain; g.exponentialRampToValueAtTime(n.gain*0.3,w+0.04); g.exponentialRampToValueAtTime(0.0001,w+0.4);
+    const stop=w+0.42; s.start(w); this._armStop(s,stop); return stop; }
+}
+class ChannelPool{ constructor(n){ this.channels=Array.from({length:n},()=>new Channel()); this.next=0; }
+  alloc(){ for(const c of this.channels) if(c.free) return c; const c=this.channels[this.next]; this.next=(this.next+1)%this.channels.length; return c; } }
+
+// ================== SCHEDULER + STOP ==================
+let currentScheduler=null;
+class Scheduler{
+  constructor(txs){
+    this.txs=txs; this.index=0;
+    this.startAt=ac.currentTime+0.2; this.dt=1/NOTES_PER_SEC;
+    this.pool=new ChannelPool(MAX_VOICES);
+    this.timer=null; this.stopped=false;
+    sessionMaxRiseNorm = new Array(txs.length).fill(0);
+  }
+  start(){
+    const tick=()=>{
+      if(this.stopped) return;
+      const now=ac.currentTime;
+      while(this.index<this.txs.length){
+        const tSched=this.startAt + this.index*this.dt;
+        if(tSched>now+LOOKAHEAD) break;
+        const tx=this.txs[this.index];
+        const note=txToNote(tx);
+        const pan=(this.index/(this.txs.length||1))*2-1;
+        const ch=this.pool.alloc(); ch.play(note,tSched,pan);
+        pingBar(this.index,note,tx);
+        collectLiveStats(note); // <-- now defined below
+        this.index++;
+      }
+      if(this.index>=this.txs.length) this.stop(false);
+    };
+    this.timer=setInterval(tick,TICK_MS);
+  }
+  stop(killAudio=true){
+    if(this.timer){ clearInterval(this.timer); this.timer=null; }
+    this.stopped=true;
+    if(killAudio && ac && master){
+      const now=ac.currentTime;
+      try{ master.gain.cancelScheduledValues(now); master.gain.setValueAtTime(master.gain.value,now); master.gain.exponentialRampToValueAtTime(0.0001,now+0.06);}catch{}
+      setTimeout(async()=>{ try{ await ac.close(); }catch{} ac=null; master=null; comp=null; },120);
+    }
+    enableStop(false);
+  }
+}
+
+// ================== CANVAS + VIZ ==================
+const canvas=document.getElementById('c'); const ctx=canvas.getContext('2d');
+const peaksCanvas=document.getElementById('peaks'); const pctx=peaksCanvas.getContext('2d');
+const tip = document.getElementById('tip');
+
+let W=0,H=0;
+function resize(){
+  W=canvas.width=innerWidth; H=canvas.height=innerHeight;
+  peaksCanvas.width = innerWidth; peaksCanvas.height = innerHeight;
+  redrawPeaks();
+  if (pinnedIdx >= 0) positionTipAtPoint(pinnedIdx); // keep pinned tooltip in place
+}
+addEventListener('resize',resize); resize();
+
+let bars=[]; // {x,w,amp,pulse}
+function makeBars(txs){
+  bars=[]; if(!txs.length) return;
+  const n=txs.length;
+  let minV=1e9, maxV=0; for(const tx of txs){ const v=tx.vsize||tx.size||200; if(v<minV)minV=v; if(v>maxV)maxV=v; }
+  const logMin=Math.log(Math.max(60,minV)), logMax=Math.log(Math.max(61,maxV)), range=logMax-logMin||1;
+  for(let i=0;i<n;i++){
+    const v=txs[i].vsize||txs[i].size||200, logv=Math.log(Math.max(60,v));
+    const amp=(logv-logMin)/range;
+    const x=Math.floor(i*(W/n)); const w=Math.max(1, Math.floor(((i+1)*(W/n))-x));
+    bars.push({x,w,amp,pulse:0});
+  }
+}
+function colorForBar(b){ return themeColor(b.amp, b.pulse); }
+
+// --------- Peaks (persist) ----------
+function drawPeakPoint(pt){
+  const baseY = H*BASELINE_FRACTION;
+  const maxH = H*MAX_VISUAL_HEIGHT;
+  const x = pt.xNorm * W;
+  const y = baseY - pt.riseNorm * maxH;
+  pctx.save();
+  pctx.globalAlpha = 0.95;
+  pctx.fillStyle = pt.color;
+  pctx.beginPath();
+  pctx.arc(x, y, 2.2, 0, Math.PI*2);
+  pctx.fill();
+  pctx.restore();
+}
+function redrawPeaks(){
+  pctx.clearRect(0,0,peaksCanvas.width, peaksCanvas.height);
+  for (const pt of peaksAll) drawPeakPoint(pt);
+
+  // highlight ring for active point (pinned > hovered)
+  const activeIdx = (pinnedIdx >= 0 ? pinnedIdx : hoverIdx);
+  if (activeIdx >= 0){
+    const pt = peaksAll[activeIdx];
+    const baseY = H*BASELINE_FRACTION, maxH=H*MAX_VISUAL_HEIGHT;
+    const x = pt.xNorm * W, y = baseY - pt.riseNorm * maxH;
+    pctx.save();
+    pctx.lineWidth = 2;
+    pctx.strokeStyle = pt.color;
+    pctx.beginPath();
+    pctx.arc(x, y, 7, 0, Math.PI*2);
+    pctx.stroke();
+    pctx.restore();
+  }
+}
+function addPeak(pt){
+  const idx = peaksAll.push(pt) - 1;
+  drawPeakPoint(pt);
+  // add to hover bins
+  const bin = Math.min(HOVER_BINS-1, Math.max(0, Math.floor(pt.xNorm * HOVER_BINS)));
+  hoverBins[bin].push(idx);
+}
+
+function pingBar(i,note,tx){
+  const b=bars[i]; if(!b) return;
+  const strength = 0.6 + note.gain*0.9;
+  b.pulse = Math.min(1.6, b.pulse + b.amp*strength);
+
+  // record peak if higher than this session's best
+  const maxH = H*MAX_VISUAL_HEIGHT;
+  const rise = Math.min(maxH, maxH * b.pulse);
+  const riseNorm = clamp(rise / maxH, 0, 1);
+  if (riseNorm > (sessionMaxRiseNorm[i] ?? 0) + 0.005){
+    sessionMaxRiseNorm[i] = riseNorm;
+    const xNorm = ((b.x + b.w/2) / W);
+    const color = colorForBar(b);
+    const pt = {
+      xNorm, riseNorm, color,
+      block: currentBlockHeight,
+      txid: tx.txid || '',
+      vsize: Math.max(60, tx.vsize||tx.size||200),
+      fee: tx.fee ?? 0,
+      feerate: (tx.fee ?? 0) / Math.max(1, (tx.vsize||tx.size||200)),
+      instrument: note.instrument,
+      midi: note.midi ?? vsizeToMidi(Math.max(60, tx.vsize||tx.size||200)),
+      freq: note.freq
+    };
+    addPeak(pt);
+  }
+}
+function stepBars(dt){ for(const b of bars){ b.pulse *= Math.pow(0.003, dt); } }
+
+// --------- Render ---------
+function render(ts){
+  if(!render._last) render._last=ts; const dt=Math.min(0.05,(ts-render._last)/1000); render._last=ts;
+  stepBars(dt);
+
+  ctx.clearRect(0,0,W,H);
+
+  const baseY=H*BASELINE_FRACTION;
+  ctx.globalAlpha=0.55; ctx.fillStyle=baselineColor; ctx.fillRect(0,baseY, W, 2);
+
+  ctx.globalAlpha=1;
+  const maxH=H*MAX_VISUAL_HEIGHT;
+  for(const b of bars){
+    const rise=Math.min(maxH, maxH*b.pulse);
+    if(rise<=0.5) continue;
+    const y=Math.max(0, baseY - rise);
+    ctx.fillStyle = colorForBar(b);
+    ctx.fillRect(b.x, y, b.w, rise);
+  }
+
+  // redraw persistent marks (and active ring)
+  pctx.clearRect(0,0,peaksCanvas.width, peaksCanvas.height);
+  redrawPeaks();
+
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ---------- Legend ----------
+function drawLegend(){
+  const el=document.getElementById('legend');
+  const sw=140, sh=12, steps=28;
+  const c=document.createElement('canvas'); c.width=sw; c.height=sh; const g=c.getContext('2d');
+  for(let i=0;i<steps;i++){ const t=i/(steps-1); g.fillStyle=themeColor(t, 0.15); g.fillRect(Math.round(t*(sw-1)),0,Math.ceil(sw/steps)+1,sh); }
+  el.innerHTML=''; const label=document.createElement('div'); label.textContent=`Theme: ${activeTheme.name}`; label.style.opacity=.9;
+  el.appendChild(label); el.appendChild(c);
+}
+
+// ================== STATS (incl. live) ==================
+function quantiles(arr){
+  if (!arr.length) return {min:0,q50:0,q95:0,max:0,avg:0};
+  const a = [...arr].sort((x,y)=>x-y);
+  const at = p => a[Math.min(a.length-1, Math.max(0, Math.floor((a.length-1)*p)))];
+  const sum = a.reduce((s,x)=>s+x,0);
+  return { min:a[0], q50:at(0.5), q95:at(0.95), max:a[a.length-1], avg: sum/a.length };
+}
+function computeBlockStats(txs){
+  const vsizes = txs.map(tx => Math.max(60, tx.vsize||tx.size||200));
+  const fees    = txs.map(tx => tx.fee ?? 0);
+  const feerate = txs.map((tx,i) => fees[i]/vsizes[i]);
+  const midiArr = vsizes.map(v => vsizeToMidi(v));
+  const freqArr = midiArr.map(m => midiToFreq(m));
+  const instrCounts = {hat:0,snare:0,kick:0,pluck:0,strings:0,wind:0};
+  for (const v of vsizes) instrCounts[pickInstrumentByVsize(v)]++;
+  const V = quantiles(vsizes), F = quantiles(feerate), M = quantiles(midiArr), FR= quantiles(freqArr);
+  return { count: txs.length, V, F, M, FR, instrCounts };
+}
+function renderStatsPanel(stats){
+  const lines = [];
+  lines.push(`Block stats:`);
+  lines.push(`  tx count: ${fmtInt(stats.count)}`);
+  lines.push(`  vsize (vB): min ${fmt(stats.V.min,0)}, median ${fmt(stats.V.q50,0)}, p95 ${fmt(stats.V.q95,0)}, max ${fmt(stats.V.max,0)}`);
+  lines.push(`  feerate (sat/vB): min ${fmt(stats.F.min)}, median ${fmt(stats.F.q50)}, p95 ${fmt(stats.F.q95,0)}, max ${fmt(stats.F.max,0)}`);
+  lines.push(`  pitch (MIDI): min ${fmt(stats.M.min,0)}, median ${fmt(stats.M.q50,0)}, max ${fmt(stats.M.max,0)}`);
+  lines.push(`  pitch (Hz):   min ${fmt(stats.FR.min,1)}, median ${fmt(stats.FR.q50,1)}, max ${fmt(stats.FR.max,1)}`);
+  lines.push(`  instruments: ${Object.entries(stats.instrCounts).map(([k,v])=>`${k}:${v}`).join('  ')}`);
+  lines.push('');
+  lines.push(`Playback & mapping:`);
+  lines.push(`  notes/s=${NOTES_PER_SEC}, voices=${MAX_VOICES}, scale=${SCALE_MODE}, map=${MAP_MODE}, theme=${activeTheme.name}`);
+  lines.push(`  pitch: MIDI = map_log(vsize) → [30..100] ${SCALE_MODE==='pentatonic'?'(quantized to pentatonic)': '(chromatic)'}`);
+  lines.push(`  gain:  clamp(feerate/30, 0.06, 0.5)`);
+  lines.push(`  dur:   clamp(0.10 + feerate/300, 0.10, 0.22)`);
+  lines.push(`  visual jump: rise = amp(vsize) * pulse; amp = log-normalized vsize`);
+  document.getElementById('statsBody').textContent = lines.join('\n');
+}
+// live counters (optional)
+let liveCount = 0, liveFeerateSum = 0;
+function collectLiveStats(note){
+  liveCount++;
+  if (note && Number.isFinite(note.feerate)) liveFeerateSum += note.feerate;
+  // hook for future: could show a tiny live readout if desired
+}
+
+// ================== HOVER / PIN / TOOLTIP ==================
+function pointScreenXY(pt){
+  const baseY = H*BASELINE_FRACTION, maxH=H*MAX_VISUAL_HEIGHT;
+  return { x: pt.xNorm * W, y: baseY - pt.riseNorm * maxH };
+}
+function buildHoverBins(){
+  hoverBins = Array.from({length:HOVER_BINS},()=>[]);
+  for (let i=0;i<peaksAll.length;i++){
+    const b = Math.min(HOVER_BINS-1, Math.max(0, Math.floor(peaksAll[i].xNorm * HOVER_BINS)));
+    hoverBins[b].push(i);
+  }
+}
+function findNearestPeak(mx,my){
+  if (!peaksAll.length) return -1;
+  const bin = Math.min(HOVER_BINS-1, Math.max(0, Math.floor((mx/W) * HOVER_BINS)));
+  const candidates = [
+    ...hoverBins[bin],
+    ...(hoverBins[bin-1]||[]),
+    ...(hoverBins[bin+1]||[])
+  ];
+  let best=-1, bestD2=Infinity;
+  const R = 9; const R2 = R*R;
+  for (const idx of candidates){
+    const p = peaksAll[idx];
+    const {x,y} = pointScreenXY(p);
+    const dx = x - mx, dy = y - my, d2 = dx*dx + dy*dy;
+    if (d2 < bestD2 && d2 <= R2) { bestD2 = d2; best = idx; }
+  }
+  return best;
+}
+function tipHTMLForPoint(pt){
+  const hz = pt.freq;
+  const txid = pt.txid || '';
+  const short = txid ? txid.slice(0,12)+'…' : 'unknown';
+  const link = txid ? `<a href="https://mempool.space/tx/${txid}" target="_blank" rel="noopener noreferrer">${short}</a>` : short;
+  return `
+    <div><strong>Tx</strong> ${link}</div>
+    <div class="muted">Block ${pt.block ?? '—'}</div>
+    <hr style="border:0;border-top:1px solid #2b3e4c; margin:6px 0;">
+    <div>vsize: <strong>${fmtInt(pt.vsize)}</strong> vB</div>
+    <div>fee: <strong>${fmtInt(pt.fee)}</strong> sat</div>
+    <div>feerate: <strong>${fmt(pt.feerate,2)}</strong> sat/vB</div>
+    <div>instrument: <strong>${pt.instrument}</strong></div>
+    <div>pitch: MIDI <strong>${fmt(pt.midi,0)}</strong> → <strong>${fmt(hz,1)}</strong> Hz</div>
+  `;
+}
+function positionTipAtMouse(mx, my){
+  const pad = 12;
+  tip.style.display = 'block';
+  const rect = tip.getBoundingClientRect();
+  let x = mx + pad, y = my - rect.height - 10;
+  if (x + rect.width + 8 > innerWidth) x = innerWidth - rect.width - 8;
+  if (y < 8) y = my + 14;
+  tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+}
+function positionTipAtPoint(idx){
+  const {x,y} = pointScreenXY(peaksAll[idx]);
+  const mx = x + 8, my = y - 8;
+  positionTipAtMouse(mx,my);
+}
+function showTipForIndex(idx, mode, mx, my){
+  const pt = peaksAll[idx];
+  tip.innerHTML = tipHTMLForPoint(pt);
+
+  if (mode === 'hover') {
+    // follow cursor, ignore mouse so hover stays smooth
+    tip.style.pointerEvents = 'none';
+    positionTipAtMouse(mx, my);
+  } else {
+    // pinned: allow clicking the link
+    tip.style.pointerEvents = 'auto';
+    positionTipAtPoint(idx);
+  }
+}
+
+function hideTip(){ tip.style.display = 'none'; }
+
+// --- mouse interactions ---
+peaksCanvas.addEventListener('mousemove', (e)=>{
+  if (pinnedIdx >= 0){ // keep pinned; still draw ring on pinned
+    hoverIdx = -1;
+    redrawPeaks();
+    return;
+  }
+  const mx = e.clientX, my = e.clientY;
+  const idx = findNearestPeak(mx,my);
+  if (idx !== hoverIdx){
+    hoverIdx = idx;
+    if (idx >= 0){
+      hoverPointScreen = { ...pointScreenXY(peaksAll[idx]), color:peaksAll[idx].color, pt:peaksAll[idx] };
+      showTipForIndex(idx, 'hover', mx, my);
+    } else {
+      hoverPointScreen = null;
+      hideTip();
+    }
+    redrawPeaks();
+  } else if (idx >= 0){
+    showTipForIndex(idx, 'hover', mx, my); // follow cursor
+  }
+});
+peaksCanvas.addEventListener('mouseleave', ()=>{
+  if (pinnedIdx < 0){ hoverIdx=-1; hoverPointScreen=null; hideTip(); redrawPeaks(); }
+});
+peaksCanvas.addEventListener('click', (e)=>{
+  const mx = e.clientX, my = e.clientY;
+  const idx = findNearestPeak(mx,my);
+  if (idx >= 0){
+    pinnedIdx = (pinnedIdx === idx ? -1 : idx); // toggle if same point
+    if (pinnedIdx >= 0){
+      hoverIdx = -1;
+      showTipForIndex(pinnedIdx, 'pinned');
+    } else {
+      hideTip();
+    }
+    redrawPeaks();
+  } else {
+    // clicked empty space: unpin if pinned
+    if (pinnedIdx >= 0){ pinnedIdx = -1; hideTip(); redrawPeaks(); }
+  }
+});
+addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && pinnedIdx >= 0){ pinnedIdx=-1; hideTip(); redrawPeaks(); } });
+
+// ---------- Legend ----------
+function drawLegend(){
+  const el=document.getElementById('legend');
+  const sw=140, sh=12, steps=28;
+  const c=document.createElement('canvas'); c.width=sw; c.height=sh; const g=c.getContext('2d');
+  for(let i=0;i<steps;i++){ const t=i/(steps-1); g.fillStyle=themeColor(t, 0.15); g.fillRect(Math.round(t*(sw-1)),0,Math.ceil(sw/steps)+1,sh); }
+  el.innerHTML=''; const label=document.createElement('div'); label.textContent=`Theme: ${activeTheme.name}`; label.style.opacity=.9;
+  el.appendChild(label); el.appendChild(c);
+}
+
+// ================== UI ==================
+const info = document.getElementById('info');
+const btnLoad=document.getElementById('load');
+const btnPlay=document.getElementById('play');
+const btnStop=document.getElementById('stop');
+const btnClear=document.getElementById('clearMarks');
+const btnTest=document.getElementById('test');
+const inputHeight=document.getElementById('height');
+const voicesInput=document.getElementById('voices');
+const npsInput=document.getElementById('nps');
+const scaleSelect=document.getElementById('scale');
+const mapSelect=document.getElementById('map');
+const themeSelect=document.getElementById('theme');
+const customRow=document.getElementById('customRow');
+const cBg=document.getElementById('cBg');
+const cBase=document.getElementById('cBase');
+const cStart=document.getElementById('cStart');
+const cEnd=document.getElementById('cEnd');
+
+let txs=[];
+
+function enableStop(on){ btnStop.disabled = !on; }
+
+btnLoad.onclick = async () => {
+  btnPlay.disabled = true; enableStop(false); info.textContent = " loading…";
+  try{
+    const height=parseInt(inputHeight.value,10);
+    currentBlockHeight = height;
+    const hash=await getBlockHashByHeight(height);
+    const list=await getAllBlockTxs(hash);
+    txs=list;
+    info.textContent=` loaded ${height} (${hash.slice(0,12)}…) • ${txs.length} tx`;
+    btnPlay.disabled = txs.length === 0;
+    makeBars(txs);
+    renderStatsPanel(computeBlockStats(txs));
+  }catch(e){ console.error(e); info.textContent=" error loading block"; }
+};
+
+btnTest.onclick = async () => {
+  ensureAudio(); if (ac.state==='suspended') await ac.resume();
+  const t0=ac.currentTime+0.05; const pool=new ChannelPool(3);
+  pool.alloc().play({instrument:'hat',gain:0.25,freq:1000,dur:0.08}, t0, -0.6);
+  pool.alloc().play({instrument:'snare',gain:0.35,freq:800,dur:0.12}, t0+0.15, 0);
+  pool.alloc().play({instrument:'kick',gain:0.45,freq:120,dur:0.2}, t0+0.30, 0.6);
+};
+
+btnPlay.onclick = async () => {
+  ensureAudio(); if (ac.state==='suspended') await ac.resume();
+  MAX_VOICES = clamp(parseInt(voicesInput.value,10)||20, 4, 64);
+  NOTES_PER_SEC = clamp(parseInt(npsInput.value,10)||170, 40, 400);
+  SCALE_MODE = scaleSelect.value; MAP_MODE = mapSelect.value;
+  if (!txs.length){ info.textContent=" no transactions loaded"; return; }
+  if (currentScheduler) currentScheduler.stop(true);
+  currentScheduler=new Scheduler(txs); currentScheduler.start(); enableStop(true);
+};
+
+btnStop.onclick = () => { if(currentScheduler){ currentScheduler.stop(true); currentScheduler=null; } };
+btnClear.onclick = () => { peaksAll.length = 0; buildHoverBins(); hoverIdx=-1; pinnedIdx=-1; hideTip(); redrawPeaks(); };
+
+themeSelect.onchange = (e) => { const v=e.target.value; if(v==='custom') updateCustomFromPickers(); setTheme(v); };
+[cBg,cBase,cStart,cEnd].forEach(inp => inp.addEventListener('input', () => { if (themeSelect.value==='custom') updateCustomFromPickers(); }));
+
+addEventListener('resize', ()=>{ if (txs.length) makeBars(txs); buildHoverBins(); });
+
+// Init
+setTheme('bitcoin');
+drawLegend();
+buildHoverBins();
+</script>
+</body>
+</html>
