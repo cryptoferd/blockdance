@@ -16,9 +16,9 @@
   #ui button { background:#133a5a; color:#e6f2ff; border:1px solid #1f4f78; border-radius:8px; padding:6px 10px; cursor:pointer; }
   #ui button:hover { filter:brightness(1.15); }
   #meta { margin-top:8px; font-size:12px; line-height:1.35; color:#b7d2ea; max-width:380px; }
-  .panel { position: fixed; right:10px; z-index:11; font-size:12px; color:var(--muted); padding:8px 10px; background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px; max-width:360px; }
-  #legend { top:10px; }
-  #fx { top:150px; min-width:270px; }
+  .panel { position: fixed; z-index:11; font-size:12px; color:var(--muted); padding:8px 10px; background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px; max-width:420px; }
+  #legend { right:10px; top:10px; }
+  #fx { right:10px; top:150px; min-width:270px; }
   #fx label { display:flex; gap:8px; align-items:center; margin:6px 0; }
   input[type="range"] { width:100%; }
   #blockPanel { position: fixed; right:10px; bottom:10px; z-index:11; width:min(420px, calc(100vw - 20px)); background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px; overflow:hidden; }
@@ -31,6 +31,20 @@
   #blkBody td:first-child { color:#8fbfe6; width:34%; }
   .chip { display:inline-block; padding:2px 6px; border:1px solid #2b3a44; border-radius:8px; margin:2px 2px 2px 0; color:#d7ecff; font-size:11px; }
   #warn { color:#ffd26f; font-weight:600; display:none; margin-top:6px; }
+
+  /* Info panel */
+  details#infoPanel { left:10px; top:150px; width:min(480px, calc(100vw - 20px)); }
+  details#infoPanel > summary { list-style:none; cursor:pointer; padding:10px 12px; color:#d7ecff; font-weight:700; display:flex; gap:8px; align-items:center; }
+  details#infoPanel[open] > summary { border-bottom:1px solid var(--panel-border); }
+  details#infoPanel summary .badge { width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; background:#1e2a33; color:#cfe4ff; border:1px solid #2b3a44; font-weight:800; }
+  #infoBody { padding:10px 12px; color:#b7d2ea; }
+  #infoBody h3 { margin:8px 0 4px; color:#e3f1ff; font-size:13px; }
+  #infoBody p { margin:6px 0; }
+  #infoBody ul { margin:6px 0 6px 18px; }
+  #infoBody code { background:#0e1419; border:1px solid #2b3a44; padding:1px 4px; border-radius:6px; color:#e8f4ff; }
+  #infoBody table { width:100%; border-collapse:collapse; margin-top:6px; }
+  #infoBody td { padding:4px 0; vertical-align:top; }
+  #infoBody td:first-child { width:32%; color:#9cc9ee; }
 </style>
 </head>
 <body>
@@ -70,6 +84,48 @@
       <span id="blkTitle" style="color:#d7dfff;font-weight:500;">(none loaded)</span>
     </summary>
     <div id="blkBody"><div style="margin-bottom:6px;">Load a block (height or Latest) to populate details.</div></div>
+  </details>
+
+  <!-- NEW: Info / Help collapsible -->
+  <details id="infoPanel" class="panel" open>
+    <summary><span class="badge">?</span> Info / Help</summary>
+    <div id="infoBody">
+      <h3>What this is</h3>
+      <p>This renders a stylized atom where the “chemistry” is driven by a Bitcoin block. Colors come from <b>height</b>; motion, sizes, tilts and accents come from header fields (tx count, nonce, bits, etc.). The surface is a <b>seamless metallic</b> shader—no UV seams.</p>
+
+      <h3>How to use</h3>
+      <ul>
+        <li><b>Load a block:</b> Enter a height and press <code>Load</code>, or hit <code>Latest</code>.</li>
+        <li><b>Navigate 3D:</b> Drag = rotate · Scroll/Pinch = zoom · Right-drag (or 3-finger) = pan.</li>
+        <li><b>Tune look:</b> The two sliders map to the metallic shader:
+          <ul>
+            <li><i>Marble intensity</i> = <b>Metalness</b> (0..1)</li>
+            <li><i>Marble scale</i> = <b>Roughness grain</b> (higher → finer brush, sharper highlights)</li>
+          </ul>
+        </li>
+        <li><b>Details:</b> Open the “Block Details” panel (bottom-right) to see the header fields used.</li>
+      </ul>
+
+      <h3>Block → Visual mapping</h3>
+      <table>
+        <tr><td><b>height</b></td><td>Global palette + effect mode (names shown next to “Mode”).</td></tr>
+        <tr><td><b>tx_count</b></td><td>Electron orbit speeds (busier → faster), slight phase “raggedness”.</td></tr>
+        <tr><td><b>weight / size</b></td><td>Electron size scale (heavier → larger).</td></tr>
+        <tr><td><b>nonce</b></td><td>Shell tilt pattern + orbit eccentricity (subtle ellipses).</td></tr>
+        <tr><td><b>version</b></td><td>Proton/Neutron color swap, ring thickness toggle.</td></tr>
+        <tr><td><b>bits + hash</b></td><td>“Luck/energy” → speed multiplier, nucleus tightness, ring alpha/width.</td></tr>
+        <tr><td><b>timestamp / mediantime</b></td><td>Gentle spin wobble & breathing scale.</td></tr>
+        <tr><td><b>merkle_root</b></td><td>Per-electron phase, color bias, tilt jitter (high entropy → variety).</td></tr>
+        <tr><td><b>hash (last byte)</b></td><td>Ring hue shift and base thickness.</td></tr>
+      </table>
+
+      <h3>Tips</h3>
+      <ul>
+        <li>On older devices, uncheck <b>Show shell rings</b> to reduce overdraw.</li>
+        <li>If you see “Shader fallback” above, your browser disabled custom shaders; you’ll still get colored solids.</li>
+        <li>Try different heights to sample very different palettes (height is hashed with a golden-angle hue walk).</li>
+      </ul>
+    </div>
   </details>
 
 <script>
@@ -376,7 +432,7 @@ function buildAtomFromBlock(block){
   const wobbleAmp = map(timeSkew, -1, 1, 0.97, 1.03);  // subtle scale
   const wobbleFreq = 0.5 + Math.abs(timeSkew)*0.8;     // Hz-ish
 
-  // --- Mode from height (kept as-is; just naming)
+  // --- Mode from height (name only)
   const mode = height % 4;
   let modeName = '';
   if (mode===0){ modeName='Metal: Swirled'; MARBLE_INT=0.90; MARBLE_SCALE=3.3; }
