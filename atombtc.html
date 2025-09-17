@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Bitcoin Block Atom — Metallic + Animated Marble, UI fixes</title>
+<title>Bitcoin Block Atom — Halving Mode, Animated Marble, UI fixes</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.dom.min.js"></script>
@@ -15,7 +15,7 @@
   #ui input { width:140px; background:#0e1419; border:1px solid #2b3a44; color:#e6f2ff; border-radius:8px; padding:6px 8px; }
   #ui button { background:#133a5a; color:#e6f2ff; border:1px solid #1f4f78; border-radius:8px; padding:6px 10px; cursor:pointer; }
   #ui button:hover { filter:brightness(1.15); }
-  #meta { margin-top:8px; font-size:12px; line-height:1.35; color:#b7d2ea; max-width:380px; }
+  #meta { margin-top:8px; font-size:12px; line-height:1.35; color:#b7d2ea; max-width:420px; }
   .panel { position: fixed; z-index:11; font-size:12px; color:var(--muted); padding:8px 10px; background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px; max-width:420px; }
   #legend { right:10px; top:10px; }
   #fx { right:10px; top:150px; min-width:270px; }
@@ -30,6 +30,7 @@
   #blkBody td { padding:4px 0; vertical-align: top; }
   #blkBody td:first-child { color:#8fbfe6; width:34%; }
   .chip { display:inline-block; padding:2px 6px; border:1px solid #2b3a44; border-radius:8px; margin:2px 2px 2px 0; color:#d7ecff; font-size:11px; }
+  .chip.warn { border-color:#ffae5a; color:#ffd9b0; }
   #warn { color:#ffd26f; font-weight:600; display:none; margin-top:6px; }
 
   /* Info panel */
@@ -63,7 +64,7 @@
   <div id="legend" class="panel">
     <div><b>Nucleus:</b> protons / neutrons</div>
     <div><b>Shells:</b> electrons (2n² capacity)</div>
-    <div><b>Colors:</b> deterministic from block height</div>
+    <div><b>Colors:</b> deterministic from block height (overridden for Halving blocks)</div>
   </div>
 
   <div id="fx" class="panel">
@@ -89,37 +90,22 @@
   <details id="infoPanel" class="panel" open>
     <summary><span class="badge">?</span> Info / Help</summary>
     <div id="infoBody">
-      <h3>What this is</h3>
-      <p>This renders a stylized atom where the “chemistry” is driven by a Bitcoin block. Surfaces are a <b>seamless metallic</b> shader with <b>animated marbling</b>—continuous swirls, zooms, and color changes.</p>
-      <h3>How to use</h3>
-      <ul>
-        <li>Enter a height and press <code>Load</code>, or hit <code>Latest</code>.</li>
-        <li>Rotate = drag · Zoom = scroll/pinch · Pan = right-drag / 3-finger (touch).</li>
-        <li>Sliders: <b>Metalness</b> (left = paint, right = chrome) and <b>Roughness/Grain</b> (left = soft, right = sharp).</li>
-      </ul>
-      <h3>Block → Visual mapping</h3>
-      <table>
-        <tr><td><b>height</b></td><td>Palette & effect mode (shown as “Mode”).</td></tr>
-        <tr><td><b>tx_count</b></td><td>Orbit speeds + ragged phase; also influences animation amplitude.</td></tr>
-        <tr><td><b>weight / size</b></td><td>Electron size scale.</td></tr>
-        <tr><td><b>nonce</b></td><td>Shell tilt + orbit eccentricity; seeds animation speed.</td></tr>
-        <tr><td><b>version</b></td><td>Proton/Neutron color swap, ring thickness toggle.</td></tr>
-        <tr><td><b>bits + hash</b></td><td>“Luck/energy”: speed, nucleus tightness, ring alpha/width.</td></tr>
-        <tr><td><b>timestamp / mediantime</b></td><td>Spin wobble & breathing.</td></tr>
-        <tr><td><b>merkle_root</b></td><td>Per-electron phase, color bias, tilt jitter; sets block animation phase.</td></tr>
-        <tr><td><b>hash (last byte)</b></td><td>Ring hue shift and base thickness.</td></tr>
-      </table>
+      <h3>Halving Mode</h3>
+      <p>For heights divisible by <b>210,000</b>, visuals switch to a special theme:
+        <b>pulsing orange/black background</b>, <b>gold metallic</b> nucleus with a soft
+        <b>glow</b>, and <b>silver metallic</b> electrons that <b>pulse in size</b>.
+        This <u>overrides</u> other effects and slider choices.</p>
+      <h3>General</h3>
+      <p>Surfaces use a seamless metallic shader with animated marbling on normal blocks.</p>
     </div>
   </details>
 
 <script>
-/* -------- Safe DOM helpers -------- */
+/* -------- Helpers -------- */
 function safeHTML(id, html){ const el=document.getElementById(id); if(el) el.innerHTML = html; }
 function safeText(id, text){ const el=document.getElementById(id); if(el) el.textContent = text; }
 function escapeHtml(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function setMeta(text){ safeHTML('meta', text); }
-
-/* -------- Constants & State -------- */
 const API = "https://mempool.space/api";
 
 const NUCLEUS_BASE_R = 28;
@@ -127,8 +113,8 @@ const SHELL_R_STEP   = 22;
 const ELECTRON_R     = 3.6;
 const NUCLEON_R      = 2.7;
 
-let MARBLE_INT = 0.85;   // used as metalness
-let MARBLE_SCALE = 3.2;  // used as roughness / grain
+let MARBLE_INT = 0.85;   // metalness
+let MARBLE_SCALE = 3.2;  // roughness / pattern scale
 let FX_RINGS = true;
 
 let atom = null;
@@ -138,9 +124,9 @@ let SHADER_OK = true;
 let bgStars = [];
 const BG_STAR_COUNT = 350;
 
-let uiPointerDown = false; // gate orbitControl when using UI
+let uiPointerDown = false;
 
-/* -------- Seamless metallic + animated marbling shader -------- */
+/* -------- Shaders -------- */
 const ORB_VERT = `
 precision mediump float;
 attribute vec3 aPosition;
@@ -152,18 +138,16 @@ void main(){
 }
 `;
 
-// Animation: time-varying tri-planar domain warp + swirl + zoom.
-// Per-block uniforms uAnimAmp/uAnimSpeed/uBlockPhase make blocks feel distinct.
-const ORB_FRAG = `
+const ORB_FRAG = ` // metallic + animated marbling
 precision mediump float;
 varying vec3 vObjPos;
 uniform vec3  uColorA, uColorB;
-uniform float uMarbleInt;   // metalness 0..1
-uniform float uMarbleScale; // roughness / pattern scale
+uniform float uMarbleInt;
+uniform float uMarbleScale;
 uniform float uTime;
-uniform float uAnimAmp;     // 0..~0.6
-uniform float uAnimSpeed;   // ~0.3..1.8
-uniform float uBlockPhase;  // 0..TAU
+uniform float uAnimAmp;
+uniform float uAnimSpeed;
+uniform float uBlockPhase;
 
 float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719))) * 43758.5453); }
 float n3(vec3 p){
@@ -179,20 +163,14 @@ float n3(vec3 p){
   return mix(n0,n1,u.z);
 }
 
-// high-contrast swirl stripes with domain warp (2D slice)
 float stripe2D(vec2 uv, float phase, float f){
-  // oscillating scale for growth/shrink
   float zoomOsc = 1.0 + uAnimAmp*0.35 * sin(uTime*(0.7+uAnimSpeed) + phase + uBlockPhase);
   uv *= zoomOsc;
-
-  // advect field (domain warp)
   vec2 w1 = vec2(
     n3(vec3(uv*0.8*f, uTime*0.35 + phase + uBlockPhase)),
     n3(vec3(uv*1.1*f + 3.17, uTime*0.28 + phase + 1.7 + uBlockPhase))
   );
   uv += (w1 - 0.5) * (0.35 + 0.45*uAnimAmp);
-
-  // final stripes with additional phase drift
   float s = sin( (uv.x*6.2831*f*0.85) + (uv.y*6.2831*f*0.45)
                  + 3.2*w1.x + (uTime*(0.55+0.6*uAnimSpeed)) + phase + uBlockPhase );
   return 0.5 + 0.5*s;
@@ -204,7 +182,6 @@ float blinnSpec(vec3 n, vec3 l, vec3 v, float shin){
 }
 
 void main(){
-  // swirl space around Y axis based on radius (swirling)
   vec3 p = vObjPos;
   float r = length(p.xy);
   float swirl = uAnimAmp * (0.5 + 0.5*sin(uTime*(0.6+0.7*uAnimSpeed) + uBlockPhase));
@@ -212,24 +189,19 @@ void main(){
   float ca = cos(a), sa = sin(a);
   p.xz = mat2(ca,-sa,sa,ca) * p.xz;
 
-  // tri-planar weights
   vec3 nrm = normalize(p);
   vec3 w = pow(abs(nrm), vec3(6.0));
   w /= max(w.x + w.y + w.z, 1e-4);
 
   float f = uMarbleScale;
-
-  // Animated vibrant marbling (use swirled p)
   float sx = stripe2D(p.yz, 0.0, f);
   float sy = stripe2D(p.zx, 2.1, f);
   float sz = stripe2D(p.xy, 4.2, f);
   float stripes = sx*w.x + sy*w.y + sz*w.z;
-  // punchy contrast
   float t = smoothstep(0.10, 0.90, stripes);
   t = pow(t, 0.85);
   vec3 marbleTint = mix(uColorA, uColorB, t);
 
-  // Brushed metallic grain (also time-varying a touch)
   float roughK = clamp((uMarbleScale - 0.8) / 5.2, 0.0, 1.0);
   float freq = mix(40.0, 140.0, roughK);
   float gx = stripe2D(p.yz, 1.7, freq);
@@ -238,7 +210,6 @@ void main(){
   float grain = (gx*w.x + gy*w.y + gz*w.z);
   vec3 base = marbleTint * (0.83 + 0.17 * grain);
 
-  // lighting (two dirs + view)
   vec3 L1 = normalize(vec3(0.6, 0.7, 0.5));
   vec3 L2 = normalize(vec3(-0.4, 0.65, -0.2));
   vec3 V  = normalize(vec3(0.0, 0.0, 1.0));
@@ -250,7 +221,7 @@ void main(){
   float shin  = mix(36.0, 200.0, 1.0 - rough);
 
   float m     = clamp(uMarbleInt, 0.0, 1.0);
-  float mClmp = min(m, 0.92);                  // cap so it never goes pitch black
+  float mClmp = min(m, 0.92);
   vec3  F0    = mix(vec3(0.06), marbleTint, mClmp);
   float VoH   = max(dot(nrm, V), 0.0);
   vec3  F     = F0 + (1.0 - F0) * pow(1.0 - VoH, 5.0);
@@ -260,27 +231,25 @@ void main(){
   float specAmt = (spec1*0.95 + spec2*0.75) * (0.95 - 0.5*rough);
   vec3  specCol = F * specAmt;
 
-  // Minimum diffuse to avoid too-dark metals
   float minDiffuse = 0.12;
   float diffMix = mix(0.65, 0.18, mClmp);
   float lightNL = (0.55*ndl1 + 0.45*ndl2);
   vec3  diffCol = base * max(minDiffuse, diffMix * (0.35 + lightNL));
 
-  // rim for readability
   float rim = pow(1.0 - max(dot(nrm,V),0.0), 2.2) * 0.12;
   vec3 color = diffCol + specCol + marbleTint*rim;
 
-  // gentle vibrance curve
   color = pow(color, vec3(0.96));
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }
 `;
 
-/* -------- Utilities -------- */
+/* -------- Misc utils -------- */
 function XS32(seed){ let x=seed>>>0||1; return ()=>{ x^=x<<13; x^=x>>>17; x^=x<<5; return (x>>>0)/0xFFFFFFFF; }; }
 function mod(a,n){ return ((a%n)+n)%n; }
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function isHalving(h){ return h>0 && (h % 210000) === 0; }
 
 function hslToRgb(h,s,l){
   let r,g,b;if(s===0){r=g=b=l;}else{
@@ -332,7 +301,7 @@ function fract(x){ return x-Math.floor(x); }
 function sinHash(x){ return Math.sin(x*43758.5453123)*0.5+0.5; }
 function shortHash(h){ return h ? (h.slice(0,10)+'…'+h.slice(-8)) : 'n/a'; }
 
-/* --- Approx difficulty vs hash → luck --- */
+/* --- Difficulty vs hash → luck --- */
 function approxLog2Target(bits){
   const exp = (bits >>> 24) & 0xff;
   const mant = bits & 0x007fffff || 1;
@@ -362,7 +331,9 @@ function buildAtomFromBlock(block){
   const version    = block.version || 0;
   const hash       = block.id || block.hash || "";
 
-  // Palette & PN swap
+  const halving = isHalving(height);
+
+  // Palette & PN swap (ignored in halving draw)
   let colors = paletteFromHeightWide(height);
   const flipPN = ((version>>1)&1)===1;
   if (flipPN) { const tmp = colors.proton; colors.proton = colors.neutron; colors.neutron = tmp; }
@@ -459,7 +430,7 @@ function buildAtomFromBlock(block){
   const wobbleAmp = map(timeSkew, -1, 1, 0.97, 1.03);
   const wobbleFreq = 0.5 + Math.abs(timeSkew)*0.8;
 
-  // Mode from height (sets defaults)
+  // Mode defaults (ignored if halving)
   const mode = height % 4;
   let modeName = '';
   if (mode===0){ modeName='Metal: Swirled'; MARBLE_INT=0.88; MARBLE_SCALE=3.6; }
@@ -467,23 +438,44 @@ function buildAtomFromBlock(block){
   else if (mode===2){ modeName='Metal: Geode';   MARBLE_INT=0.62; MARBLE_SCALE=2.6; }
   else {               modeName='Metal: Neon';    MARBLE_INT=0.40; MARBLE_SCALE=2.0; }
 
-  // NEW: per-block animation parameters
+  // Animation parameters
   const animAmp   = clamp(0.12 + (txCount/6000)*0.35 + ((version&0xF)/15)*0.08, 0.12, 0.60);
   const animSpeed = clamp(0.35 + ((height%12)/12)*0.9 + ((nonce&0xFF)/255)*0.6, 0.35, 1.85);
   const blockPhase= (byteAt(merkleRoot, 7) / 255) * TWO_PI;
 
-  safeText('modeName', modeName);
+  // Halving overrides
+  const halvingColors = {
+    gold:   [255, 215, 64],   // warm gold
+    silver: [200, 210, 225],  // soft silver
+    orange: [255, 136, 0]     // bitcoin-ish orange
+  };
+  const halvingStyle = {
+    halving,
+    nucleusScale,
+    // background pulse & electron pulse speeds
+    bgPulseSpeed: 0.9,
+    ePulseSpeed:  2.6,
+    // fixed metalness/roughness for halving visuals (ignore sliders)
+    metalnessGold: 0.92,
+    roughGold:     3.2,
+    metalnessSilver: 0.88,
+    roughSilver:     3.6,
+    colors: halvingColors
+  };
+
+  safeText('modeName', halving ? 'HALVING MODE' : modeName);
 
   return {
-    block:{ height, hash, timestamp, mediantime, bits, txCount, weight, size, nonce, version, merkleRoot, modeName,
-            luck: +((t2 - h2)/24 + 1.0).toFixed(3) },
+    block:{ height, hash, timestamp, mediantime, bits, txCount, weight, size, nonce, version, merkleRoot,
+            modeName: halving ? 'HALVING MODE' : modeName, luck: +((t2 - h2)/24 + 1.0).toFixed(3) },
     height, Z, N, electrons, shells, radii, speeds, electronAngles, nucleusPoints, colors,
     shellTilt, eccA, eccB, eColorMix, eTiltJitter,
     style:{
       eSizeScale, orbitSpread,
       ringThick, ringAlpha, ringColor: shellColorShifted,
       wobbleAmp, wobbleFreq,
-      animAmp, animSpeed, blockPhase
+      animAmp, animSpeed, blockPhase,
+      ...halvingStyle
     }
   };
 }
@@ -508,23 +500,17 @@ function setup(){
     bgStars.push({x:random(-2800,2800), y:random(-2800,2800), z:random(-2800,2800), s:random(0.4,1.0)});
   }
 
-  // UI events
   document.getElementById('load').addEventListener('click', loadByHeight);
   document.getElementById('latest').addEventListener('click', loadLatest);
-  document.getElementById('marbleInt').addEventListener('input', e=>{
-    MARBLE_INT=parseFloat(e.target.value); safeText('marbleIntVal', MARBLE_INT.toFixed(2));
-  });
-  document.getElementById('marbleScale').addEventListener('input', e=>{
-    MARBLE_SCALE=parseFloat(e.target.value); safeText('marbleScaleVal', MARBLE_SCALE.toFixed(1));
-  });
+  document.getElementById('marbleInt').addEventListener('input', e=>{ MARBLE_INT=parseFloat(e.target.value); safeText('marbleIntVal', MARBLE_INT.toFixed(2)); });
+  document.getElementById('marbleScale').addEventListener('input', e=>{ MARBLE_SCALE=parseFloat(e.target.value); safeText('marbleScaleVal', MARBLE_SCALE.toFixed(1)); });
   document.getElementById('fxRings').addEventListener('change', e=>{ FX_RINGS=e.target.checked; });
 
-  attachUIEventGuards(); // prevent orbit while using UI
+  attachUIEventGuards();
 }
 
 function windowResized(){ resizeCanvas(windowWidth, windowHeight); }
 
-// prevent orbitControl while interacting with UI
 function attachUIEventGuards(){
   const panels = ['ui','fx','blockPanel','infoPanel'].map(id=>document.getElementById(id)).filter(Boolean);
   const down = ()=>{ uiPointerDown = true; };
@@ -540,15 +526,27 @@ function attachUIEventGuards(){
 }
 
 function draw(){
-  if (!uiPointerDown) {
-    orbitControl(1,1,1.5);
+  // Background — Halving overrides to pulsing orange/black
+  if (atom && atom.style.halving){
+    const t = millis()*0.001;
+    const p = 0.5 + 0.5*Math.sin(t * atom.style.bgPulseSpeed * TWO_PI);
+    const o = atom.style.colors.orange; // [255,136,0]
+    const r = Math.round( (1-p)*11 + p*o[0] );
+    const g = Math.round( (1-p)*14 + p*o[1] );
+    const b = Math.round( (1-p)*18 + p*o[2] );
+    background(r,g,b);
+  } else {
+    background(9,12,15);
   }
-  background(9,12,15);
 
-  // starfield
-  push(); noStroke(); ambientMaterial(200);
-  for(const s of bgStars){ push(); translate(s.x,s.y,s.z); sphere(s.s); pop(); }
-  pop();
+  if (!uiPointerDown) orbitControl(1,1,1.5);
+
+  // Optional starfield (skip in halving to keep clean pulse bg)
+  if (!(atom && atom.style.halving)){
+    push(); noStroke(); ambientMaterial(200);
+    for(const s of bgStars){ push(); translate(s.x,s.y,s.z); sphere(s.s); pop(); }
+    pop();
+  }
 
   if(atom){
     const t = millis()*0.001;
@@ -560,6 +558,12 @@ function draw(){
 }
 
 function drawAtom(a, time){
+  if (a.style.halving){
+    drawAtomHalving(a, time);
+    return;
+  }
+
+  // --- Normal (non-halving) path
   // Nucleus
   push();
   const breath = 1.0 + (Math.sin(time * a.style.wobbleFreq*2.0)*0.02) * (a.style.wobbleAmp-1.0);
@@ -613,7 +617,110 @@ function drawAtom(a, time){
   }
 }
 
-// Draw one sphere; if shader fails, fall back to solid color
+// --- Halving Mode draw (overrides)
+function drawAtomHalving(a, time){
+  const gold   = a.style.colors.gold;
+  const silver = a.style.colors.silver;
+
+  // Nucleus (gold)
+  push();
+  const breath = 1.0 + (Math.sin(time * a.style.wobbleFreq*2.0)*0.02) * (a.style.wobbleAmp-1.0);
+  scale(breath, 1.0, 1.0);
+
+  // draw nucleus points in gold (ignore proton/neutron colors)
+  for(const p of a.nucleusPoints){
+    push(); translate(p.x,p.y,p.z);
+    drawOrbFixed(a, gold, gold, NUCLEON_R, time, a.style.metalnessGold, a.style.roughGold);
+    pop();
+  }
+  pop();
+
+  // Soft additive glow around nucleus
+  const baseR = NUCLEUS_BASE_R * (a.style.nucleusScale || 1.0);
+  const glowR = baseR * 2.4;
+  push();
+  resetShader();
+  noStroke();
+  blendMode(ADD);
+  // layered spheres for soft falloff
+  for (let i=0;i<4;i++){
+    const k = (i+1);
+    const alpha = 36 - i*8;     // 36, 28, 20, 12
+    fill(255, 160, 0, alpha);
+    push(); sphere(glowR * (1.0 + i*0.35)); pop();
+  }
+  blendMode(BLEND);
+  pop();
+
+  // Rings (keep for structure, tint faint orange)
+  if (FX_RINGS){
+    for(let i=0;i<a.shells.length;i++){
+      const r=a.radii[i];
+      push(); noFill();
+      stroke(255,136,0, 160);
+      strokeWeight(a.style.ringThick*1.1);
+      beginShape();
+      const steps=160;
+      for(let k=0;k<steps;k++){
+        const ang=(k/steps)*TWO_PI;
+        vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
+      }
+      endShape(CLOSE);
+      pop();
+    }
+  }
+
+  // Electrons (silver, pulsing)
+  const pulseSpeed = a.style.ePulseSpeed || 2.6;
+  for(let i=0;i<a.shells.length;i++){
+    const r=a.radii[i];
+    const aMul=a.eccA[i], bMul=a.eccB[i];
+    for(let j=0;j<a.shells[i];j++){
+      const ang=a.electronAngles[i][j];
+      const tilt=a.shellTilt[i] + a.eTiltJitter[i][j];
+
+      const ex=(r*aMul)*Math.cos(ang);
+      const ey=(r*bMul)*Math.sin(ang)*Math.cos(tilt);
+      const ez=(r*bMul)*Math.sin(ang)*Math.sin(tilt);
+
+      // size pulse with per-electron phase
+      const phase = (i*0.7 + j*1.13);
+      const pulse = 1.0 + 0.22*Math.sin(time*pulseSpeed + phase);
+      const radius = ELECTRON_R * a.style.eSizeScale * pulse;
+
+      push(); translate(ex,ey,ez);
+      drawOrbFixed(a, silver, silver, radius, time, a.style.metalnessSilver, a.style.roughSilver);
+      pop();
+    }
+  }
+}
+
+// Draw metallic orb using global shader but with fixed metal/rough (used for halving)
+function drawOrbFixed(a, colorA255, colorB255, radius, time, metal, rough){
+  noStroke();
+  if (SHADER_OK){
+    try{
+      shader(orbShader);
+      orbShader.setUniform('uColorA', colorA255.map(v=>v/255));
+      orbShader.setUniform('uColorB', colorB255.map(v=>v/255));
+      orbShader.setUniform('uMarbleInt', metal);
+      orbShader.setUniform('uMarbleScale', rough);
+      orbShader.setUniform('uTime', time);
+      orbShader.setUniform('uAnimAmp', 0.0);      // disable marbling animation in halving
+      orbShader.setUniform('uAnimSpeed', 0.0);
+      orbShader.setUniform('uBlockPhase', 0.0);
+      sphere(radius);
+      resetShader();
+      return;
+    }catch(e){
+      SHADER_OK = false; document.getElementById('warn').style.display = 'block'; resetShader();
+    }
+  }
+  ambientMaterial(colorA255[0], colorA255[1], colorA255[2]);
+  sphere(radius);
+}
+
+// Normal draw (animated marbling)
 function drawOrb(a, colorA255, colorB255, radius, time){
   noStroke();
   if (SHADER_OK){
@@ -624,7 +731,6 @@ function drawOrb(a, colorA255, colorB255, radius, time){
       orbShader.setUniform('uMarbleInt', MARBLE_INT);
       orbShader.setUniform('uMarbleScale', MARBLE_SCALE);
       orbShader.setUniform('uTime', time);
-      // NEW animation uniforms from per-block style
       orbShader.setUniform('uAnimAmp', a.style.animAmp || 0.25);
       orbShader.setUniform('uAnimSpeed', a.style.animSpeed || 0.8);
       orbShader.setUniform('uBlockPhase', a.style.blockPhase || 0.0);
@@ -632,10 +738,7 @@ function drawOrb(a, colorA255, colorB255, radius, time){
       resetShader();
       return;
     }catch(e){
-      SHADER_OK = false;
-      document.getElementById('warn').style.display = 'block';
-      console.warn('Shader path failed, using fallback color:', e);
-      resetShader();
+      SHADER_OK = false; document.getElementById('warn').style.display = 'block'; resetShader();
     }
   }
   ambientMaterial(colorA255[0], colorA255[1], colorA255[2]);
@@ -697,7 +800,8 @@ function describeBlock(a){
   const b = a.block || {};
   const date = b.timestamp ? new Date(b.timestamp*1000).toLocaleString() : "n/a";
   const mdate = b.mediantime ? new Date(b.mediantime*1000).toLocaleString() : "n/a";
-  return `<b>Height:</b> ${b.height ?? 'n/a'}<br/>
+  const halvingChip = (a.style.halving? ' <span class="chip warn">Halving Mode</span>' : '');
+  return `<b>Height:</b> ${b.height ?? 'n/a'}${halvingChip}<br/>
           <b>Time:</b> ${date} (median: ${mdate})<br/>
           <b>Tx Count:</b> ${b.txCount ?? 'n/a'}<br/>
           <b>Bits:</b> ${b.bits ?? 'n/a'} &nbsp; <b>Luck:</b> ${b.luck ?? '—'}<br/>
@@ -710,7 +814,7 @@ function updateBlockPanel(a){
   const date = b.timestamp ? new Date(b.timestamp * 1000).toLocaleString() : 'n/a';
   const mdate = b.mediantime ? new Date(b.mediantime * 1000).toLocaleString() : 'n/a';
   const chips = [
-    `<span class="chip">Mode: ${b.modeName||'—'}</span>`,
+    `<span class="chip">${a.style.halving ? 'Halving Mode' : 'Mode: '+(b.modeName||'—')}</span>`,
     `<span class="chip">Z=${a.Z}</span>`,
     `<span class="chip">N≈${a.N}</span>`,
     `<span class="chip">e⁻=${a.electrons}</span>`,
