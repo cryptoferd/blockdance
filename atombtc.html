@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Bitcoin Block Atom — Halving Mode, Animated Marble, UI fixes</title>
+<title>Bitcoin Block Atom — Halving Mode Transparency Fix</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.dom.min.js"></script>
@@ -10,6 +10,7 @@
   :root { --panel-bg: rgba(10,14,18,0.90); --panel-border:#1e2a33; --text:#cfe4ff; --muted:#8fbfe6; --accent:#9fd2ff; }
   html, body { margin:0; height:100%; background:#0b0f12; color:var(--text); font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; }
   canvas { display:block; }
+
   #ui { position: fixed; top:10px; left:10px; z-index:12; background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px rgba(0,0,0,0.35); backdrop-filter: blur(6px); }
   #ui h1 { font-size:14px; margin:0 0 8px; color:var(--accent); font-weight:600; }
   #ui input { width:140px; background:#0e1419; border:1px solid #2b3a44; color:#e6f2ff; border-radius:8px; padding:6px 8px; }
@@ -64,7 +65,7 @@
   <div id="legend" class="panel">
     <div><b>Nucleus:</b> protons / neutrons</div>
     <div><b>Shells:</b> electrons (2n² capacity)</div>
-    <div><b>Colors:</b> deterministic from block height (overridden for Halving blocks)</div>
+    <div><b>Halving:</b> special theme w/ pulsing bg, gold nucleus + glow, silver electrons (overrides)</div>
   </div>
 
   <div id="fx" class="panel">
@@ -91,42 +92,26 @@
     <summary><span class="badge">?</span> Info / Help</summary>
     <div id="infoBody">
       <h3>Halving Mode</h3>
-      <p>For heights divisible by <b>210,000</b>, visuals switch to a special theme:
-        <b>pulsing orange/black background</b>, <b>gold metallic</b> nucleus with a soft
-        <b>glow</b>, and <b>silver metallic</b> electrons that <b>pulse in size</b>.
-        This <u>overrides</u> other effects and slider choices.</p>
-      <h3>General</h3>
-      <p>Surfaces use a seamless metallic shader with animated marbling on normal blocks.</p>
+      <p>At heights divisible by <b>210,000</b>: pulsing orange/black background, <b>gold metallic</b> nucleus with a soft <b>glow</b>, and <b>silver metallic</b> electrons that pulse in size. This overrides other effects.</p>
     </div>
   </details>
 
 <script>
-/* -------- Helpers -------- */
+/* ----------------- Basics ----------------- */
 function safeHTML(id, html){ const el=document.getElementById(id); if(el) el.innerHTML = html; }
 function safeText(id, text){ const el=document.getElementById(id); if(el) el.textContent = text; }
 function escapeHtml(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function setMeta(text){ safeHTML('meta', text); }
 const API = "https://mempool.space/api";
 
-const NUCLEUS_BASE_R = 28;
-const SHELL_R_STEP   = 22;
-const ELECTRON_R     = 3.6;
-const NUCLEON_R      = 2.7;
+const NUCLEUS_BASE_R = 28, SHELL_R_STEP = 22, ELECTRON_R = 3.6, NUCLEON_R = 2.7;
+let MARBLE_INT = 0.85, MARBLE_SCALE = 3.2, FX_RINGS = true;
 
-let MARBLE_INT = 0.85;   // metalness
-let MARBLE_SCALE = 3.2;  // roughness / pattern scale
-let FX_RINGS = true;
-
-let atom = null;
-let orbShader;
-let SHADER_OK = true;
-
-let bgStars = [];
-const BG_STAR_COUNT = 350;
-
+let atom = null, orbShader, SHADER_OK = true;
+let bgStars = [], BG_STAR_COUNT = 350;
 let uiPointerDown = false;
 
-/* -------- Shaders -------- */
+/* ----------------- Shaders ----------------- */
 const ORB_VERT = `
 precision mediump float;
 attribute vec3 aPosition;
@@ -137,17 +122,11 @@ void main(){
   gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(aPosition,1.0));
 }
 `;
-
-const ORB_FRAG = ` // metallic + animated marbling
+const ORB_FRAG = `
 precision mediump float;
 varying vec3 vObjPos;
 uniform vec3  uColorA, uColorB;
-uniform float uMarbleInt;
-uniform float uMarbleScale;
-uniform float uTime;
-uniform float uAnimAmp;
-uniform float uAnimSpeed;
-uniform float uBlockPhase;
+uniform float uMarbleInt, uMarbleScale, uTime, uAnimAmp, uAnimSpeed, uBlockPhase;
 
 float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719))) * 43758.5453); }
 float n3(vec3 p){
@@ -162,7 +141,6 @@ float n3(vec3 p){
   float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
   return mix(n0,n1,u.z);
 }
-
 float stripe2D(vec2 uv, float phase, float f){
   float zoomOsc = 1.0 + uAnimAmp*0.35 * sin(uTime*(0.7+uAnimSpeed) + phase + uBlockPhase);
   uv *= zoomOsc;
@@ -171,16 +149,10 @@ float stripe2D(vec2 uv, float phase, float f){
     n3(vec3(uv*1.1*f + 3.17, uTime*0.28 + phase + 1.7 + uBlockPhase))
   );
   uv += (w1 - 0.5) * (0.35 + 0.45*uAnimAmp);
-  float s = sin( (uv.x*6.2831*f*0.85) + (uv.y*6.2831*f*0.45)
-                 + 3.2*w1.x + (uTime*(0.55+0.6*uAnimSpeed)) + phase + uBlockPhase );
+  float s = sin( (uv.x*6.2831*f*0.85) + (uv.y*6.2831*f*0.45) + 3.2*w1.x + (uTime*(0.55+0.6*uAnimSpeed)) + phase + uBlockPhase );
   return 0.5 + 0.5*s;
 }
-
-float blinnSpec(vec3 n, vec3 l, vec3 v, float shin){
-  vec3 h = normalize(l+v);
-  return pow(max(dot(n,h), 0.0), shin);
-}
-
+float blinnSpec(vec3 n, vec3 l, vec3 v, float shin){ vec3 h = normalize(l+v); return pow(max(dot(n,h),0.0), shin); }
 void main(){
   vec3 p = vObjPos;
   float r = length(p.xy);
@@ -198,8 +170,7 @@ void main(){
   float sy = stripe2D(p.zx, 2.1, f);
   float sz = stripe2D(p.xy, 4.2, f);
   float stripes = sx*w.x + sy*w.y + sz*w.z;
-  float t = smoothstep(0.10, 0.90, stripes);
-  t = pow(t, 0.85);
+  float t = pow(smoothstep(0.10, 0.90, stripes), 0.85);
   vec3 marbleTint = mix(uColorA, uColorB, t);
 
   float roughK = clamp((uMarbleScale - 0.8) / 5.2, 0.0, 1.0);
@@ -238,53 +209,24 @@ void main(){
 
   float rim = pow(1.0 - max(dot(nrm,V),0.0), 2.2) * 0.12;
   vec3 color = diffCol + specCol + marbleTint*rim;
-
   color = pow(color, vec3(0.96));
-
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }
 `;
 
-/* -------- Misc utils -------- */
+/* ----------------- Utils ----------------- */
 function XS32(seed){ let x=seed>>>0||1; return ()=>{ x^=x<<13; x^=x>>>17; x^=x<<5; return (x>>>0)/0xFFFFFFFF; }; }
 function mod(a,n){ return ((a%n)+n)%n; }
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 function isHalving(h){ return h>0 && (h % 210000) === 0; }
 
-function hslToRgb(h,s,l){
-  let r,g,b;if(s===0){r=g=b=l;}else{
-    const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};
-    const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;
-    r=hue2rgb(p,q,h+1/3); g=hue2rgb(p,q,h); b=hue2rgb(p,q,h-1/3);
-  }
-  return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
-}
-function rgbToHsl(r, g, b){
-  r/=255; g/=255; b/=255;
-  const max=Math.max(r,g,b), min=Math.min(r,g,b);
-  let h, s, l=(max+min)/2;
-  if(max===min){ h=s=0; }
-  else{
-    const d=max-min;
-    s=l>0.5 ? d/(2-max-min) : d/(max+min);
-    switch(max){
-      case r: h=(g-b)/d+(g<b?6:0); break;
-      case g: h=(b-r)/d+2; break;
-      case b: h=(r-g)/d+4; break;
-    }
-    h/=6;
-  }
-  return [h,s,l];
-}
-function shiftHue(rgb, deg){
-  const [h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);
-  let hh = (h + (deg/360)) % 1; if(hh<0) hh+=1;
-  return hslToRgb(hh, s, l);
-}
-function mixRGB(a,b,t){ return [ Math.round(a[0]*(1-t)+b[0]*t), Math.round(a[1]*(1-t)+b[1]*t), Math.round(a[2]*(1-t)+b[2]*t) ]; }
+function hslToRgb(h,s,l){ let r,g,b;if(s===0){r=g=b=l;}else{const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;r=hue2rgb(p,q,h+1/3); g=hue2rgb(p,q,h); b=hue2rgb(p,q,h-1/3);} return [Math.round(r*255),Math.round(g*255),Math.round(b*255)]; }
+function rgbToHsl(r,g,b){ r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b); let h, s, l=(max+min)/2; if(max===min){ h=s=0; } else { const d=max-min; s=l>0.5 ? d/(2-max-min) : d/(max+min); switch(max){ case r: h=(g-b)/d+(g<b?6:0); break; case g: h=(b-r)/d+2; break; case b: h=(r-g)/d+4; break; } h/=6; } return [h,s,l]; }
+function shiftHue(rgb, deg){ const [h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]); let hh=(h+(deg/360))%1; if(hh<0) hh+=1; return hslToRgb(hh,s,l); }
+function mixRGB(a,b,t){ return [Math.round(a[0]*(1-t)+b[0]*t), Math.round(a[1]*(1-t)+b[1]*t), Math.round(a[2]*(1-t)+b[2]*t)]; }
 
 function paletteFromHeightWide(height){
-  const rng=XS32(height); const golden=137.50776405003785;
+  const rng=XS32(height), golden=137.50776405003785;
   let baseHue=mod((height*golden)+rng()*45,360);
   let hP=baseHue, hN=mod(baseHue+(90+rng()*120),360), hE=mod(baseHue+(180+rng()*120),360), hS=mod(baseHue+(30+rng()*120),360);
   let sP=0.82+0.18*rng(), lP=0.48+0.12*rng();
@@ -301,247 +243,154 @@ function fract(x){ return x-Math.floor(x); }
 function sinHash(x){ return Math.sin(x*43758.5453123)*0.5+0.5; }
 function shortHash(h){ return h ? (h.slice(0,10)+'…'+h.slice(-8)) : 'n/a'; }
 
-/* --- Difficulty vs hash → luck --- */
-function approxLog2Target(bits){
-  const exp = (bits >>> 24) & 0xff;
-  const mant = bits & 0x007fffff || 1;
-  return Math.log2(mant) + 8*(exp-3);
-}
+function approxLog2Target(bits){ const exp=(bits>>>24)&0xff; const mant=bits&0x007fffff||1; return Math.log2(mant)+8*(exp-3); }
 function approxLog2Hash(hashHex){
-  const hex = (hashHex||'').replace(/[^0-9a-fA-F]/g,'');
-  if(!hex.length) return 0;
+  const hex=(hashHex||'').replace(/[^0-9a-fA-F]/g,''); if(!hex.length) return 0;
   let i=0; while(i<hex.length && hex[i]==='0') i++;
-  const byteStr = hex.substr(i,2) || '01';
-  const lead = parseInt(byteStr,16) || 1;
-  const bitsFromPos = (hex.length - i)/2 * 8;
-  return Math.log2(lead) + bitsFromPos - 8;
+  const byteStr=hex.substr(i,2)||'01'; const lead=parseInt(byteStr,16)||1;
+  const bitsFromPos=(hex.length-i)/2*8;
+  return Math.log2(lead)+bitsFromPos-8;
 }
 
-/* -------- Block → Atom -------- */
+/* ----------------- Block → Atom ----------------- */
 function buildAtomFromBlock(block){
-  const height     = block.height;
-  const txCount    = block.tx_count || 1;
-  const timestamp  = block.timestamp || 0;
-  const mediantime = block.mediantime || timestamp;
-  const bits       = block.bits || 0;
-  const nonce      = block.nonce || 0;
-  const merkleRoot = block.merkle_root || block.merkleRoot || "";
-  const weight     = block.weight || 0;
-  const size       = block.size || 0;
-  const version    = block.version || 0;
-  const hash       = block.id || block.hash || "";
+  const height=block.height, txCount=block.tx_count||1, timestamp=block.timestamp||0, mediantime=block.mediantime||timestamp;
+  const bits=block.bits||0, nonce=block.nonce||0, merkleRoot=block.merkle_root||block.merkleRoot||"";
+  const weight=block.weight||0, size=block.size||0, version=block.version||0, hash=block.id||block.hash||"";
 
-  const halving = isHalving(height);
+  const halving=isHalving(height);
 
-  // Palette & PN swap (ignored in halving draw)
-  let colors = paletteFromHeightWide(height);
-  const flipPN = ((version>>1)&1)===1;
-  if (flipPN) { const tmp = colors.proton; colors.proton = colors.neutron; colors.neutron = tmp; }
+  let colors=paletteFromHeightWide(height);
+  const flipPN=((version>>1)&1)===1; if(flipPN){ const t=colors.proton; colors.proton=colors.neutron; colors.neutron=t; }
 
-  const Z = (height % 118) + 1;
-  const N = (hexByteSum(merkleRoot) % 200);
-  const electrons = Z;
-  const shells = fillShells(electrons);
+  const Z=(height%118)+1, N=(hexByteSum(merkleRoot)%200), electrons=Z, shells=fillShells(electrons);
 
-  // Luck/energy
-  const t2 = approxLog2Target(bits);
-  const h2 = approxLog2Hash(hash);
-  const luck = clamp((t2 - h2)/24 + 1.0, 0.7, 1.5);
+  const t2=approxLog2Target(bits), h2=approxLog2Hash(hash), luck=clamp((t2-h2)/24+1.0, 0.7, 1.5);
+  const speedScale=clamp(map(txCount,50,6000,0.9,1.6),0.7,1.8)*luck;
 
-  // Speeds
-  const speedScale = clamp(map(txCount, 50, 6000, 0.9, 1.6), 0.7, 1.8) * luck;
+  const weightOrSize=weight||size*4;
+  const eSizeScale=map(constrain(weightOrSize,2.8e6,4.0e6),2.8e6,4.0e6,0.90,1.50);
 
-  // Electron size
-  const weightOrSize = weight || size*4;
-  const eSizeScale = map(constrain(weightOrSize, 2.8e6, 4.0e6), 2.8e6, 4.0e6, 0.90, 1.50);
+  const dens=clamp((weight/Math.max(1,size*4)),0.6,1.4);
+  const nonceNorm=(nonce>>>0)/4294967295;
+  let nucleusScale=map(nonceNorm,0,1,0.65,1.10); nucleusScale*=dens; nucleusScale*=1.0/Math.sqrt(luck);
 
-  // Nucleus tightness / density
-  const dens = clamp((weight / Math.max(1, size*4)), 0.6, 1.4);
-  const nonceNorm = (nonce >>> 0) / 4294967295;
-  let nucleusScale = map(nonceNorm, 0, 1, 0.65, 1.10);
-  nucleusScale *= dens;
-  nucleusScale *= 1.0 / Math.sqrt(luck);
+  const spreadTx=map(constrain(txCount,1,6000),1,6000,0.9,1.35);
+  const spreadVer=1.0+((version&0xF)-7.5)*0.01;
+  const orbitSpread=spreadTx*spreadVer;
+  const radii=shells.map((_,i)=>(NUCLEUS_BASE_R*1.3+SHELL_R_STEP*(i+1))*orbitSpread);
 
-  // Radii & spread
-  const spreadTx = map(constrain(txCount, 1, 6000), 1, 6000, 0.9, 1.35);
-  const spreadVer = 1.0 + ((version & 0xF) - 7.5) * 0.01;
-  const orbitSpread = spreadTx * spreadVer;
-  const radii = shells.map((_, i) => (NUCLEUS_BASE_R*1.3 + SHELL_R_STEP*(i+1)) * orbitSpread);
+  const shellTilt=shells.map((_,s)=>map(byteAt(merkleRoot,s*3),0,255,0.05,0.7));
+  const eccA=[], eccB=[]; for(let i=0;i<shells.length;i++){ const rng=XS32(nonce^(i*0x9e3779b1)); const e=rng(); eccA.push(1.0+0.08*e); eccB.push(1.0-0.08*e); }
 
-  // Tilt & eccentricity
-  const shellTilt = shells.map((_, s)=>{
-    const b = byteAt(merkleRoot, s*3);
-    return map(b, 0, 255, 0.05, 0.7);
-  });
-  const eccA = [], eccB = [];
-  for(let i=0;i<shells.length;i++){
-    const rng = XS32(nonce ^ (i*0x9e3779b1));
-    const ecc = rng();
-    eccA.push(1.0 + 0.08*ecc);
-    eccB.push(1.0 - 0.08*ecc);
-  }
-
-  // Per-electron phase / tint bias / tilt jitter
-  const jitterAmp = clamp(map(txCount, 50, 6000, 0.0, 0.45), 0.0, 0.5);
+  const jitterAmp=clamp(map(txCount,50,6000,0.0,0.45),0.0,0.5);
   const electronAngles=[], eColorMix=[], eTiltJitter=[];
   for(let i=0;i<shells.length;i++){
     electronAngles[i]=[]; eColorMix[i]=[]; eTiltJitter[i]=[];
     for(let j=0;j<shells[i];j++){
-      const seedByte = byteAt(merkleRoot, (i*31+j)%Math.max(1,merkleRoot.length));
-      let ang = (seedByte/255) * TWO_PI;
-      const jit = ((byteAt(merkleRoot, i*97+j*11)/255)-0.5) * jitterAmp;
-      ang += jit;
-      electronAngles[i][j] = ang;
-
-      eColorMix[i][j] = clamp((byteAt(merkleRoot, i*53+j*7)/255) * 0.35, 0.0, 0.35);
-      eTiltJitter[i][j] = map(byteAt(merkleRoot, i*19 + j*5), 0, 255, -0.08, 0.08);
+      const sb=byteAt(merkleRoot,(i*31+j)%Math.max(1,merkleRoot.length));
+      let ang=(sb/255)*TWO_PI;
+      const jit=((byteAt(merkleRoot,i*97+j*11)/255)-0.5)*jitterAmp; ang+=jit;
+      electronAngles[i][j]=ang;
+      eColorMix[i][j]=clamp((byteAt(merkleRoot,i*53+j*7)/255)*0.35,0.0,0.35);
+      eTiltJitter[i][j]=map(byteAt(merkleRoot,i*19+j*5),0,255,-0.08,0.08);
     }
   }
 
-  // Nucleus cloud
   const nucleusPoints=[];
-  const nucleusCount = Math.min(900, Z + N);
+  const nucleusCount=Math.min(900,Z+N);
   for(let i=0;i<nucleusCount;i++){
-    const r = NUCLEUS_BASE_R * nucleusScale * (0.55 + Math.random()*0.45);
-    const theta = Math.random()*TWO_PI;
-    const phi = Math.acos(2*Math.random()-1);
-    nucleusPoints.push({
-      x: r*Math.sin(phi)*Math.cos(theta),
-      y: r*Math.sin(phi)*Math.sin(theta),
-      z: r*Math.cos(phi),
-      isProton: i < Z
-    });
+    const r=NUCLEUS_BASE_R*nucleusScale*(0.55+Math.random()*0.45);
+    const th=Math.random()*TWO_PI, ph=Math.acos(2*Math.random()-1);
+    nucleusPoints.push({ x:r*Math.sin(ph)*Math.cos(th), y:r*Math.sin(ph)*Math.sin(th), z:r*Math.cos(ph), isProton:i<Z });
   }
 
-  // Rings
-  const hashLast = lastByte(hash);
-  const ringThickBase = 0.8 + (hashLast/255)*2.0;
-  const ringThick = ringThickBase * ( ((version>>0)&1) ? 1.8 : 1.0 );
-  const ringAlpha = clamp(140 + (luck-1.0)*120, 80, 255);
-  const hueShiftDeg = (hashLast/255 - 0.5) * 36;
-  const shellColorShifted = shiftHue(colors.shell, hueShiftDeg);
+  const hashLast=lastByte(hash);
+  const ringThickBase=0.8+(hashLast/255)*2.0;
+  const ringThick=ringThickBase*(((version>>0)&1)?1.8:1.0);
+  const ringAlpha=clamp(140+(luck-1.0)*120,80,255);
+  const hueShiftDeg=(hashLast/255 - 0.5)*36;
+  const shellColorShifted=shiftHue(colors.shell,hueShiftDeg);
 
-  // Electron speeds + wobble
-  const base = (timestamp % 600) / 600;
-  const noiseSeed = (nonce % 997) / 997;
-  const speeds = shells.map((_, i) => (0.005 + (0.018 * fract(sinHash(base + i*0.137 + noiseSeed)))) * speedScale);
+  const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
+  const speeds=shells.map((_,i)=>(0.005+(0.018*fract(sinHash(base+i*0.137+noiseSeed))))*speedScale);
 
-  const timeSkew = clamp((timestamp - mediantime)/600, -1, 1);
-  const wobbleAmp = map(timeSkew, -1, 1, 0.97, 1.03);
-  const wobbleFreq = 0.5 + Math.abs(timeSkew)*0.8;
+  const timeSkew=clamp((timestamp-mediantime)/600,-1,1);
+  const wobbleAmp=map(timeSkew,-1,1,0.97,1.03), wobbleFreq=0.5+Math.abs(timeSkew)*0.8;
 
-  // Mode defaults (ignored if halving)
-  const mode = height % 4;
-  let modeName = '';
-  if (mode===0){ modeName='Metal: Swirled'; MARBLE_INT=0.88; MARBLE_SCALE=3.6; }
-  else if (mode===1){ modeName='Metal: Brushed'; MARBLE_INT=0.72; MARBLE_SCALE=4.4; }
-  else if (mode===2){ modeName='Metal: Geode';   MARBLE_INT=0.62; MARBLE_SCALE=2.6; }
-  else {               modeName='Metal: Neon';    MARBLE_INT=0.40; MARBLE_SCALE=2.0; }
+  const mode=height%4; let modeName='';
+  if(mode===0){ modeName='Metal: Swirled'; MARBLE_INT=0.88; MARBLE_SCALE=3.6; }
+  else if(mode===1){ modeName='Metal: Brushed'; MARBLE_INT=0.72; MARBLE_SCALE=4.4; }
+  else if(mode===2){ modeName='Metal: Geode';   MARBLE_INT=0.62; MARBLE_SCALE=2.6; }
+  else{               modeName='Metal: Neon';    MARBLE_INT=0.40; MARBLE_SCALE=2.0; }
 
-  // Animation parameters
-  const animAmp   = clamp(0.12 + (txCount/6000)*0.35 + ((version&0xF)/15)*0.08, 0.12, 0.60);
-  const animSpeed = clamp(0.35 + ((height%12)/12)*0.9 + ((nonce&0xFF)/255)*0.6, 0.35, 1.85);
-  const blockPhase= (byteAt(merkleRoot, 7) / 255) * TWO_PI;
+  const animAmp=clamp(0.12+(txCount/6000)*0.35+((version&0xF)/15)*0.08,0.12,0.60);
+  const animSpeed=clamp(0.35+((height%12)/12)*0.9+((nonce&0xFF)/255)*0.6,0.35,1.85);
+  const blockPhase=(byteAt(merkleRoot,7)/255)*TWO_PI;
 
-  // Halving overrides
-  const halvingColors = {
-    gold:   [255, 215, 64],   // warm gold
-    silver: [200, 210, 225],  // soft silver
-    orange: [255, 136, 0]     // bitcoin-ish orange
-  };
-  const halvingStyle = {
-    halving,
-    nucleusScale,
-    // background pulse & electron pulse speeds
-    bgPulseSpeed: 0.9,
-    ePulseSpeed:  2.6,
-    // fixed metalness/roughness for halving visuals (ignore sliders)
-    metalnessGold: 0.92,
-    roughGold:     3.2,
-    metalnessSilver: 0.88,
-    roughSilver:     3.6,
-    colors: halvingColors
+  const halvingColors={ gold:[255,215,64], silver:[200,210,225], orange:[255,136,0] };
+  const halvingStyle={
+    halving, nucleusScale,
+    bgPulseSpeed:0.9, ePulseSpeed:2.6,
+    metalnessGold:0.92, roughGold:3.2,
+    metalnessSilver:0.88, roughSilver:3.6,
+    colors:halvingColors
   };
 
   safeText('modeName', halving ? 'HALVING MODE' : modeName);
 
   return {
     block:{ height, hash, timestamp, mediantime, bits, txCount, weight, size, nonce, version, merkleRoot,
-            modeName: halving ? 'HALVING MODE' : modeName, luck: +((t2 - h2)/24 + 1.0).toFixed(3) },
+            modeName: halving?'HALVING MODE':modeName, luck:+((t2-h2)/24+1.0).toFixed(3) },
     height, Z, N, electrons, shells, radii, speeds, electronAngles, nucleusPoints, colors,
     shellTilt, eccA, eccB, eColorMix, eTiltJitter,
     style:{
-      eSizeScale, orbitSpread,
-      ringThick, ringAlpha, ringColor: shellColorShifted,
-      wobbleAmp, wobbleFreq,
-      animAmp, animSpeed, blockPhase,
+      eSizeScale, orbitSpread, ringThick, ringAlpha, ringColor:shellColorShifted,
+      wobbleAmp, wobbleFreq, animAmp, animSpeed, blockPhase,
       ...halvingStyle
     }
   };
 }
 
-function updateElectrons(a){
-  for(let i=0;i<a.shells.length;i++){
-    for(let j=0;j<a.shells[i];j++){ a.electronAngles[i][j]+=a.speeds[i]; }
-  }
-}
+function updateElectrons(a){ for(let i=0;i<a.shells.length;i++){ for(let j=0;j<a.shells[i];j++){ a.electronAngles[i][j]+=a.speeds[i]; } } }
 
-/* -------- p5 setup/draw -------- */
+/* ----------------- p5 setup/draw ----------------- */
 window.addEventListener('error', e => setMeta('Error: '+e.message));
-
 function setup(){
   createCanvas(windowWidth, windowHeight, WEBGL);
-  setAttributes('antialias', true);
-  frameRate(60);
-
-  orbShader = createShader(ORB_VERT, ORB_FRAG);
-
-  for(let i=0;i<BG_STAR_COUNT;i++){
-    bgStars.push({x:random(-2800,2800), y:random(-2800,2800), z:random(-2800,2800), s:random(0.4,1.0)});
-  }
-
+  setAttributes('antialias', true); frameRate(60);
+  orbShader=createShader(ORB_VERT, ORB_FRAG);
+  for(let i=0;i<BG_STAR_COUNT;i++){ bgStars.push({x:random(-2800,2800), y:random(-2800,2800), z:random(-2800,2800), s:random(0.4,1.0)}); }
   document.getElementById('load').addEventListener('click', loadByHeight);
   document.getElementById('latest').addEventListener('click', loadLatest);
   document.getElementById('marbleInt').addEventListener('input', e=>{ MARBLE_INT=parseFloat(e.target.value); safeText('marbleIntVal', MARBLE_INT.toFixed(2)); });
   document.getElementById('marbleScale').addEventListener('input', e=>{ MARBLE_SCALE=parseFloat(e.target.value); safeText('marbleScaleVal', MARBLE_SCALE.toFixed(1)); });
   document.getElementById('fxRings').addEventListener('change', e=>{ FX_RINGS=e.target.checked; });
-
   attachUIEventGuards();
 }
-
 function windowResized(){ resizeCanvas(windowWidth, windowHeight); }
-
 function attachUIEventGuards(){
-  const panels = ['ui','fx','blockPanel','infoPanel'].map(id=>document.getElementById(id)).filter(Boolean);
-  const down = ()=>{ uiPointerDown = true; };
-  const up   = ()=>{ uiPointerDown = false; };
+  const panels=['ui','fx','blockPanel','infoPanel'].map(id=>document.getElementById(id)).filter(Boolean);
+  const down=()=>{ uiPointerDown=true; }, up=()=>{ uiPointerDown=false; };
   panels.forEach(p=>{
-    p.addEventListener('pointerdown', down);
-    p.addEventListener('pointerup', up);
-    p.addEventListener('pointercancel', up);
-    p.addEventListener('pointerleave', up);
-    p.addEventListener('wheel', (e)=>{ e.stopPropagation(); e.preventDefault(); }, {passive:false});
+    p.addEventListener('pointerdown', down); p.addEventListener('pointerup', up);
+    p.addEventListener('pointercancel', up); p.addEventListener('pointerleave', up);
+    p.addEventListener('wheel', e=>{ e.stopPropagation(); e.preventDefault(); }, {passive:false});
   });
   document.addEventListener('pointerup', up);
 }
 
 function draw(){
-  // Background — Halving overrides to pulsing orange/black
+  // Halving pulsing background
   if (atom && atom.style.halving){
-    const t = millis()*0.001;
-    const p = 0.5 + 0.5*Math.sin(t * atom.style.bgPulseSpeed * TWO_PI);
-    const o = atom.style.colors.orange; // [255,136,0]
-    const r = Math.round( (1-p)*11 + p*o[0] );
-    const g = Math.round( (1-p)*14 + p*o[1] );
-    const b = Math.round( (1-p)*18 + p*o[2] );
+    const t=millis()*0.001; const p=0.5+0.5*Math.sin(t*atom.style.bgPulseSpeed*TWO_PI);
+    const o=atom.style.colors.orange;
+    const r=Math.round((1-p)*11 + p*o[0]), g=Math.round((1-p)*14 + p*o[1]), b=Math.round((1-p)*18 + p*o[2]);
     background(r,g,b);
-  } else {
-    background(9,12,15);
-  }
+  } else { background(9,12,15); }
 
   if (!uiPointerDown) orbitControl(1,1,1.5);
 
-  // Optional starfield (skip in halving to keep clean pulse bg)
   if (!(atom && atom.style.halving)){
     push(); noStroke(); ambientMaterial(200);
     for(const s of bgStars){ push(); translate(s.x,s.y,s.z); sphere(s.s); pop(); }
@@ -549,7 +398,7 @@ function draw(){
   }
 
   if(atom){
-    const t = millis()*0.001;
+    const t=millis()*0.001;
     rotateY(t*0.07 + Math.sin(t*atom.style.wobbleFreq)*0.02);
     rotateX(Math.sin(t*0.23)*0.05);
     drawAtom(atom, t);
@@ -558,13 +407,9 @@ function draw(){
 }
 
 function drawAtom(a, time){
-  if (a.style.halving){
-    drawAtomHalving(a, time);
-    return;
-  }
+  if (a.style.halving){ drawAtomHalving(a, time); return; }
 
-  // --- Normal (non-halving) path
-  // Nucleus
+  // Normal path (animated marble)
   push();
   const breath = 1.0 + (Math.sin(time * a.style.wobbleFreq*2.0)*0.02) * (a.style.wobbleAmp-1.0);
   scale(breath, 1.0, 1.0);
@@ -577,57 +422,37 @@ function drawAtom(a, time){
   }
   pop();
 
-  // Rings
   if (FX_RINGS){
     for(let i=0;i<a.shells.length;i++){
       const r=a.radii[i];
       push(); noFill();
       stroke(a.style.ringColor[0],a.style.ringColor[1],a.style.ringColor[2], a.style.ringAlpha);
       strokeWeight(a.style.ringThick);
-      beginShape();
-      const steps=160;
-      for(let k=0;k<steps;k++){
-        const ang=(k/steps)*TWO_PI;
-        vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
-      }
-      endShape(CLOSE);
-      pop();
+      beginShape(); const steps=160;
+      for(let k=0;k<steps;k++){ const ang=(k/steps)*TWO_PI; vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
+      endShape(CLOSE); pop();
     }
   }
 
-  // Electrons
   for(let i=0;i<a.shells.length;i++){
-    const r=a.radii[i];
-    const aMul=a.eccA[i], bMul=a.eccB[i];
+    const r=a.radii[i], aMul=a.eccA[i], bMul=a.eccB[i];
     for(let j=0;j<a.shells[i];j++){
-      const ang=a.electronAngles[i][j];
-      const tilt=a.shellTilt[i] + a.eTiltJitter[i][j];
-
-      const ex=(r*aMul)*Math.cos(ang);
-      const ey=(r*bMul)*Math.sin(ang)*Math.cos(tilt);
-      const ez=(r*bMul)*Math.sin(ang)*Math.sin(tilt);
-
-      const mixT = a.eColorMix[i][j];
-      const eCol = mixRGB(a.colors.electron, a.style.ringColor, mixT);
-
-      push(); translate(ex,ey,ez);
-      drawOrb(a, eCol, a.style.ringColor, ELECTRON_R * a.style.eSizeScale, time);
-      pop();
+      const ang=a.electronAngles[i][j], tilt=a.shellTilt[i]+a.eTiltJitter[i][j];
+      const ex=(r*aMul)*Math.cos(ang), ey=(r*bMul)*Math.sin(ang)*Math.cos(tilt), ez=(r*bMul)*Math.sin(ang)*Math.sin(tilt);
+      const mixT=a.eColorMix[i][j], eCol=mixRGB(a.colors.electron, a.style.ringColor, mixT);
+      push(); translate(ex,ey,ez); drawOrb(a, eCol, a.style.ringColor, ELECTRON_R * a.style.eSizeScale, time); pop();
     }
   }
 }
 
-// --- Halving Mode draw (overrides)
+/* ---------- HALVING MODE (fixed transparency) ---------- */
 function drawAtomHalving(a, time){
-  const gold   = a.style.colors.gold;
-  const silver = a.style.colors.silver;
+  const gold=a.style.colors.gold, silver=a.style.colors.silver;
 
-  // Nucleus (gold)
+  // 1) Nucleus (gold)
   push();
-  const breath = 1.0 + (Math.sin(time * a.style.wobbleFreq*2.0)*0.02) * (a.style.wobbleAmp-1.0);
+  const breath=1.0 + (Math.sin(time*a.style.wobbleFreq*2.0)*0.02) * (a.style.wobbleAmp-1.0);
   scale(breath, 1.0, 1.0);
-
-  // draw nucleus points in gold (ignore proton/neutron colors)
   for(const p of a.nucleusPoints){
     push(); translate(p.x,p.y,p.z);
     drawOrbFixed(a, gold, gold, NUCLEON_R, time, a.style.metalnessGold, a.style.roughGold);
@@ -635,67 +460,63 @@ function drawAtomHalving(a, time){
   }
   pop();
 
-  // Soft additive glow around nucleus
-  const baseR = NUCLEUS_BASE_R * (a.style.nucleusScale || 1.0);
-  const glowR = baseR * 2.4;
-  push();
-  resetShader();
-  noStroke();
-  blendMode(ADD);
-  // layered spheres for soft falloff
-  for (let i=0;i<4;i++){
-    const k = (i+1);
-    const alpha = 36 - i*8;     // 36, 28, 20, 12
-    fill(255, 160, 0, alpha);
-    push(); sphere(glowR * (1.0 + i*0.35)); pop();
-  }
-  blendMode(BLEND);
-  pop();
-
-  // Rings (keep for structure, tint faint orange)
+  // 2) Rings (subtle orange)
   if (FX_RINGS){
     for(let i=0;i<a.shells.length;i++){
       const r=a.radii[i];
-      push(); noFill();
-      stroke(255,136,0, 160);
-      strokeWeight(a.style.ringThick*1.1);
-      beginShape();
-      const steps=160;
-      for(let k=0;k<steps;k++){
-        const ang=(k/steps)*TWO_PI;
-        vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
-      }
-      endShape(CLOSE);
-      pop();
+      push(); noFill(); stroke(255,136,0, 160); strokeWeight(a.style.ringThick*1.1);
+      beginShape(); const steps=160;
+      for(let k=0;k<steps;k++){ const ang=(k/steps)*TWO_PI; vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
+      endShape(CLOSE); pop();
     }
   }
 
-  // Electrons (silver, pulsing)
-  const pulseSpeed = a.style.ePulseSpeed || 2.6;
+  // 3) Electrons (silver, pulsing)
+  const pulseSpeed=a.style.ePulseSpeed||2.6;
   for(let i=0;i<a.shells.length;i++){
-    const r=a.radii[i];
-    const aMul=a.eccA[i], bMul=a.eccB[i];
+    const r=a.radii[i], aMul=a.eccA[i], bMul=a.eccB[i];
     for(let j=0;j<a.shells[i];j++){
-      const ang=a.electronAngles[i][j];
-      const tilt=a.shellTilt[i] + a.eTiltJitter[i][j];
-
-      const ex=(r*aMul)*Math.cos(ang);
-      const ey=(r*bMul)*Math.sin(ang)*Math.cos(tilt);
-      const ez=(r*bMul)*Math.sin(ang)*Math.sin(tilt);
-
-      // size pulse with per-electron phase
-      const phase = (i*0.7 + j*1.13);
-      const pulse = 1.0 + 0.22*Math.sin(time*pulseSpeed + phase);
-      const radius = ELECTRON_R * a.style.eSizeScale * pulse;
-
-      push(); translate(ex,ey,ez);
-      drawOrbFixed(a, silver, silver, radius, time, a.style.metalnessSilver, a.style.roughSilver);
-      pop();
+      const ang=a.electronAngles[i][j], tilt=a.shellTilt[i]+a.eTiltJitter[i][j];
+      const ex=(r*aMul)*Math.cos(ang), ey=(r*bMul)*Math.sin(ang)*Math.cos(tilt), ez=(r*bMul)*Math.sin(ang)*Math.sin(tilt);
+      const phase=(i*0.7 + j*1.13), pulse=1.0 + 0.22*Math.sin(time*pulseSpeed + phase);
+      const radius=ELECTRON_R * a.style.eSizeScale * pulse;
+      push(); translate(ex,ey,ez); drawOrbFixed(a, silver, silver, radius, time, a.style.metalnessSilver, a.style.roughSilver); pop();
     }
   }
+
+  // 4) Soft glow OVERLAY (draw last, no depth test/writes)  << FIX
+  drawNucleusGlowOverlay(a);
 }
 
-// Draw metallic orb using global shader but with fixed metal/rough (used for halving)
+// Pure additive glow that never occludes objects
+function drawNucleusGlowOverlay(a){
+  const gl = drawingContext; // WebGLRenderingContext
+  push();
+  resetShader();
+  noStroke();
+  // Disable depth testing & writing so the halo doesn't block electrons
+  gl.disable(gl.DEPTH_TEST);
+  gl.depthMask(false);
+  blendMode(ADD);
+
+  const baseR = NUCLEUS_BASE_R * (a.style.nucleusScale || 1.0);
+  const glowR = baseR * 2.8;          // slightly larger for softness
+  const layers = 5;                    // more layers => smoother edge
+  for (let i=0;i<layers;i++){
+    const t = i/(layers-1);
+    const alpha = Math.round(28 * (1.0 - t)); // 28 → 0
+    fill(255, 160, 0, alpha);
+    push(); sphere(glowR * (1.0 + t*0.55)); pop();
+  }
+
+  // Restore state
+  blendMode(BLEND);
+  gl.depthMask(true);
+  gl.enable(gl.DEPTH_TEST);
+  pop();
+}
+
+/* -------- Sphere draw helpers -------- */
 function drawOrbFixed(a, colorA255, colorB255, radius, time, metal, rough){
   noStroke();
   if (SHADER_OK){
@@ -706,21 +527,15 @@ function drawOrbFixed(a, colorA255, colorB255, radius, time, metal, rough){
       orbShader.setUniform('uMarbleInt', metal);
       orbShader.setUniform('uMarbleScale', rough);
       orbShader.setUniform('uTime', time);
-      orbShader.setUniform('uAnimAmp', 0.0);      // disable marbling animation in halving
+      orbShader.setUniform('uAnimAmp', 0.0);
       orbShader.setUniform('uAnimSpeed', 0.0);
       orbShader.setUniform('uBlockPhase', 0.0);
       sphere(radius);
-      resetShader();
-      return;
-    }catch(e){
-      SHADER_OK = false; document.getElementById('warn').style.display = 'block'; resetShader();
-    }
+      resetShader(); return;
+    }catch(e){ SHADER_OK=false; document.getElementById('warn').style.display='block'; resetShader(); }
   }
-  ambientMaterial(colorA255[0], colorA255[1], colorA255[2]);
-  sphere(radius);
+  ambientMaterial(colorA255[0], colorA255[1], colorA255[2]); sphere(radius);
 }
-
-// Normal draw (animated marbling)
 function drawOrb(a, colorA255, colorB255, radius, time){
   noStroke();
   if (SHADER_OK){
@@ -735,72 +550,45 @@ function drawOrb(a, colorA255, colorB255, radius, time){
       orbShader.setUniform('uAnimSpeed', a.style.animSpeed || 0.8);
       orbShader.setUniform('uBlockPhase', a.style.blockPhase || 0.0);
       sphere(radius);
-      resetShader();
-      return;
-    }catch(e){
-      SHADER_OK = false; document.getElementById('warn').style.display = 'block'; resetShader();
-    }
+      resetShader(); return;
+    }catch(e){ SHADER_OK=false; document.getElementById('warn').style.display='block'; resetShader(); }
   }
-  ambientMaterial(colorA255[0], colorA255[1], colorA255[2]);
-  sphere(radius);
+  ambientMaterial(colorA255[0], colorA255[1], colorA255[2]); sphere(radius);
 }
 
-/* -------- Data loading & UI -------- */
+/* ----------------- Data loading ----------------- */
 function syncSliders(){
-  const mi = document.getElementById('marbleInt');
-  const ms = document.getElementById('marbleScale');
-  if (mi) { mi.value = String(MARBLE_INT); safeText('marbleIntVal', (+MARBLE_INT).toFixed(2)); }
-  if (ms) { ms.value = String(MARBLE_SCALE); safeText('marbleScaleVal', (+MARBLE_SCALE).toFixed(1)); }
+  const mi=document.getElementById('marbleInt'), ms=document.getElementById('marbleScale');
+  if (mi){ mi.value=String(MARBLE_INT); safeText('marbleIntVal', (+MARBLE_INT).toFixed(2)); }
+  if (ms){ ms.value=String(MARBLE_SCALE); safeText('marbleScaleVal', (+MARBLE_SCALE).toFixed(1)); }
 }
-
 async function loadByHeight(){
-  const val = document.getElementById('height').value.trim();
-  if(!val) return setMeta("Enter a block height.");
-  const h = parseInt(val,10);
-  if(isNaN(h) || h<0) return setMeta("Invalid height.");
+  const val=document.getElementById('height').value.trim(); if(!val) return setMeta("Enter a block height.");
+  const h=parseInt(val,10); if(isNaN(h)||h<0) return setMeta("Invalid height.");
   try{
     setMeta("Resolving hash for height "+h+" …");
-    const hash = await fetchText(API + "/block-height/" + h);
-    if(!hash || hash.length<10) throw new Error("Unexpected response for block height.");
+    const hash=await fetchText(API+"/block-height/"+h); if(!hash||hash.length<10) throw new Error("Unexpected response for block height.");
     setMeta("Fetching block "+hash.slice(0,16)+"…");
-    const block = await fetchJSON(API + "/block/" + hash);
-    atom = buildAtomFromBlock(block);
-    syncSliders();
-    setMeta(describeBlock(atom));
-    updateBlockPanel(atom);
+    const block=await fetchJSON(API+"/block/"+hash);
+    atom=buildAtomFromBlock(block); syncSliders(); setMeta(describeBlock(atom)); updateBlockPanel(atom);
   }catch(e){ console.error(e); setMeta("Error: "+e.message); }
 }
 async function loadLatest(){
   try{
     setMeta("Fetching latest block…");
-    const arr = await fetchJSON(API + "/blocks");
-    if(!Array.isArray(arr) || arr.length===0) throw new Error("No blocks returned.");
-    const latest = arr[0];
-    const hash = latest.id || latest.hash;
-    const block = await fetchJSON(API + "/block/" + hash);
-    atom = buildAtomFromBlock(block);
-    syncSliders();
-    setMeta(describeBlock(atom));
-    updateBlockPanel(atom);
+    const arr=await fetchJSON(API+"/blocks"); if(!Array.isArray(arr)||arr.length===0) throw new Error("No blocks returned.");
+    const hash=arr[0].id||arr[0].hash;
+    const block=await fetchJSON(API+"/block/"+hash);
+    atom=buildAtomFromBlock(block); syncSliders(); setMeta(describeBlock(atom)); updateBlockPanel(atom);
   }catch(e){ console.error(e); setMeta("Error: "+e.message); }
 }
-
-async function fetchJSON(url){
-  const res = await fetch(url, { headers: { 'accept': 'application/json' } });
-  if(!res.ok){ if(res.status===404) throw new Error('Resource not found on mempool.space'); throw new Error(`HTTP ${res.status} on ${url}`); }
-  return await res.json();
-}
-async function fetchText(url){
-  const res = await fetch(url, { headers: { 'accept': 'text/plain' } });
-  if(!res.ok){ if(res.status===404) throw new Error('Block height not found on mempool.space'); throw new Error(`HTTP ${res.status} on ${url}`); }
-  return (await res.text()).trim();
-}
+async function fetchJSON(url){ const res=await fetch(url,{headers:{'accept':'application/json'}}); if(!res.ok){ if(res.status===404) throw new Error('Resource not found on mempool.space'); throw new Error(`HTTP ${res.status} on ${url}`);} return await res.json(); }
+async function fetchText(url){ const res=await fetch(url,{headers:{'accept':'text/plain'}}); if(!res.ok){ if(res.status===404) throw new Error('Block height not found on mempool.space'); throw new Error(`HTTP ${res.status} on ${url}`);} return (await res.text()).trim(); }
 
 function describeBlock(a){
-  const b = a.block || {};
-  const date = b.timestamp ? new Date(b.timestamp*1000).toLocaleString() : "n/a";
-  const mdate = b.mediantime ? new Date(b.mediantime*1000).toLocaleString() : "n/a";
-  const halvingChip = (a.style.halving? ' <span class="chip warn">Halving Mode</span>' : '');
+  const b=a.block||{}, date=b.timestamp?new Date(b.timestamp*1000).toLocaleString():"n/a";
+  const mdate=b.mediantime?new Date(b.mediantime*1000).toLocaleString():"n/a";
+  const halvingChip=(a.style.halving? ' <span class="chip warn">Halving Mode</span>' : '');
   return `<b>Height:</b> ${b.height ?? 'n/a'}${halvingChip}<br/>
           <b>Time:</b> ${date} (median: ${mdate})<br/>
           <b>Tx Count:</b> ${b.txCount ?? 'n/a'}<br/>
@@ -809,20 +597,14 @@ function describeBlock(a){
           <b>Atom:</b> Z=${a.Z} (p), N≈${a.N} (n), e⁻=${a.electrons}, shells=${a.shells.join(', ')}`;
 }
 function updateBlockPanel(a){
-  const b = a.block || {};
+  const b=a.block||{}, date=b.timestamp?new Date(b.timestamp*1000).toLocaleString():'n/a';
+  const mdate=b.mediantime?new Date(b.mediantime*1000).toLocaleString():'n/a';
   safeText('blkTitle', b.height ? `#${b.height} — ${shortHash(b.hash)}` : '(none loaded)');
-  const date = b.timestamp ? new Date(b.timestamp * 1000).toLocaleString() : 'n/a';
-  const mdate = b.mediantime ? new Date(b.mediantime * 1000).toLocaleString() : 'n/a';
-  const chips = [
-    `<span class="chip">${a.style.halving ? 'Halving Mode' : 'Mode: '+(b.modeName||'—')}</span>`,
-    `<span class="chip">Z=${a.Z}</span>`,
-    `<span class="chip">N≈${a.N}</span>`,
-    `<span class="chip">e⁻=${a.electrons}</span>`,
-    `<span class="chip">shells=[${a.shells.join(', ')}]</span>`,
-    `<span class="chip">Luck=${b.luck}</span>`
-  ];
-  safeHTML('blkBody', `
-    <div style="margin-bottom:6px;">${chips.join(' ')}</div>
+  const chips=[ `<span class="chip">${a.style.halving?'Halving Mode':'Mode: '+(b.modeName||'—')}</span>`,
+                `<span class="chip">Z=${a.Z}</span>`, `<span class="chip">N≈${a.N}</span>`,
+                `<span class="chip">e⁻=${a.electrons}</span>`, `<span class="chip">shells=[${a.shells.join(', ')}]</span>`,
+                `<span class="chip">Luck=${b.luck}</span>` ];
+  safeHTML('blkBody', `<div style="margin-bottom:6px;">${chips.join(' ')}</div>
     <table>
       <tr><td>Height</td><td>${b.height ?? 'n/a'}</td></tr>
       <tr><td>Hash</td><td><code>${shortHash(b.hash)}</code></td></tr>
@@ -834,8 +616,7 @@ function updateBlockPanel(a){
       <tr><td>Bits</td><td>${b.bits ?? 'n/a'}</td></tr>
       <tr><td>Nonce</td><td>${b.nonce ?? 'n/a'}</td></tr>
       <tr><td>Merkle root</td><td><code>${shortHash(b.merkleRoot)}</code></td></tr>
-    </table>
-  `);
+    </table>`);
 }
 </script>
 </body>
