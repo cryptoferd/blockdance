@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Bitcoin Block Atom — Seamless Metallic + Block-Driven Features</title>
+<title>Bitcoin Block Atom — Metallic + Vibrant Marble, UI fixes</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.dom.min.js"></script>
@@ -69,10 +69,10 @@
   <div id="fx" class="panel">
     <div style="font-weight:600;color:#cfe4ff;margin-bottom:6px;">Visual dials</div>
     <label>Mode from height <span id="modeName" style="color:#d7ecff;font-weight:600;">(auto)</span></label>
-    <label>Marble intensity <span id="marbleIntVal">0.85</span>
+    <label>Metalness <span id="marbleIntVal">0.85</span>
       <input id="marbleInt" type="range" min="0" max="1" step="0.01" value="0.85"/>
     </label>
-    <label>Marble scale <span id="marbleScaleVal">3.2</span>
+    <label>Roughness/Grain <span id="marbleScaleVal">3.2</span>
       <input id="marbleScale" type="range" min="0.8" max="6.0" step="0.1" value="3.2"/>
     </label>
     <label><input id="fxRings" type="checkbox" checked /> Show shell rings</label>
@@ -86,45 +86,29 @@
     <div id="blkBody"><div style="margin-bottom:6px;">Load a block (height or Latest) to populate details.</div></div>
   </details>
 
-  <!-- NEW: Info / Help collapsible -->
   <details id="infoPanel" class="panel" open>
     <summary><span class="badge">?</span> Info / Help</summary>
     <div id="infoBody">
       <h3>What this is</h3>
-      <p>This renders a stylized atom where the “chemistry” is driven by a Bitcoin block. Colors come from <b>height</b>; motion, sizes, tilts and accents come from header fields (tx count, nonce, bits, etc.). The surface is a <b>seamless metallic</b> shader—no UV seams.</p>
-
+      <p>This renders a stylized atom where the “chemistry” is driven by a Bitcoin block. Surfaces are a <b>seamless metallic</b> shader with <b>vibrant marbling</b>—no UV seams.</p>
       <h3>How to use</h3>
       <ul>
-        <li><b>Load a block:</b> Enter a height and press <code>Load</code>, or hit <code>Latest</code>.</li>
-        <li><b>Navigate 3D:</b> Drag = rotate · Scroll/Pinch = zoom · Right-drag (or 3-finger) = pan.</li>
-        <li><b>Tune look:</b> The two sliders map to the metallic shader:
-          <ul>
-            <li><i>Marble intensity</i> = <b>Metalness</b> (0..1)</li>
-            <li><i>Marble scale</i> = <b>Roughness grain</b> (higher → finer brush, sharper highlights)</li>
-          </ul>
-        </li>
-        <li><b>Details:</b> Open the “Block Details” panel (bottom-right) to see the header fields used.</li>
+        <li>Enter a height and press <code>Load</code>, or hit <code>Latest</code>.</li>
+        <li>Rotate = drag · Zoom = scroll/pinch · Pan = right-drag / 3-finger (touch).</li>
+        <li>Sliders: <b>Metalness</b> (left = paint, right = chrome) and <b>Roughness/Grain</b> (left = soft, right = sharp).</li>
       </ul>
-
       <h3>Block → Visual mapping</h3>
       <table>
-        <tr><td><b>height</b></td><td>Global palette + effect mode (names shown next to “Mode”).</td></tr>
-        <tr><td><b>tx_count</b></td><td>Electron orbit speeds (busier → faster), slight phase “raggedness”.</td></tr>
-        <tr><td><b>weight / size</b></td><td>Electron size scale (heavier → larger).</td></tr>
-        <tr><td><b>nonce</b></td><td>Shell tilt pattern + orbit eccentricity (subtle ellipses).</td></tr>
+        <tr><td><b>height</b></td><td>Palette & effect mode (shown as “Mode”).</td></tr>
+        <tr><td><b>tx_count</b></td><td>Orbit speeds + ragged phase.</td></tr>
+        <tr><td><b>weight / size</b></td><td>Electron size scale.</td></tr>
+        <tr><td><b>nonce</b></td><td>Shell tilt + orbit eccentricity.</td></tr>
         <tr><td><b>version</b></td><td>Proton/Neutron color swap, ring thickness toggle.</td></tr>
-        <tr><td><b>bits + hash</b></td><td>“Luck/energy” → speed multiplier, nucleus tightness, ring alpha/width.</td></tr>
-        <tr><td><b>timestamp / mediantime</b></td><td>Gentle spin wobble & breathing scale.</td></tr>
-        <tr><td><b>merkle_root</b></td><td>Per-electron phase, color bias, tilt jitter (high entropy → variety).</td></tr>
+        <tr><td><b>bits + hash</b></td><td>“Luck/energy”: speed, nucleus tightness, ring alpha/width.</td></tr>
+        <tr><td><b>timestamp / mediantime</b></td><td>Spin wobble & breathing.</td></tr>
+        <tr><td><b>merkle_root</b></td><td>Per-electron phase, color bias, tilt jitter.</td></tr>
         <tr><td><b>hash (last byte)</b></td><td>Ring hue shift and base thickness.</td></tr>
       </table>
-
-      <h3>Tips</h3>
-      <ul>
-        <li>On older devices, uncheck <b>Show shell rings</b> to reduce overdraw.</li>
-        <li>If you see “Shader fallback” above, your browser disabled custom shaders; you’ll still get colored solids.</li>
-        <li>Try different heights to sample very different palettes (height is hashed with a golden-angle hue walk).</li>
-      </ul>
     </div>
   </details>
 
@@ -143,8 +127,8 @@ const SHELL_R_STEP   = 22;
 const ELECTRON_R     = 3.6;
 const NUCLEON_R      = 2.7;
 
-let MARBLE_INT = 0.85;   // used as metalness in metallic shader
-let MARBLE_SCALE = 3.2;  // used as roughness control
+let MARBLE_INT = 0.85;   // used as metalness
+let MARBLE_SCALE = 3.2;  // used as roughness / grain
 let FX_RINGS = true;
 
 let atom = null;
@@ -154,7 +138,9 @@ let SHADER_OK = true;
 let bgStars = [];
 const BG_STAR_COUNT = 350;
 
-/* -------- Seamless tri-planar metallic shader -------- */
+let uiPointerDown = false; // NEW: gate orbitControl when using UI
+
+/* -------- Seamless metallic + vibrant marbling shader -------- */
 const ORB_VERT = `
 precision mediump float;
 attribute vec3 aPosition;
@@ -166,6 +152,8 @@ void main(){
 }
 `;
 
+// Adds strong tri-planar marble coloration into a metallic BRDF pipeline.
+// Also keeps a small diffuse base so full metalness isn't too dark.
 const ORB_FRAG = `
 precision mediump float;
 varying vec3 vObjPos;
@@ -188,10 +176,14 @@ float n3(vec3 p){
   return mix(n0,n1,u.z);
 }
 
-float brush2D(vec2 uv, float freq){
-  float w = n3(vec3(uv*0.8, uTime*0.1));
-  float s = abs(sin(uv.x*freq + w*2.0));
-  return s;
+float stripe2D(vec2 uv, float phase, float f){
+  vec2 warp = vec2(
+    n3(vec3(uv*f*0.7, uTime*0.22 + phase)),
+    n3(vec3(uv*f*0.9 + 5.17, uTime*0.19 + phase))
+  );
+  uv += 0.22 * (warp - 0.5);
+  float s = sin( (uv.x*6.2831*f*0.8) + (uv.y*6.2831*f*0.45) + 3.5*warp.x + uTime*0.45 + phase );
+  return 0.5 + 0.5*s;
 }
 
 float blinnSpec(vec3 n, vec3 l, vec3 v, float shin){
@@ -206,16 +198,26 @@ void main(){
   vec3 w = pow(abs(n), vec3(6.0));
   w /= max(w.x + w.y + w.z, 1e-4);
 
-  vec3 baseTint = mix(uColorA, uColorB, 0.5);
+  float f = uMarbleScale;
 
+  // Vibrant marbling (color blend)
+  float sx = stripe2D(vObjPos.yz, 0.0, f);
+  float sy = stripe2D(vObjPos.zx, 2.1, f);
+  float sz = stripe2D(vObjPos.xy, 4.2, f);
+  float stripes = sx*w.x + sy*w.y + sz*w.z;
+  float t = smoothstep(0.15, 0.85, stripes); // high contrast
+  vec3 marbleTint = mix(uColorA, uColorB, t);
+
+  // Brushed grain on top (subtle)
   float roughK = clamp((uMarbleScale - 0.8) / 5.2, 0.0, 1.0);
   float freq = mix(40.0, 140.0, roughK);
-  float gx = brush2D(vObjPos.yz, freq);
-  float gy = brush2D(vObjPos.zx, freq);
-  float gz = brush2D(vObjPos.xy, freq);
+  float gx = stripe2D(vObjPos.yz, 1.7, freq);
+  float gy = stripe2D(vObjPos.zx, 3.8, freq);
+  float gz = stripe2D(vObjPos.xy, 5.9, freq);
   float grain = (gx*w.x + gy*w.y + gz*w.z);
-  vec3 base = baseTint * (0.85 + 0.15 * grain);
+  vec3 base = marbleTint * (0.83 + 0.17 * grain);
 
+  // lighting (two dirs + view)
   vec3 L1 = normalize(vec3(0.6, 0.7, 0.5));
   vec3 L2 = normalize(vec3(-0.4, 0.65, -0.2));
   vec3 V  = normalize(vec3(0.0, 0.0, 1.0));
@@ -224,24 +226,32 @@ void main(){
   float ndl2 = max(dot(n, L2), 0.0);
 
   float rough = mix(0.55, 0.12, roughK);
-  float shin  = mix(28.0, 180.0, 1.0 - rough);
+  float shin  = mix(36.0, 200.0, 1.0 - rough); // brighter highs
 
-  float m = clamp(uMarbleInt, 0.0, 1.0);
-  vec3  F0 = mix(vec3(0.04), baseTint, m);
-  float VoH = max(dot(n, V), 0.0);
-  vec3  F = F0 + (1.0 - F0) * pow(1.0 - VoH, 5.0);
+  float m     = clamp(uMarbleInt, 0.0, 1.0);
+  float mClmp = min(m, 0.92);                  // cap metalness so it never goes pitch black
+  vec3  F0    = mix(vec3(0.06), marbleTint, mClmp);
+  float VoH   = max(dot(n, V), 0.0);
+  vec3  F     = F0 + (1.0 - F0) * pow(1.0 - VoH, 5.0);
 
   float spec1 = blinnSpec(n, L1, V, shin);
   float spec2 = blinnSpec(n, L2, V, shin);
-  float specAmt = (spec1*0.9 + spec2*0.7) * (0.9 - 0.5*rough);
+  float specAmt = (spec1*0.95 + spec2*0.75) * (0.95 - 0.5*rough);
 
   vec3  specCol = F * specAmt;
-  vec3  diffCol = base * (1.0 - m) * (0.10 + 0.75*ndl1 + 0.55*ndl2);
 
-  vec3 color = diffCol + specCol;
+  // Keep a minimum diffuse even for metals so fully-right slider isn't too dark
+  float minDiffuse = 0.12; // 12% base
+  float diffMix = mix(0.65, 0.18, mClmp); // less diffuse as metalness rises
+  float lightNL = (0.55*ndl1 + 0.45*ndl2);
+  vec3  diffCol = base * max(minDiffuse, diffMix * (0.35 + lightNL));
 
-  float rim = pow(1.0 - max(dot(n,V),0.0), 2.5) * 0.12;
-  color += baseTint * rim;
+  // rim for readability
+  float rim = pow(1.0 - max(dot(n,V),0.0), 2.2) * 0.12;
+  vec3 color = diffCol + specCol + marbleTint*rim;
+
+  // gentle vibrance curve
+  color = pow(color, vec3(0.96));
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }
@@ -288,10 +298,10 @@ function paletteFromHeightWide(height){
   const rng=XS32(height); const golden=137.50776405003785;
   let baseHue=mod((height*golden)+rng()*45,360);
   let hP=baseHue, hN=mod(baseHue+(90+rng()*120),360), hE=mod(baseHue+(180+rng()*120),360), hS=mod(baseHue+(30+rng()*120),360);
-  let sP=0.80+0.15*rng(), lP=0.50+0.10*rng();
-  let sN=0.70+0.25*rng(), lN=0.52+0.12*rng();
-  let sE=0.90+0.10*rng(), lE=0.60+0.10*rng();
-  let sS=0.80+0.15*rng(), lS=0.58+0.10*rng();
+  let sP=0.82+0.18*rng(), lP=0.48+0.12*rng();              // slightly more saturated for vibrancy
+  let sN=0.72+0.25*rng(), lN=0.52+0.12*rng();
+  let sE=0.92+0.08*rng(), lE=0.58+0.12*rng();
+  let sS=0.82+0.18*rng(), lS=0.56+0.12*rng();
   return{ proton:hslToRgb(hP/360,sP,lP), neutron:hslToRgb(hN/360,sN,lN), electron:hslToRgb(hE/360,sE,lE), shell:hslToRgb(hS/360,sS,lS) };
 }
 function hexByteSum(hex){ if(!hex) return 0; hex=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<hex.length;i+=2){ let b=parseInt(hex.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; }
@@ -335,12 +345,10 @@ function buildAtomFromBlock(block){
   // --- Palette & base atomic numbers
   let colors = paletteFromHeightWide(height);
   const flipPN = ((version>>1)&1)===1; // version-driven skew
-  if (flipPN) {
-    const tmp = colors.proton; colors.proton = colors.neutron; colors.neutron = tmp;
-  }
+  if (flipPN) { const tmp = colors.proton; colors.proton = colors.neutron; colors.neutron = tmp; }
 
-  const Z = (height % 118) + 1;                       // protons/electrons
-  const N = (hexByteSum(merkleRoot) % 200);           // neutron approx
+  const Z = (height % 118) + 1;
+  const N = (hexByteSum(merkleRoot) % 200);
   const electrons = Z;
   const shells = fillShells(electrons);
 
@@ -356,12 +364,12 @@ function buildAtomFromBlock(block){
   const weightOrSize = weight || size*4;
   const eSizeScale = map(constrain(weightOrSize, 2.8e6, 4.0e6), 2.8e6, 4.0e6, 0.90, 1.50);
 
-  // --- Nucleus tightness (bits, hash luck) and density (weight vs size)
+  // --- Nucleus tightness (bits+hash luck) and density (weight vs size)
   const dens = clamp((weight / Math.max(1, size*4)), 0.6, 1.4);
   const nonceNorm = (nonce >>> 0) / 4294967295;
   let nucleusScale = map(nonceNorm, 0, 1, 0.65, 1.10);
   nucleusScale *= dens;
-  nucleusScale *= 1.0 / Math.sqrt(luck); // more lucky → tighter
+  nucleusScale *= 1.0 / Math.sqrt(luck);
 
   // --- Shell radii & spread (version & tx busyness)
   const spreadTx = map(constrain(txCount, 1, 6000), 1, 6000, 0.9, 1.35);
@@ -369,21 +377,20 @@ function buildAtomFromBlock(block){
   const orbitSpread = spreadTx * spreadVer;
   const radii = shells.map((_, i) => (NUCLEUS_BASE_R*1.3 + SHELL_R_STEP*(i+1)) * orbitSpread);
 
-  // --- Per-shell tilt from merkle_root; eccentricity from nonce
+  // --- Per-shell tilt; eccentricity from nonce
   const shellTilt = shells.map((_, s)=>{
     const b = byteAt(merkleRoot, s*3);
-    return map(b, 0, 255, 0.05, 0.7); // radians
+    return map(b, 0, 255, 0.05, 0.7);
   });
   const eccA = [], eccB = [];
   for(let i=0;i<shells.length;i++){
     const rng = XS32(nonce ^ (i*0x9e3779b1));
-    const ecc = rng(); // 0..1
-    const aMul = 1.0 + 0.08*ecc;
-    const bMul = 1.0 - 0.08*ecc;
-    eccA.push(aMul); eccB.push(bMul);
+    const ecc = rng();
+    eccA.push(1.0 + 0.08*ecc);
+    eccB.push(1.0 - 0.08*ecc);
   }
 
-  // --- Electron angles + per-electron jitter & color bias (merkle)
+  // --- Per-electron phase / tint bias / tilt jitter
   const jitterAmp = clamp(map(txCount, 50, 6000, 0.0, 0.45), 0.0, 0.5);
   const electronAngles=[], eColorMix=[], eTiltJitter=[];
   for(let i=0;i<shells.length;i++){
@@ -395,12 +402,12 @@ function buildAtomFromBlock(block){
       ang += jit;
       electronAngles[i][j] = ang;
 
-      eColorMix[i][j] = clamp((byteAt(merkleRoot, i*53+j*7)/255) * 0.25, 0.0, 0.25); // bias toward shell color
+      eColorMix[i][j] = clamp((byteAt(merkleRoot, i*53+j*7)/255) * 0.35, 0.0, 0.35); // a bit stronger for visibility
       eTiltJitter[i][j] = map(byteAt(merkleRoot, i*19 + j*5), 0, 255, -0.08, 0.08);
     }
   }
 
-  // --- Nucleus cloud points
+  // --- Nucleus point cloud
   const nucleusPoints=[];
   const nucleusCount = Math.min(900, Z + N);
   for(let i=0;i<nucleusCount;i++){
@@ -415,34 +422,35 @@ function buildAtomFromBlock(block){
     });
   }
 
-  // --- Rings: thickness/alpha from hash + luck, color small hue shift
+  // --- Rings: thickness/alpha/hue shift
   const hashLast = lastByte(hash);
   const ringThickBase = 0.8 + (hashLast/255)*2.0;
   const ringThick = ringThickBase * ( ((version>>0)&1) ? 1.8 : 1.0 );
   const ringAlpha = clamp(140 + (luck-1.0)*120, 80, 255);
-  const hueShiftDeg = (hashLast/255 - 0.5) * 30; // ±15°
+  const hueShiftDeg = (hashLast/255 - 0.5) * 36; // a touch more
   const shellColorShifted = shiftHue(colors.shell, hueShiftDeg);
 
-  // --- Electron speed array (per shell) + global wobble/breathing
+  // --- Electron speeds per shell + wobble
   const base = (timestamp % 600) / 600;
   const noiseSeed = (nonce % 997) / 997;
   const speeds = shells.map((_, i) => (0.005 + (0.018 * fract(sinHash(base + i*0.137 + noiseSeed)))) * speedScale);
 
   const timeSkew = clamp((timestamp - mediantime)/600, -1, 1);
-  const wobbleAmp = map(timeSkew, -1, 1, 0.97, 1.03);  // subtle scale
-  const wobbleFreq = 0.5 + Math.abs(timeSkew)*0.8;     // Hz-ish
+  const wobbleAmp = map(timeSkew, -1, 1, 0.97, 1.03);
+  const wobbleFreq = 0.5 + Math.abs(timeSkew)*0.8;
 
-  // --- Mode from height (name only)
+  // --- Mode from height (sets defaults; sliders will sync to these)
   const mode = height % 4;
   let modeName = '';
-  if (mode===0){ modeName='Metal: Swirled'; MARBLE_INT=0.90; MARBLE_SCALE=3.3; }
-  else if (mode===1){ modeName='Metal: Brushed'; MARBLE_INT=0.75; MARBLE_SCALE=4.0; }
-  else if (mode===2){ modeName='Metal: Geode';   MARBLE_INT=0.65; MARBLE_SCALE=2.6; }
+  if (mode===0){ modeName='Metal: Swirled'; MARBLE_INT=0.88; MARBLE_SCALE=3.6; }
+  else if (mode===1){ modeName='Metal: Brushed'; MARBLE_INT=0.72; MARBLE_SCALE=4.4; }
+  else if (mode===2){ modeName='Metal: Geode';   MARBLE_INT=0.62; MARBLE_SCALE=2.6; }
   else {               modeName='Metal: Neon';    MARBLE_INT=0.40; MARBLE_SCALE=2.0; }
   safeText('modeName', modeName);
 
   return {
-    block:{ height, hash, timestamp, mediantime, bits, txCount, weight, size, nonce, version, merkleRoot, modeName, luck: +luck.toFixed(3) },
+    block:{ height, hash, timestamp, mediantime, bits, txCount, weight, size, nonce, version, merkleRoot, modeName,
+            luck: +((t2 - h2)/24 + 1.0).toFixed(3) },
     height, Z, N, electrons, shells, radii, speeds, electronAngles, nucleusPoints, colors,
     shellTilt, eccA, eccB, eColorMix, eTiltJitter,
     style:{
@@ -473,17 +481,42 @@ function setup(){
     bgStars.push({x:random(-2800,2800), y:random(-2800,2800), z:random(-2800,2800), s:random(0.4,1.0)});
   }
 
+  // UI events
   document.getElementById('load').addEventListener('click', loadByHeight);
   document.getElementById('latest').addEventListener('click', loadLatest);
-  document.getElementById('marbleInt').addEventListener('input', e=>{ MARBLE_INT=parseFloat(e.target.value); safeText('marbleIntVal', MARBLE_INT.toFixed(2)); });
-  document.getElementById('marbleScale').addEventListener('input', e=>{ MARBLE_SCALE=parseFloat(e.target.value); safeText('marbleScaleVal', MARBLE_SCALE.toFixed(1)); });
+  document.getElementById('marbleInt').addEventListener('input', e=>{
+    MARBLE_INT=parseFloat(e.target.value); safeText('marbleIntVal', MARBLE_INT.toFixed(2));
+  });
+  document.getElementById('marbleScale').addEventListener('input', e=>{
+    MARBLE_SCALE=parseFloat(e.target.value); safeText('marbleScaleVal', MARBLE_SCALE.toFixed(1));
+  });
   document.getElementById('fxRings').addEventListener('change', e=>{ FX_RINGS=e.target.checked; });
+
+  attachUIEventGuards(); // prevent orbit while using UI
 }
 
 function windowResized(){ resizeCanvas(windowWidth, windowHeight); }
 
+// prevent orbitControl while interacting with UI
+function attachUIEventGuards(){
+  const panels = ['ui','fx','blockPanel','infoPanel'].map(id=>document.getElementById(id)).filter(Boolean);
+  const down = ()=>{ uiPointerDown = true; };
+  const up   = ()=>{ uiPointerDown = false; };
+  panels.forEach(p=>{
+    p.addEventListener('pointerdown', down);
+    p.addEventListener('pointerup', up);
+    p.addEventListener('pointercancel', up);
+    p.addEventListener('pointerleave', up);
+    p.addEventListener('wheel', (e)=>{ e.stopPropagation(); e.preventDefault(); }, {passive:false});
+  });
+  // safety: release on document mouseup too
+  document.addEventListener('pointerup', up);
+}
+
 function draw(){
-  orbitControl(1,1,1.5);
+  if (!uiPointerDown) {
+    orbitControl(1,1,1.5);
+  }
   background(9,12,15);
 
   // starfield
@@ -493,17 +526,15 @@ function draw(){
 
   if(atom){
     const t = millis()*0.001;
-    // global spin with a tiny wobble driven by time skew
     rotateY(t*0.07 + Math.sin(t*atom.style.wobbleFreq)*0.02);
     rotateX(Math.sin(t*0.23)*0.05);
-
     drawAtom(atom, t);
     updateElectrons(atom);
   }
 }
 
 function drawAtom(a, time){
-  // --- Nucleus (with breathing wobble)
+  // Nucleus
   push();
   const breath = 1.0 + (Math.sin(time * a.style.wobbleFreq*2.0)*0.02) * (a.style.wobbleAmp-1.0);
   scale(breath, 1.0, 1.0);
@@ -516,7 +547,7 @@ function drawAtom(a, time){
   }
   pop();
 
-  // --- Shell rings
+  // Rings
   if (FX_RINGS){
     for(let i=0;i<a.shells.length;i++){
       const r=a.radii[i];
@@ -534,7 +565,7 @@ function drawAtom(a, time){
     }
   }
 
-  // --- Electrons (eccentric orbits, tilt pattern, per-electron color bias)
+  // Electrons
   for(let i=0;i<a.shells.length;i++){
     const r=a.radii[i];
     const aMul=a.eccA[i], bMul=a.eccB[i];
@@ -582,6 +613,14 @@ function drawOrb(colorA255, colorB255, radius, time){
 }
 
 /* -------- Data loading & UI -------- */
+function syncSliders(){
+  // reflect current shader params in the UI (prevents “stuck” feeling)
+  const mi = document.getElementById('marbleInt');
+  const ms = document.getElementById('marbleScale');
+  if (mi) { mi.value = String(MARBLE_INT); safeText('marbleIntVal', (+MARBLE_INT).toFixed(2)); }
+  if (ms) { ms.value = String(MARBLE_SCALE); safeText('marbleScaleVal', (+MARBLE_SCALE).toFixed(1)); }
+}
+
 async function loadByHeight(){
   const val = document.getElementById('height').value.trim();
   if(!val) return setMeta("Enter a block height.");
@@ -594,6 +633,7 @@ async function loadByHeight(){
     setMeta("Fetching block "+hash.slice(0,16)+"…");
     const block = await fetchJSON(API + "/block/" + hash);
     atom = buildAtomFromBlock(block);
+    syncSliders(); // NEW: update UI to match block defaults
     setMeta(describeBlock(atom));
     updateBlockPanel(atom);
   }catch(e){ console.error(e); setMeta("Error: "+e.message); }
@@ -607,6 +647,7 @@ async function loadLatest(){
     const hash = latest.id || latest.hash;
     const block = await fetchJSON(API + "/block/" + hash);
     atom = buildAtomFromBlock(block);
+    syncSliders(); // NEW: update UI to match block defaults
     setMeta(describeBlock(atom));
     updateBlockPanel(atom);
   }catch(e){ console.error(e); setMeta("Error: "+e.message); }
