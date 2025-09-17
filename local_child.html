@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local Ordinal Preview</title>
+<style>html,body{margin:0;height:100%;background:#000;}</style>
+
+<script src="./p5.min.js"></script>
+<script src="./master.js"></script>
+<script>
+  // LOCKED TRAITS for local testing — paste per item
+  const TRAITS = {
+    "height": 840000,
+    "hash": "000000000000000000b1c0ffee…deadbeef",
+    "timestamp": 1713300000,
+    "mediantime": 1713296400,
+    "tx_count": 3125,
+    "bits": 386689514,
+    "nonce": 3368512345,
+    "size": 1289345,
+    "weight": 3999888,
+    "version": 805306368,
+    "merkle_root": "3af5cafebabefeed3af5cafebabefeed"
+  };
+
+  // Kick off the renderer
+  window.addEventListener('DOMContentLoaded', ()=> {
+    window.__start(TRAITS);
+  });
+</script>
