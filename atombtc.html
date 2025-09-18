@@ -238,7 +238,7 @@ function renderTreemapBase(txs){
   itemsAll.sort((a,b)=>a.fr - b.fr);
 
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const CAP = isMobile ? 6000 : 12000;
+  const CAP = isMobile ? 12000 : 25000;
   let items = itemsAll;
   if(itemsAll.length > CAP){
     const stride = Math.max(1, Math.floor(itemsAll.length / CAP));
