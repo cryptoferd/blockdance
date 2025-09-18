@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Treemap Background</title>
+<title>Bitcoin Block Atom — Treemap (mempool colors, fixed background)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif}
-  canvas{display:block;touch-action:none}
+  /* True background: a separate 2D canvas that never rotates */
+  #bg2d{position:fixed;inset:0;z-index:0;display:block;pointer-events:none;background:#000}
+  canvas.p5canvas{position:fixed;inset:0;z-index:1;display:block;touch-action:none}
   .hud{position:fixed;z-index:20;left:10px;top:10px;display:flex;gap:8px;align-items:center;background:var(--panel);
        border:1px solid var(--border);border-radius:12px;padding:8px 10px;backdrop-filter:blur(6px);font-size:12px}
   .hud input, .hud button{font:inherit;border-radius:8px;border:1px solid var(--border);background:#121820;color:var(--text);padding:6px 8px}
@@ -34,6 +36,10 @@
 </head>
 <body>
 
+<!-- True background canvas (2D, screen space) -->
+<canvas id="bg2d"></canvas>
+
+<!-- Loader HUD -->
 <div class="hud" id="hud">
   <label>Height:</label>
   <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000" style="width:140px"/>
@@ -110,23 +116,74 @@ function paletteFromHeight(height){
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
-/* ---------- treemap (2D background) ---------- */
-let bgLayer=null, bgData=null; // p5.Graphics and cached tx weights
+/* ---------- mempool.space treemap colors (fee-rate bands) ----------
+   Based on Nodeyez defaults "based on mempool.space" (histogramSatLevels):
+   0–2:#d81b60, 2–3:#8e24aa, 3–4:#5e35b1, 4–5:#3949ab, 5–6:#1e88e5,
+   6–8:#039be5, 8–10:#00acc1, 10–12:#00897b, 12–15:#43a047, 15–20:#7cb342,
+   20–30:#c0ca33, 30–40:#fdd835, 40–50:#ffb300, 50–60:#fb8c00, 60–70:#f4511e,
+   70–80:#6d4c41, 80–90:#757575, 90–100:#546e7a, 100–125:#b71c1c,
+   125–150:#880e4f, 150+:#4a148c  */
+const FEE_BANDS = [
+  {min:0,   max:2,   col:"#d81b60"},
+  {min:2,   max:3,   col:"#8e24aa"},
+  {min:3,   max:4,   col:"#5e35b1"},
+  {min:4,   max:5,   col:"#3949ab"},
+  {min:5,   max:6,   col:"#1e88e5"},
+  {min:6,   max:8,   col:"#039be5"},
+  {min:8,   max:10,  col:"#00acc1"},
+  {min:10,  max:12,  col:"#00897b"},
+  {min:12,  max:15,  col:"#43a047"},
+  {min:15,  max:20,  col:"#7cb342"},
+  {min:20,  max:30,  col:"#c0ca33"},
+  {min:30,  max:40,  col:"#fdd835"},
+  {min:40,  max:50,  col:"#ffb300"},
+  {min:50,  max:60,  col:"#fb8c00"},
+  {min:60,  max:70,  col:"#f4511e"},
+  {min:70,  max:80,  col:"#6d4c41"},
+  {min:80,  max:90,  col:"#757575"},
+  {min:90,  max:100, col:"#546e7a"},
+  {min:100, max:125, col:"#b71c1c"},
+  {min:125, max:150, col:"#880e4f"},
+  {min:150, max:1e9, col:"#4a148c"},
+];
+const hex2rgb = hex => [parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
+function feeColor(frate){
+  for(const b of FEE_BANDS){ if(frate>=b.min && frate<b.max) return hex2rgb(b.col); }
+  return hex2rgb("#4a148c");
+}
+
+/* ---------- Treemap background (true 2D screen layer) ---------- */
+const bgCanvas = document.getElementById('bg2d');
+const bgCtx    = bgCanvas.getContext('2d');
+let bgBaseCanvas = document.createElement('canvas'); // offscreen base (static)
+let bgBaseCtx    = bgBaseCanvas.getContext('2d', {alpha:false});
+let bgTxs = []; // cached txs used by last render
+function resizeBG(){
+  const dpr = Math.max(1, window.devicePixelRatio||1);
+  const w = Math.floor(window.innerWidth);
+  const h = Math.floor(window.innerHeight);
+  for(const c of [bgCanvas,bgBaseCanvas]){
+    c.width = Math.floor(w*dpr);
+    c.height= Math.floor(h*dpr);
+    c.style.width = w+'px';
+    c.style.height= h+'px';
+    const ctx = (c===bgCanvas?bgCtx:bgBaseCtx);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  if(bgTxs.length){ renderTreemapBase(bgTxs); }
+}
+window.addEventListener('resize', resizeBG);
 
 function squarifyTreemap(items, x, y, w, h, out){
-  // items: [{w:weight, hue, sat, light}] sorted descending
   if(!items.length){ return; }
-  if(items.length===1){
-    out.push({x,y,w,h, item:items[0]}); return;
-  }
-  // choose split direction by longer side
+  if(items.length===1){ out.push({x,y,w,h,item:items[0]}); return; }
   const horizontal = w >= h;
   const total = items.reduce((s,it)=>s+it.w,0);
   let acc=0, bestIdx=0, bestWorst=Infinity;
   for(let i=0;i<items.length;i++){
     acc += items[i].w;
-    const ratio = horizontal ? Math.max((acc/total)/(h/w), ((total-acc)/total)/(h/w) )
-                             : Math.max((acc/total)/(w/h), ((total-acc)/total)/(w/h) );
+    const ratio = horizontal ? Math.max((acc/total)/(h/w), ((total-acc)/total)/(h/w))
+                             : Math.max((acc/total)/(w/h), ((total-acc)/total)/(w/h));
     if(ratio<bestWorst){ bestWorst=ratio; bestIdx=i; }
   }
   const groupA = items.slice(0,bestIdx+1);
@@ -143,57 +200,62 @@ function squarifyTreemap(items, x, y, w, h, out){
   }
 }
 
-function makeTreemapGraphic(p, txs, width, height){
-  const g = p.createGraphics(width, height, p.P2D);
-  g.noStroke();
-  g.background(8,10,14);
+function renderTreemapBase(txs){
+  bgTxs = txs||[];
+  const w = Math.floor(bgBaseCanvas.width / (window.devicePixelRatio||1));
+  const h = Math.floor(bgBaseCanvas.height / (window.devicePixelRatio||1));
+  bgBaseCtx.setTransform(window.devicePixelRatio||1,0,0,window.devicePixelRatio||1,0,0);
+  bgBaseCtx.fillStyle = "#000"; bgBaseCtx.fillRect(0,0,w,h);
 
-  if(!txs || !txs.length){ return g; }
-
-  // weights & color mapping
+  if(!txs || !txs.length){ return; }
   const items = [];
   for(const tx of txs){
-    const w = Math.max(1, tx.vsize || tx.size || 1);
-    const feeRate = (tx.fee && (tx.vsize||tx.size)) ? tx.fee/ (tx.vsize||tx.size) : 0;
-    // palette bands by feerate-ish, but add determinism via last byte:
-    const seed = parseInt((tx.txid||'').slice(-2),16) || 0;
-    let hueBase;
-    if (feeRate >= 50) hueBase = 15;       // red/orange for very high
-    else if (feeRate >= 20) hueBase = 35;  // orange
-    else if (feeRate >= 10) hueBase = 55;  // yellow-green
-    else if (feeRate >= 5)  hueBase = 200; // blue
-    else hueBase = 260;                    // purple
-    hueBase = (hueBase + (seed%30) - 15 + (w%17)) % 360;
-    const sat = 70 + (seed%20);
-    const light = 18 + ((seed*7)%18);
-    items.push({w, hue:hueBase, sat, light});
+    const vs = Math.max(1, tx.vsize || tx.size || 1);
+    const fr = (tx.fee && vs) ? (tx.fee / vs) : 0;
+    const [r,g,b] = feeColor(fr);
+    // tiny variation per tx for texture (but keep band color recognizable)
+    const jitter = ((parseInt((tx.txid||"").slice(-2),16)||0)%14) - 7;
+    items.push({ w: vs, col:[clamp(r+jitter,0,255), clamp(g+jitter,0,255), clamp(b+jitter,0,255)] });
   }
-
-  // normalize and cap item count for perf if huge:
   items.sort((a,b)=>b.w-a.w);
-  const MAX_ITEMS = 1200; // safety cap
-  const sliced = items.slice(0, MAX_ITEMS);
-  const out = [];
-  squarifyTreemap(sliced, 0, 0, width, height, out);
+  const MAX = 1400; // perf cap
+  const sliced = items.slice(0,MAX);
+  const rects = [];
+  squarifyTreemap(sliced, 0, 0, w, h, rects);
 
-  // draw
-  for(const r of out){
-    const [rr,gg,bb] = hslToRgb(r.item.hue/360, r.item.sat/100, r.item.light/100);
-    g.fill(rr,gg,bb);
-    g.rect(r.x, r.y, r.w, r.h);
-    // inner highlight for depth
-    g.noFill();
-    g.stroke(255,255,255,18);
-    g.rect(r.x+0.5, r.y+0.5, Math.max(0,r.w-1), Math.max(0,r.h-1));
-    g.noStroke();
+  bgBaseCtx.save();
+  bgBaseCtx.translate(0.5,0.5); // crisp strokes
+  for(const r of rects){
+    bgBaseCtx.fillStyle = `rgb(${r.item.col[0]},${r.item.col[1]},${r.item.col[2]})`;
+    bgBaseCtx.fillRect(r.x, r.y, r.w, r.h);
+    // subtle border
+    bgBaseCtx.strokeStyle = "rgba(255,255,255,0.08)";
+    bgBaseCtx.strokeRect(r.x, r.y, Math.max(0,r.w-1), Math.max(0,r.h-1));
   }
-  return g;
+  bgBaseCtx.restore();
 }
 
-/* ---------- atom build ---------- */
+// Draw one background animation frame (called from p5 draw)
+function drawBackgroundFrame({halving}, t){
+  const w = Math.floor(bgCanvas.width / (window.devicePixelRatio||1));
+  const h = Math.floor(bgCanvas.height / (window.devicePixelRatio||1));
+  bgCtx.setTransform(window.devicePixelRatio||1,0,0,window.devicePixelRatio||1,0,0);
+  // copy static treemap
+  bgCtx.clearRect(0,0,w,h);
+  bgCtx.drawImage(bgBaseCanvas, 0, 0);
+  // optional halving tint (subtle). To remove: comment this block.
+  if(halving){
+    const pulse = 0.5 + 0.5*Math.sin(t*2.2);
+    bgCtx.fillStyle = `rgba(255,140,0,${0.20 + 0.25*pulse})`;
+    bgCtx.fillRect(0,0,w,h);
+  }
+}
+
+/* ---------- build atom from block ---------- */
+const NUCLEON_R=2.7;
 function buildAtomFromBlock(b){
-  const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
-  const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
+  const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
+  const bits=b.bits??0, nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
   const colors=paletteFromHeight(height);
 
   const baseE=(height%118)+1, eJitter=(byteAt(hash,5)%64)-32;
@@ -226,6 +288,7 @@ function buildAtomFromBlock(b){
   const orbitSpread=1.0+((version&0xf)-7.5)*0.01;
   const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
 
+  // electrons meta
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){
     electronAngles[i]=[]; eMeta[i]=[];
@@ -244,6 +307,7 @@ function buildAtomFromBlock(b){
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
   const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
 
+  // nucleus points
   const totalNuc=Math.min(900,Z+N), nucleusPoints=[];
   for(let i=0;i<totalNuc;i++){
     const rNorm=Math.pow(Math.random(), tightness);
@@ -284,9 +348,9 @@ function injectPanels(atom){
   // Legend
   const legend=document.createElement('div'); legend.id='legend'; legend.className='panel';
   legend.appendChild(document.createElement('div')).innerHTML='<b>Controls</b>';
-  legend.appendChild(Object.assign(document.createElement('div'),{textContent:'• Rotate/Tilt: drag'}));
-  legend.appendChild(Object.assign(document.createElement('div'),{textContent:'• Pan: right-drag / two-finger'}));
-  legend.appendChild(Object.assign(document.createElement('div'),{textContent:'• Zoom: wheel / pinch'}));
+  ['• Rotate/Tilt: drag','• Pan: right-drag / two-finger','• Zoom: wheel / pinch'].forEach(t=>{
+    const d=document.createElement('div'); d.textContent=t; legend.appendChild(d);
+  });
   document.body.appendChild(legend);
 
   // Block details
@@ -300,20 +364,20 @@ function injectPanels(atom){
 
   const body=document.createElement('div'); body.id='blkBody';
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
-  const chip1=document.createElement('span'); chip1.className='chip'; chip1.textContent='Electrons: ' + atom.electrons; chips.appendChild(chip1);
-  const chip2=document.createElement('span'); chip2.className='chip'; chip2.textContent='Protons: ' + atom.Z; chips.appendChild(chip2);
-  const chip3=document.createElement('span'); chip3.className='chip'; chip3.textContent='Neutrons: ' + atom.N; chips.appendChild(chip3);
+  [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{
+    const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);
+  });
   if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco 170'; chips.appendChild(c); }
   else if(atom.style.halving){ const c2=document.createElement('span'); c2.className='chip'; c2.textContent='Halving Mode'; chips.appendChild(c2); }
   body.appendChild(chips);
 
   const tbl=document.createElement('table');
-  [['Tx count', (blk.tx_count!=null?blk.tx_count:'n/a')],
-   ['Size (bytes)', (blk.size!=null?blk.size:'n/a')],
-   ['Weight (WU)', (blk.weight!=null?blk.weight:'n/a')],
-   ['Version', (blk.version!=null?blk.version:'n/a')],
-   ['Bits', (blk.bits!=null?blk.bits:'n/a')],
-   ['Nonce', (blk.nonce!=null?blk.nonce:'n/a')],
+  [['Tx count', blk.tx_count??'n/a'],
+   ['Size (bytes)', blk.size??'n/a'],
+   ['Weight (WU)', blk.weight??'n/a'],
+   ['Version', blk.version??'n/a'],
+   ['Bits', blk.bits??'n/a'],
+   ['Nonce', blk.nonce??'n/a'],
    ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
    ['Merkle root', shortHash(blk.merkle_root)]].forEach(([k,v])=>{
       const tr=document.createElement('tr');
@@ -334,7 +398,7 @@ function injectPanels(atom){
   infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works'));
   info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction from the block; area ≈ vsize, color ≈ fee rate band with subtle variation. It’s drawn as a true background so it never rotates with the atom.</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: orange/black pulse overlay, gold nucleus with soft halo, silver pulsing electrons.</p>';
+  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction; area ≈ vsize, color = mempool.space fee-rate band.</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: gold nucleus, silver pulsing electrons; background keeps treemap with a subtle orange pulse overlay.</p>';
   info.appendChild(infoBody);
   document.body.appendChild(info);
 
@@ -358,18 +422,19 @@ function startSketch(blk, txsForBg){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // prepare treemap layer for this block
-  bgData = (txsForBg||[]).map(tx=>({ txid:tx.txid, vsize:tx.vsize||tx.size||1, size:tx.size, fee:tx.fee||0 }));
-  const makeBG = (p)=>{ bgLayer = makeTreemapGraphic(p, bgData, p.width, p.height); };
+  // Build treemap base for this block on offscreen canvas, then show it every frame.
+  const txs = (txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
+  resizeBG(); renderTreemapBase(txs);
 
   const sketch=(p)=>{
     p.setup=function(){
-      p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
-      p.setAttributes('antialias', true, 'premultipliedAlpha', false);
+      const cnv = p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
+      cnv.canvas.classList.add('p5canvas');
+      // IMPORTANT: alpha=true so WebGL canvas is transparent over the 2D bg
+      p.setAttributes('alpha', true, 'antialias', true, 'premultipliedAlpha', false);
       orbShader=p.createShader(VERT,FRAG);
-      makeBG(p);
     };
-    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); makeBG(p); };
+    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs); };
 
     function drawOrbMat(cA,cB,r,t,metal,rough,amp,spd){
       p.noStroke();
@@ -428,26 +493,14 @@ function startSketch(blk, txsForBg){
       const disco = atom.style.disco;
       const halving = atom.style.halving && !disco;
 
-      // --- TRUE BACKGROUND: draw treemap in screen space ---
-      // Clear with black first to avoid alpha surprises.
-      p.background(0,0,0);
-      // Switch to screen-space: identity matrices, no depth
-      const gl=p._renderer.GL; gl.disable(gl.DEPTH_TEST);
-      p.push();
-      p.resetMatrix();
-      // draw the 2D layer to cover the screen
-      if(bgLayer){ p.image(bgLayer, -p.width/2, -p.height/2, p.width, p.height); }
-      // halving overlay tint (orange/black pulse) on top of treemap
-      if(halving){
-        const pulse = 0.5+0.5*Math.sin(t*2.2);
-        p.noStroke(); p.fill(255,140,0, Math.round(110*pulse));
-        p.rect(-p.width/2, -p.height/2, p.width, p.height);
-      }
-      p.pop();
-      gl.enable(gl.DEPTH_TEST);
-      // --- END BACKGROUND ---
+      // --- draw 2D background frame (never rotates) ---
+      drawBackgroundFrame({halving}, t);
 
-      // Now 3D scene
+      // clear WebGL with transparency so bg shows through
+      p.clear(0,0,0,0);
+      const gl=p._renderer.GL; gl.clearDepth(1.0); gl.clear(gl.DEPTH_BUFFER_BIT);
+
+      // controls + idle rotation
       const s = uiPointerDown?0:1; p.orbitControl(s,s,1.5);
       p.rotateY(t*0.06); p.rotateX(Math.sin(t*0.23)*0.05);
 
@@ -508,7 +561,7 @@ function startSketch(blk, txsForBg){
             const col = hueToRgb(hue);
             const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
             drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.65, 3.0, 0.3, 1.8);
-          } else if (atom.style.halving && !disco){
+          } else if (halving){
             const silverA=[220,228,235], silverB=[160,170,185];
             const pulse = 1.0 + 0.30*Math.sin(t*3.2 + i*0.7 + j*0.21);
             drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.90, 3.0, 0.15, 0.9);
@@ -524,16 +577,17 @@ function startSketch(blk, txsForBg){
 
       // Halving halo last (depth off so it overlays softly)
       if (halving){
-        const gl2=p._renderer.GL; const Rmax = atom.radii.length ? atom.radii[atom.radii.length-1] : 120;
+        gl.disable(gl.DEPTH_TEST);
+        const Rmax = atom.radii.length ? atom.radii[atom.radii.length-1] : 120;
         const haloR = Rmax + 26 + 6*Math.sin(t*2.0);
-        gl2.disable(gl2.DEPTH_TEST);
         drawSoftHalo(haloR, 42, 28);
-        gl2.enable(gl2.DEPTH_TEST);
+        gl.enable(gl.DEPTH_TEST);
       }
     };
   };
 
-  const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; document.body.appendChild(container);
+  const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1';
+  document.body.appendChild(container);
   p5Instance=new p5(sketch, container);
 }
 
@@ -549,15 +603,9 @@ async function fetchAllBlockTxs(hash, maxPages=400){
     try{
       const arr = await fetchJSON(`${API}/block/${hash}/txs/${page}`);
       if(!arr || !arr.length) break;
-      // Keep only fields we use for bg
-      for(const t of arr){
-        txs.push({ txid:t.txid||t.hash, vsize:t.vsize||t.size, size:t.size, fee:t.fee });
-      }
+      for(const t of arr){ txs.push({ txid:t.txid||t.hash, vsize:t.vsize||t.size, size:t.size, fee:t.fee }); }
       page++;
-    }catch(e){
-      // 400 usually means no more pages
-      break;
-    }
+    }catch(e){ break; }
   }
   return txs;
 }
