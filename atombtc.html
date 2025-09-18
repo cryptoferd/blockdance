@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Treemap (mempool colors, fixed background)</title>
+<title>Bitcoin Block Atom — Treemap ordered & scaled</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -116,13 +116,7 @@ function paletteFromHeight(height){
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
-/* ---------- mempool.space treemap colors (fee-rate bands) ----------
-   Based on Nodeyez defaults "based on mempool.space" (histogramSatLevels):
-   0–2:#d81b60, 2–3:#8e24aa, 3–4:#5e35b1, 4–5:#3949ab, 5–6:#1e88e5,
-   6–8:#039be5, 8–10:#00acc1, 10–12:#00897b, 12–15:#43a047, 15–20:#7cb342,
-   20–30:#c0ca33, 30–40:#fdd835, 40–50:#ffb300, 50–60:#fb8c00, 60–70:#f4511e,
-   70–80:#6d4c41, 80–90:#757575, 90–100:#546e7a, 100–125:#b71c1c,
-   125–150:#880e4f, 150+:#4a148c  */
+/* ---------- mempool.space treemap colors (fee-rate bands) ---------- */
 const FEE_BANDS = [
   {min:0,   max:2,   col:"#d81b60"},
   {min:2,   max:3,   col:"#8e24aa"},
@@ -156,80 +150,148 @@ function feeColor(frate){
 const bgCanvas = document.getElementById('bg2d');
 const bgCtx    = bgCanvas.getContext('2d');
 let bgBaseCanvas = document.createElement('canvas'); // offscreen base (static)
-let bgBaseCtx    = bgBaseCanvas.getContext('2d', {alpha:false});
+let bgBaseCtx    = bgBaseCanvas.getContext('2d');
 let bgTxs = []; // cached txs used by last render
+let DPR = 1, bgW = 0, bgH = 0;
+
 function resizeBG(){
-  const dpr = Math.max(1, window.devicePixelRatio||1);
-  const w = Math.floor(window.innerWidth);
-  const h = Math.floor(window.innerHeight);
+  // Cap DPR a bit for perf on mobile but preserve sharpness
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  bgW = Math.floor(window.innerWidth);
+  bgH = Math.floor(window.innerHeight);
+
   for(const c of [bgCanvas,bgBaseCanvas]){
-    c.width = Math.floor(w*dpr);
-    c.height= Math.floor(h*dpr);
-    c.style.width = w+'px';
-    c.style.height= h+'px';
-    const ctx = (c===bgCanvas?bgCtx:bgBaseCtx);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
+    c.width  = Math.max(1, Math.floor(bgW * DPR));
+    c.height = Math.max(1, Math.floor(bgH * DPR));
+    c.style.width  = bgW + 'px';
+    c.style.height = bgH + 'px';
+  }
+  // Use CSS pixel coordinates for both contexts
+  for(const ctx of [bgCtx, bgBaseCtx]){
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.scale(DPR, DPR); // draw in CSS pixels
   }
   if(bgTxs.length){ renderTreemapBase(bgTxs); }
 }
 window.addEventListener('resize', resizeBG);
 
-function squarifyTreemap(items, x, y, w, h, out){
-  if(!items.length){ return; }
-  if(items.length===1){ out.push({x,y,w,h,item:items[0]}); return; }
-  const horizontal = w >= h;
-  const total = items.reduce((s,it)=>s+it.w,0);
-  let acc=0, bestIdx=0, bestWorst=Infinity;
-  for(let i=0;i<items.length;i++){
-    acc += items[i].w;
-    const ratio = horizontal ? Math.max((acc/total)/(h/w), ((total-acc)/total)/(h/w))
-                             : Math.max((acc/total)/(w/h), ((total-acc)/total)/(w/h));
-    if(ratio<bestWorst){ bestWorst=ratio; bestIdx=i; }
+// Ordered "strip treemap" (preserves left→right item order)
+function layoutStrip(items, W, H){
+  // items: [{area, color}]
+  // Returns rects: [{x,y,w,h,color}]
+  const rects = [];
+  let y = 0;
+  let row = [];
+  let rowAreaSum = 0;
+
+  const width = W;
+  let remainingArea = items.reduce((s,it)=>s+it.area,0);
+
+  function worstAspect(rowAreas, rowHeight){
+    if(!rowAreas.length) return Infinity;
+    let worst = 0;
+    for(const a of rowAreas){
+      const w = a / rowHeight; // width per item
+      const ar = Math.max(w/rowHeight, rowHeight/w);
+      if(ar > worst) worst = ar;
+    }
+    return worst;
   }
-  const groupA = items.slice(0,bestIdx+1);
-  const groupB = items.slice(bestIdx+1);
-  const sumA = groupA.reduce((s,it)=>s+it.w,0), sumB = total - sumA;
-  if(horizontal){
-    const wA = Math.max(1, Math.round(w*sumA/total));
-    squarifyTreemap(groupA, x, y, wA, h, out);
-    squarifyTreemap(groupB, x+wA, y, w-wA, h, out);
-  }else{
-    const hA = Math.max(1, Math.round(h*sumA/total));
-    squarifyTreemap(groupA, x, y, w, hA, out);
-    squarifyTreemap(groupB, x, y+hA, w, h-hA, out);
+
+  let i=0;
+  while(i < items.length){
+    const a = items[i].area;
+    const newRowArea = rowAreaSum + a;
+    const newRowHeight = newRowArea / width;
+
+    const currentWorst = worstAspect(row.map(r=>r.area), rowAreaSum ? (rowAreaSum/width) : newRowHeight);
+    const newWorst     = worstAspect(row.map(r=>r.area).concat(a), newRowHeight);
+
+    // If adding the item would worsen aspect ratio, finalize current row
+    if(row.length && newWorst > currentWorst){
+      const h = rowAreaSum / width;
+      let x = 0;
+      for(const r of row){
+        const w = r.area / h;
+        rects.push({x, y, w:Math.max(1,w), h:Math.max(1,h), color:r.color});
+        x += w;
+      }
+      y += h;
+      remainingArea -= rowAreaSum;
+      row = [];
+      rowAreaSum = 0;
+      // continue without consuming i, re-evaluate
+    }else{
+      row.push(items[i]);
+      rowAreaSum = newRowArea;
+      i++;
+    }
   }
+
+  // flush last row
+  if(row.length){
+    const h = Math.max(1, rowAreaSum / width);
+    let x = 0;
+    for(const r of row){
+      const w = Math.max(1, r.area / h);
+      rects.push({x, y, w, h, color:r.color});
+      x += w;
+    }
+  }
+  return rects;
 }
 
 function renderTreemapBase(txs){
   bgTxs = txs||[];
-  const w = Math.floor(bgBaseCanvas.width / (window.devicePixelRatio||1));
-  const h = Math.floor(bgBaseCanvas.height / (window.devicePixelRatio||1));
-  bgBaseCtx.setTransform(window.devicePixelRatio||1,0,0,window.devicePixelRatio||1,0,0);
-  bgBaseCtx.fillStyle = "#000"; bgBaseCtx.fillRect(0,0,w,h);
+  const W = bgW, H = bgH;
 
-  if(!txs || !txs.length){ return; }
-  const items = [];
+  bgBaseCtx.clearRect(0,0,W,H);
+  bgBaseCtx.fillStyle = "#000";
+  bgBaseCtx.fillRect(0,0,W,H);
+
+  if(!txs || !txs.length) return;
+
+  // Build items with fee-rate & vsize; sort by fee-rate ascending (left→right)
+  const itemsAll = [];
   for(const tx of txs){
     const vs = Math.max(1, tx.vsize || tx.size || 1);
     const fr = (tx.fee && vs) ? (tx.fee / vs) : 0;
     const [r,g,b] = feeColor(fr);
-    // tiny variation per tx for texture (but keep band color recognizable)
-    const jitter = ((parseInt((tx.txid||"").slice(-2),16)||0)%14) - 7;
-    items.push({ w: vs, col:[clamp(r+jitter,0,255), clamp(g+jitter,0,255), clamp(b+jitter,0,255)] });
+    // small jitter to avoid huge flat fields but keep band recognizable
+    const jit = ((parseInt((tx.txid||"").slice(-2),16)||0)%18) - 9;
+    itemsAll.push({ vsize:vs, fr, color:[clamp(r+jit,0,255),clamp(g+jit,0,255),clamp(b+jit,0,255)] });
   }
-  items.sort((a,b)=>b.w-a.w);
-  const MAX = 1400; // perf cap
-  const sliced = items.slice(0,MAX);
-  const rects = [];
-  squarifyTreemap(sliced, 0, 0, w, h, rects);
 
+  // Include broader range of txs with an adaptive cap (more on desktop)
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const CAP = isMobile ? 3000 : 6000;
+
+  // Sort by fee-rate ascending for left→right order
+  itemsAll.sort((a,b)=>a.fr - b.fr);
+
+  // If too many, keep a stratified sample that preserves the distribution (both tiny & big)
+  let items = itemsAll;
+  if(itemsAll.length > CAP){
+    const stride = Math.max(1, Math.floor(itemsAll.length / CAP));
+    items = [];
+    for(let i=0;i<itemsAll.length;i+=stride) items.push(itemsAll[i]);
+  }
+
+  // Convert weights (vsize) into areas in screen pixels
+  const totalWeight = items.reduce((s,it)=>s+it.vsize,0) || 1;
+  const unitArea = (W * H) / totalWeight;
+  const itemsWithArea = items.map(it => ({ area: Math.max(1, it.vsize * unitArea), color: it.color }));
+
+  // Ordered strip treemap (left→right order preserved)
+  const rects = layoutStrip(itemsWithArea, W, H);
+
+  // Draw
   bgBaseCtx.save();
-  bgBaseCtx.translate(0.5,0.5); // crisp strokes
+  bgBaseCtx.translate(0.5,0.5); // crisp borders
   for(const r of rects){
-    bgBaseCtx.fillStyle = `rgb(${r.item.col[0]},${r.item.col[1]},${r.item.col[2]})`;
+    bgBaseCtx.fillStyle = `rgb(${r.color[0]},${r.color[1]},${r.color[2]})`;
     bgBaseCtx.fillRect(r.x, r.y, r.w, r.h);
-    // subtle border
-    bgBaseCtx.strokeStyle = "rgba(255,255,255,0.08)";
+    bgBaseCtx.strokeStyle = "rgba(255,255,255,0.07)";
     bgBaseCtx.strokeRect(r.x, r.y, Math.max(0,r.w-1), Math.max(0,r.h-1));
   }
   bgBaseCtx.restore();
@@ -237,21 +299,36 @@ function renderTreemapBase(txs){
 
 // Draw one background animation frame (called from p5 draw)
 function drawBackgroundFrame({halving}, t){
-  const w = Math.floor(bgCanvas.width / (window.devicePixelRatio||1));
-  const h = Math.floor(bgCanvas.height / (window.devicePixelRatio||1));
-  bgCtx.setTransform(window.devicePixelRatio||1,0,0,window.devicePixelRatio||1,0,0);
-  // copy static treemap
-  bgCtx.clearRect(0,0,w,h);
+  bgCtx.clearRect(0,0,bgW,bgH);
   bgCtx.drawImage(bgBaseCanvas, 0, 0);
-  // optional halving tint (subtle). To remove: comment this block.
+
+  // Optional subtle halving tint
   if(halving){
     const pulse = 0.5 + 0.5*Math.sin(t*2.2);
     bgCtx.fillStyle = `rgba(255,140,0,${0.20 + 0.25*pulse})`;
-    bgCtx.fillRect(0,0,w,h);
+    bgCtx.fillRect(0,0,bgW,bgH);
   }
 }
 
 /* ---------- build atom from block ---------- */
+function paletteFromHeight(height){
+  const rng = XS32(height), golden = 137.50776405003785;
+  let baseHue = mod((height * golden) + rng() * 45, 360);
+  let hP = baseHue;
+  let hN = mod(hP + (90 + rng() * 120), 360);
+  let hE = mod(hP + (180 + rng() * 120), 360);
+  let hS = mod(hP + (30 + rng() * 120), 360);
+  let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
+  let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
+  let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
+  let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
+  return{
+    proton:  hslToRgb(hP/360, sP, lP),
+    neutron: hslToRgb(hN/360, sN, lN),
+    electron:hslToRgb(hE/360, sE, lE),
+    shell:   hslToRgb(hS/360, sS, lS)
+  };
+}
 
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
@@ -398,7 +475,7 @@ function injectPanels(atom){
   infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works'));
   info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction; area ≈ vsize, color = mempool.space fee-rate band.</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: gold nucleus, silver pulsing electrons; background keeps treemap with a subtle orange pulse overlay.</p>';
+  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction; area ≈ vsize, color = mempool.space fee-rate band. Left→right ordered by fee-rate.</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: gold nucleus, silver pulsing electrons; background keeps treemap with a subtle orange pulse overlay.</p>';
   info.appendChild(infoBody);
   document.body.appendChild(info);
 
@@ -422,7 +499,7 @@ function startSketch(blk, txsForBg){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // Build treemap base for this block on offscreen canvas, then show it every frame.
+  // Build treemap base for this block on offscreen canvas, then show every frame.
   const txs = (txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
   resizeBG(); renderTreemapBase(txs);
 
@@ -430,7 +507,7 @@ function startSketch(blk, txsForBg){
     p.setup=function(){
       const cnv = p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
-      // IMPORTANT: alpha=true so WebGL canvas is transparent over the 2D bg
+      // alpha:true so WebGL canvas is transparent over the 2D bg
       p.setAttributes('alpha', true, 'antialias', true, 'premultipliedAlpha', false);
       orbShader=p.createShader(VERT,FRAG);
     };
@@ -633,10 +710,13 @@ const hud=$('#hud');
 
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
-$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
+$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }});
 
-// // Optional: auto-load latest
+// Optional: auto-load latest
 // loadLatest();
+
+// Initial resize for correct scaling
+resizeBG();
 </script>
 </body>
 </html>
