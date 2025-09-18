@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Styling Drivers</title>
+<title>Bitcoin Block Atom — Multi-Skins + HUD Overrides</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -12,7 +12,7 @@
   canvas.p5canvas{position:fixed;inset:0;z-index:1;display:block;touch-action:none}
   .hud{position:fixed;z-index:20;left:10px;top:10px;display:flex;gap:8px;align-items:center;background:var(--panel);
        border:1px solid var(--border);border-radius:12px;padding:8px 10px;backdrop-filter:blur(6px);font-size:12px}
-  .hud input, .hud button{font:inherit;border-radius:8px;border:1px solid var(--border);background:#121820;color:var(--text);padding:6px 8px}
+  .hud input, .hud button, .hud select{font:inherit;border-radius:8px;border:1px solid var(--border);background:#121820;color:var(--text);padding:6px 8px}
   .hud button{cursor:pointer}
   .panel{position:fixed;z-index:11;font-size:12px;color:var(--muted);padding:8px 10px;background:var(--panel);
          border:1px solid var(--border);border-radius:12px;max-width:min(520px,calc(100vw - 20px));backdrop-filter:blur(6px)}
@@ -27,7 +27,6 @@
   #blkBody td{padding:4px 0;vertical-align:top}
   #blkBody td:first-child{color:#9cc9ee;width:42%;padding-right:10px}
   code.badge{display:inline-block;border:1px solid #2b3a44;border-radius:8px;padding:1px 6px;margin:0 2px;color:#d7ecff;background:#0c1218}
-  .kv{display:flex;gap:8px;flex-wrap:wrap}
   .chip{display:inline-block;padding:2px 6px;border:1px solid #2b3a44;border-radius:8px;margin:2px;color:#d7ecff;font-size:11px}
   details#infoPanel{left:10px;bottom:10px}
   details#infoPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;gap:8px;align-items:center}
@@ -35,6 +34,8 @@
   details#infoPanel summary .badge{width:22px;height:22px;display:inline-grid;place-items:center;border-radius:999px;background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
   #warn{position:fixed;left:10px;top:120px;color:#ffd26f;font-weight:600;display:none;z-index:12}
   #progress{position:fixed;left:10px;top:48px;z-index:21;color:#d7ecff;font-size:12px;background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none}
+  .hud .group{display:flex;gap:6px;align-items:center}
+  .hud label{opacity:0.9}
 </style>
 </head>
 <body>
@@ -42,26 +43,63 @@
 <canvas id="bg2d"></canvas>
 
 <div class="hud" id="hud">
-  <label>Height:</label>
-  <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000" style="width:160px"/>
-  <button id="loadBtn">Load</button>
-  <button id="latestBtn">Latest</button>
+  <div class="group">
+    <label>Height:</label>
+    <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000" style="width:140px"/>
+    <button id="loadBtn">Load</button>
+    <button id="latestBtn">Latest</button>
+  </div>
+  <div class="group" style="border-left:1px solid var(--border);padding-left:8px;margin-left:4px">
+    <label>E:</label>
+    <select id="forceE"></select>
+    <label>P:</label>
+    <select id="forceP"></select>
+    <label>N:</label>
+    <select id="forceN"></select>
+    <button id="applyForceBtn" title="Apply selected overrides">Apply</button>
+    <button id="resetForceBtn" title="Clear overrides">Reset</button>
+  </div>
 </div>
 <div id="progress">…</div>
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
+/* ---------- FORCE OVERRIDES (controlled by HUD) ---------- */
+let FORCE = { electron: null, proton: null, neutron: null };
+let __CURRENT_HEIGHT = null;
+function reloadCurrent(){
+  const h = __CURRENT_HEIGHT || Number(document.querySelector('#heightInput').value);
+  if (h) loadBlockByHeight(h);
+}
+const MODE_NAMES = ['Marble','Toon','Iridescent','Glass','Lava','Spikes','Wireframe'];
+function buildForceSelect(sel){
+  sel.innerHTML='';
+  const opt0 = document.createElement('option'); opt0.value='-1'; opt0.textContent='— no force —'; sel.appendChild(opt0);
+  MODE_NAMES.forEach((name,i)=>{ const o=document.createElement('option'); o.value=String(i); o.textContent=name; sel.appendChild(o); });
+}
+function syncHUDFromForce(){
+  const mapVal=v=>v==null?'-1':String(v);
+  document.getElementById('forceE').value = mapVal(FORCE.electron);
+  document.getElementById('forceP').value = mapVal(FORCE.proton);
+  document.getElementById('forceN').value = mapVal(FORCE.neutron);
+}
+function readHUDIntoForce(){
+  const parseSel = v => (Number(v) < 0 ? null : Number(v));
+  FORCE.electron = parseSel(document.getElementById('forceE').value);
+  FORCE.proton   = parseSel(document.getElementById('forceP').value);
+  FORCE.neutron  = parseSel(document.getElementById('forceN').value);
+}
+
 /* ---------- utils ---------- */
 const $=s=>document.querySelector(s);
 const shortHash=h=>h?(String(h).slice(0,10)+'…'+String(h).slice(-8)):'n/a';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const mod=(a,n)=>((a%n)+n)%n;
 function XS32(seed){let x=seed>>>0||1;return()=>{x^=x<<13;x^=x>>>17;x^=x<<5;return (x>>>0)/0xFFFFFFFF;};}
-function hslToRgb(h,s,l){let r,g,b;if(s===0){r=g=b=l;}else{const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;r=hue2rgb(p,q,h+1/3);g=hue2rgb(p,q,h);b=hue2rgb(p,q,h-1/3);}return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];}
+function hslToRgb(h,s,l){let r,g,b;if(s===0){r=g=b=l;}else{const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;r=hue2rgb(p,q,h+1/3);g=hue2rgb(p,q);b=hue2rgb(p,q,h-1/3);}return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];}
 function rgbToHsl(r,g,b){r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b);let h,s,l=(max+min)/2;if(max===min){h=s=0;}else{const d=max-min;s=l>0.5?d/(2-max-min):d/(max+min);switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4;break;}h/=6;}return[h,s,l];}
 const shiftHue=(rgb,deg)=>{const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);let hh=(h+(deg/360))%1; if(hh<0)hh+=1; return hslToRgb(hh,s,l);}
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
-const toHex=([r,g,b])=>('#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join(''));
 const lastByte = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; return parseInt(c.slice(-2),16)||0; };
 const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<c.length;i+=2){ const b=parseInt(c.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; };
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
@@ -76,27 +114,165 @@ const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[
 const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
+/* ---------- SKIN MODES ---------- */
+const MODE_MARBLE     = 0;
+const MODE_TOON       = 1;
+const MODE_IRIDESCENT = 2;
+const MODE_GLASS      = 3;
+const MODE_LAVA       = 4;
+const MODE_SPIKES     = 5;
+const MODE_WIREFRAME  = 6;
+
 /* ---------- shader ---------- */
-const VERT=`precision mediump float;attribute vec3 aPosition;uniform mat4 uModelViewMatrix,uProjectionMatrix;varying vec3 vObjPos;void main(){vObjPos=aPosition;gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(aPosition,1.0));}`;
-const FRAG=`precision mediump float;varying vec3 vObjPos;uniform vec3 uColorA,uColorB;uniform float uMarbleInt,uMarbleScale,uTime,uAnimAmp,uAnimSpeed,uBlockPhase;
+const VERT=`precision mediump float;
+attribute vec3 aPosition;
+uniform mat4 uModelViewMatrix, uProjectionMatrix;
+uniform int uMode;
+uniform float uTime, uSpikeAmp, uAnimSpeed, uBlockPhase;
+varying vec3 vObjPos;
+varying vec3 vNormal;
 float h(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
-float n3(vec3 p){vec3 i=floor(p),f=fract(p);float n000=h(i+vec3(0,0,0)),n100=h(i+vec3(1,0,0));float n010=h(i+vec3(0,1,0)),n110=h(i+vec3(1,1,0));float n001=h(i+vec3(0,0,1)),n101=h(i+vec3(1,0,1));float n011=h(i+vec3(0,1,1)),n111=h(i+vec3(1,1,1));
-vec3 u=f*f*(3.0-2.0*f);float n00=mix(n000,n100,u.x),n10=mix(n010,n110,u.x);float n01=mix(n001,n101,u.x),n11=mix(n011,n111,u.x);float n0=mix(n00,n10,u.y),n1=mix(n01,n11,u.y);return mix(n0,n1,u.z);}
-float stripe2D(vec2 uv,float ph,float f){float zm=1.0+uAnimAmp*0.35*sin(uTime*(0.7+uAnimSpeed)+ph+uBlockPhase);uv*=zm;vec2 w1=vec2(n3(vec3(uv*0.8*f,uTime*0.35+ph+uBlockPhase)),n3(vec3(uv*1.1*f+3.17,uTime*0.28+ph+1.7+uBlockPhase)));
-uv+=(w1-0.5)*(0.35+0.45*uAnimAmp);float s=sin((uv.x*6.2831*f*0.85)+(uv.y*6.2831*f*0.45)+3.2*w1.x+(uTime*(0.55+0.6*uAnimSpeed))+ph+uBlockPhase);return 0.5+0.5*s;}
+float n3(vec3 p){vec3 i=floor(p),f=fract(p);
+ float n000=h(i+vec3(0,0,0)),n100=h(i+vec3(1,0,0));
+ float n010=h(i+vec3(0,1,0)),n110=h(i+vec3(1,1,0));
+ float n001=h(i+vec3(0,0,1)),n101=h(i+vec3(1,0,1));
+ float n011=h(i+vec3(0,1,1)),n111=h(i+vec3(1,1,1));
+ vec3 u=f*f*(3.0-2.0*f);
+ float n00=mix(n000,n100,u.x),n10=mix(n010,n110,u.x);
+ float n01=mix(n001,n101,u.x),n11=mix(n011,n111,u.x);
+ float n0=mix(n00,n10,u.y),n1=mix(n01,n11,u.y);
+ return mix(n0,n1,u.z);
+}
+float fbm(vec3 p){float a=0.5, s=0.0; vec3 pp=p;
+ for(int i=0;i<4;i++){ s+=a*n3(pp); pp*=2.1; a*=0.5; } return s; }
+void main(){
+  vec3 pos = aPosition;
+  vec3 nrm = normalize(aPosition);
+  if (uMode==`+MODE_SPIKES+`) {
+    float f = fbm(nrm*3.0 + vec3(0.0,0.0,uTime*(0.8+uAnimSpeed)) + uBlockPhase);
+    float spike = (f-0.5)*2.0;
+    pos += nrm * uSpikeAmp * spike;
+  }
+  vObjPos = pos;
+  vNormal = normalize(nrm);
+  gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(pos,1.0));
+}`;
+const FRAG=`precision mediump float;
+varying vec3 vObjPos;
+varying vec3 vNormal;
+uniform vec3 uColorA,uColorB;
+uniform float uMarbleInt,uMarbleScale,uTime,uAnimAmp,uAnimSpeed,uBlockPhase;
+uniform int uMode;
+uniform float uAlpha;
+float h(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
+float n3(vec3 p){vec3 i=floor(p),f=fract(p);
+ float n000=h(i+vec3(0,0,0)),n100=h(i+vec3(1,0,0));
+ float n010=h(i+vec3(0,1,0)),n110=h(i+vec3(1,1,0));
+ float n001=h(i+vec3(0,0,1)),n101=h(i+vec3(1,0,1));
+ float n011=h(i+vec3(0,1,1)),n111=h(i+vec3(1,1,1));
+ vec3 u=f*f*(3.0-2.0*f);
+ float n00=mix(n000,n100,u.x),n10=mix(n010,n110,u.x);
+ float n01=mix(n001,n101,u.x),n11=mix(n011,n111,u.x);
+ float n0=mix(n00,n10,u.y),n1=mix(n01,n11,u.y);
+ return mix(n0,n1,u.z);
+}
 float blinn(vec3 n,vec3 l,vec3 v,float sh){vec3 hh=normalize(l+v);return pow(max(dot(n,hh),0.0),sh);}
-void main(){vec3 p=vObjPos;float r=length(p.xy);float sw=uAnimAmp*(0.5+0.5*sin(uTime*(0.6+uAnimSpeed)+uBlockPhase));float a=sw*r*1.8;float ca=cos(a),sa=sin(a);p.xz=mat2(ca,-sa,sa,ca)*p.xz;
-vec3 n=normalize(p);vec3 w=pow(abs(n),vec3(6.0));w/=max(w.x+w.y+w.z,1e-4);float f=uMarbleScale;float sx=stripe2D(p.yz,0.0,f),sy=stripe2D(p.zx,2.1,f),sz=stripe2D(p.xy,4.2,f);
-float t=pow(smoothstep(0.10,0.90,sx*w.x+sy*w.y+sz*w.z),0.85);vec3 tint=mix(uColorA,uColorB,t);float roughK=clamp((uMarbleScale-0.8)/5.2,0.0,1.0);float freq=mix(40.0,140.0,roughK);
-float gx=stripe2D(p.yz,1.7,freq),gy=stripe2D(p.zx,3.8,freq),gz=stripe2D(p.xy,5.9,freq);vec3 base=tint*(0.83+0.17*(gx*w.x+gy*w.y+gz*w.z));
-vec3 L1=normalize(vec3(0.6,0.7,0.5)),L2=normalize(vec3(-0.4,0.65,-0.2)),V=normalize(vec3(0.0,0.0,1.0));float ndl1=max(dot(n,L1),0.0),ndl2=max(dot(n,L2),0.0);
-float rough=mix(0.55,0.12,roughK),shin=mix(36.0,200.0,1.0-rough);float m=clamp(uMarbleInt,0.0,1.0),mC=min(m,0.92);vec3 F0=mix(vec3(0.06),tint,mC);float VoH=max(dot(n,V),0.0);
-vec3 F=F0+(1.0-F0)*pow(1.0-VoH,5.0);float spec=(blinn(n,L1,V,shin)*0.95+blinn(n,L2,V,shin)*0.75)*(0.95-0.5*rough);vec3 diff=base*max(0.12,mix(0.65,0.18,mC)*(0.35+(0.55*ndl1+0.45*ndl2)));
-float rim=pow(1.0-max(dot(n,V),0.0),2.2)*0.12;vec3 col=pow(diff+F*spec+tint*rim,vec3(0.96));gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);} `;
+vec3 style_marble(vec3 n, vec3 V){
+  vec3 p=vObjPos; float r=length(p.xy);
+  float sw=uAnimAmp*(0.5+0.5*sin(uTime*(0.6+uAnimSpeed)+uBlockPhase));
+  float a=sw*r*1.8; float ca=cos(a),sa=sin(a); p.xz=mat2(ca,-sa,sa,ca)*p.xz;
+  vec3 w=pow(abs(n),vec3(6.0)); w/=max(w.x+w.y+w.z,1e-4);
+  float f=uMarbleScale;
+  float stripe(vec2 uv,float ph,float f){
+    float zm=1.0+uAnimAmp*0.35*sin(uTime*(0.7+uAnimSpeed)+ph+uBlockPhase);
+    uv*=zm;
+    vec2 w1=vec2(n3(vec3(uv*0.8*f,uTime*0.35+ph+uBlockPhase)),n3(vec3(uv*1.1*f+3.17,uTime*0.28+ph+1.7+uBlockPhase)));
+    uv+=(w1-0.5)*(0.35+0.45*uAnimAmp);
+    float s=sin((uv.x*6.2831*f*0.85)+(uv.y*6.2831*f*0.45)+3.2*w1.x+(uTime*(0.55+0.6*uAnimSpeed))+ph+uBlockPhase);
+    return 0.5+0.5*s;
+  }
+  float sx=stripe(p.yz,0.0,f), sy=stripe(p.zx,2.1,f), sz=stripe(p.xy,4.2,f);
+  float t=pow(smoothstep(0.10,0.90,sx*w.x+sy*w.y+sz*w.z),0.85);
+  vec3 tint=mix(uColorA,uColorB,t);
+  float roughK=clamp((uMarbleScale-0.8)/5.2,0.0,1.0);
+  float freq=mix(40.0,140.0,roughK);
+  float gx=stripe(p.yz,1.7,freq), gy=stripe(p.zx,3.8,freq), gz=stripe(p.xy,5.9,freq);
+  vec3 base=tint*(0.83+0.17*(gx*w.x+gy*w.y+gz*w.z));
+  vec3 L1=normalize(vec3(0.6,0.7,0.5)), L2=normalize(vec3(-0.4,0.65,-0.2));
+  float rough=mix(0.55,0.12,roughK), shin=mix(36.0,200.0,1.0-rough);
+  float spec=(blinn(n,L1,V,shin)*0.95+blinn(n,L2,V,shin)*0.75)*(0.95-0.5*rough);
+  float rim=pow(1.0-max(dot(n,V),0.0),2.2)*0.12;
+  vec3 col=pow(base + spec + tint*rim, vec3(0.96));
+  return clamp(col,0.0,1.0);
+}
+vec3 style_toon(vec3 n, vec3 V){
+  vec3 L=normalize(vec3(0.6,0.7,0.5));
+  float NdL=max(dot(n,L),0.0);
+  float bands=5.0;
+  float stepped=floor(NdL*bands)/(bands-1.0);
+  float rim=smoothstep(0.6,1.0,1.0-max(dot(n,V),0.0));
+  vec3 base=mix(uColorA,uColorB,stepped);
+  return clamp(base + vec3(rim)*0.12, 0.0,1.0);
+}
+vec3 style_iridescent(vec3 n, vec3 V){
+  float fres = pow(1.0 - max(dot(n,V),0.0), 1.2);
+  vec3 tint = mix(uColorA,uColorB,0.5+0.5*sin(uTime*0.7+uBlockPhase));
+  vec3 twist = vec3(fres*0.3, -fres*0.1, fres*0.15);
+  vec3 L=normalize(vec3(-0.3,0.8,0.4));
+  float spec=pow(max(dot(n,normalize(L+V)),0.0), 80.0)*(0.3+0.7*fres);
+  return clamp(tint + twist + spec, 0.0,1.0);
+}
+vec3 style_glass(vec3 n, vec3 V){
+  float fres = pow(1.0 - max(dot(n,V),0.0), 3.0);
+  vec3 edge = mix(vec3(0.8), vec3(1.0), fres);
+  vec3 tint = mix(uColorA,uColorB,0.5);
+  vec3 col  = mix(tint*0.25, edge, 0.85);
+  return clamp(col, 0.0,1.0);
+}
+vec3 style_lava(vec3 n, vec3 V){
+  float f=0.0; vec3 p=vObjPos*2.5 + vec3(0,0,uTime*0.4);
+  float a=0.5; vec3 pp=p;
+  for(int i=0;i<4;i++){ f+=a*n3(pp); pp*=2.1; a*=0.5; }
+  vec3 hot=vec3(1.0,0.32,0.07), cool=vec3(0.05,0.06,0.12);
+  float m=smoothstep(0.55,0.9,f);
+  vec3 base=mix(cool,hot,m);
+  float glow=pow(m,6.0)*0.65;
+  return clamp(base + glow, 0.0, 1.0);
+}
+vec3 style_wire(vec3 n, vec3 V){
+  vec3 p = normalize(vObjPos);
+  float s = 14.0;
+  float line(vec2 uv){ vec2 g = abs(fract(uv*s) - 0.5); float d = min(g.x,g.y); return smoothstep(0.02,0.005,d); }
+  float gx=line(p.yz), gy=line(p.zx), gz=line(p.xy);
+  float g = clamp((gx+gy+gz)*0.5,0.0,1.0);
+  vec3 neon = vec3(0.1,1.0,0.2);
+  vec3 base = mix(uColorA,uColorB,0.15);
+  return clamp(base*0.25 + neon*g, 0.0,1.0);
+}
+vec3 style_spikes(vec3 n, vec3 V){
+  float f = n3(n*4.0 + vec3(0.0,0.0,uTime*0.7) + uBlockPhase);
+  float edge = pow(1.0-max(dot(n,V),0.0),1.8)*0.25;
+  vec3 tint = mix(uColorA,uColorB, f);
+  vec3 L=normalize(vec3(0.4,0.8,0.2));
+  float spec = pow(max(dot(n,normalize(L+V)),0.0), 90.0)*0.5;
+  return clamp(tint + spec + edge, 0.0,1.0);
+}
+void main(){
+  vec3 n = normalize(vNormal);
+  vec3 V = normalize(vec3(0.0,0.0,1.0));
+  vec3 col;
+  if(uMode==`+MODE_TOON+`)       col = style_toon(n,V);
+  else if(uMode==`+MODE_IRIDESCENT+`) col = style_iridescent(n,V);
+  else if(uMode==`+MODE_GLASS+`)      col = style_glass(n,V);
+  else if(uMode==`+MODE_LAVA+`)       col = style_lava(n,V);
+  else if(uMode==`+MODE_WIREFRAME+`)  col = style_wire(n,V);
+  else if(uMode==`+MODE_SPIKES+`)     col = style_spikes(n,V);
+  else                                col = style_marble(n,V);
+  gl_FragColor = vec4(col, uAlpha);
+}`;
 
-/* ---------- mapping ---------- */
+/* ---------- mapping / constants ---------- */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
-
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
@@ -113,13 +289,12 @@ function paletteFromHeight(height){
     neutron: hslToRgb(hN/360, sN, lN),
     electron:hslToRgb(hE/360, sE, lE),
     shell:   hslToRgb(hS/360, sS, lS),
-    hues: {hP, hN, hE, hS}
   };
 }
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
-/* ---------- Treemap (static gradient, ordered, dense) ---------- */
+/* ---------- Treemap background ---------- */
 const BG_GREEN = [0x0B,0x4F,0x35];
 const BG_YELLOW= [0xFF,0xFF,0x00];
 const BG_ORANGE= [0xFF,0xA5,0x00];
@@ -141,14 +316,11 @@ let bgBaseCanvas = document.createElement('canvas');
 let bgBaseCtx    = bgBaseCanvas.getContext('2d');
 let bgTxs = [];
 let DPR = 1, bgW = 0, bgH = 0;
-
-// density knobs
 const TREEMAP_GAMMA = 0.55;
 const TREEMAP_BASE  = 120;
 const MIN_RECT_PX   = 2;
 const BORDER_ALPHA  = 0.06;
 const BORDER_SKIP_PX= 6;
-
 function resizeBG(){
   DPR = Math.min(2, window.devicePixelRatio || 1);
   bgW = Math.floor(window.innerWidth);
@@ -166,8 +338,6 @@ function resizeBG(){
   if(bgTxs.length){ renderTreemapBase(bgTxs); }
 }
 window.addEventListener('resize', resizeBG);
-
-// strip treemap
 function layoutStrip(items, W, H){
   const rects = [];
   let y = 0, row = [], rowAreaSum = 0;
@@ -187,10 +357,8 @@ function layoutStrip(items, W, H){
     const a = items[i].area;
     const newRowArea = rowAreaSum + a;
     const newRowHeight = newRowArea / width;
-
     const currentWorst = worstAspect(row.map(r=>r.area), rowAreaSum ? (rowAreaSum/width) : newRowHeight);
     const newWorst     = worstAspect(row.map(r=>r.area).concat(a), newRowHeight);
-
     if(row.length && newWorst > currentWorst){
       const h = Math.max(MIN_RECT_PX, rowAreaSum / width);
       let x = 0;
@@ -216,7 +384,6 @@ function layoutStrip(items, W, H){
   }
   return rects;
 }
-
 function renderTreemapBase(txs){
   bgTxs = txs||[];
   const W = bgW, H = bgH;
@@ -224,7 +391,6 @@ function renderTreemapBase(txs){
   bgBaseCtx.fillStyle = "#000";
   bgBaseCtx.fillRect(0,0,W,H);
   if(!txs || !txs.length) return;
-
   const itemsAll = [];
   for(const tx of txs){
     const vsRaw = Math.max(1, tx.vsize || tx.size || 1);
@@ -235,7 +401,6 @@ function renderTreemapBase(txs){
     itemsAll.push({ weight:vs, color:[clamp(col[0]+jit,0,255),clamp(col[1]+jit,0,255),clamp(col[2]+jit,0,255)], fr });
   }
   itemsAll.sort((a,b)=>a.fr - b.fr);
-
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const CAP = isMobile ? 6000 : 12000;
   let items = itemsAll;
@@ -244,16 +409,13 @@ function renderTreemapBase(txs){
     items = [];
     for(let i=0;i<itemsAll.length;i+=stride) items.push(itemsAll[i]);
   }
-
   const totalW = items.reduce((s,it)=>s+it.weight,0) || 1;
   const unitArea = (W * H) / totalW;
   const itemsWithArea = items.map(it => ({
     area: Math.max(MIN_RECT_PX*MIN_RECT_PX, it.weight * unitArea),
     color: it.color
   }));
-
   const rects = layoutStrip(itemsWithArea, W, H);
-
   bgBaseCtx.save();
   for(const r of rects){
     bgBaseCtx.fillStyle = `rgb(${r.color[0]},${r.color[1]},${r.color[2]})`;
@@ -265,7 +427,6 @@ function renderTreemapBase(txs){
   }
   bgBaseCtx.restore();
 }
-
 function drawBackgroundFrame({halving}, t){
   bgCtx.clearRect(0,0,bgW,bgH);
   bgCtx.drawImage(bgBaseCanvas, 0, 0);
@@ -276,31 +437,44 @@ function drawBackgroundFrame({halving}, t){
   }
 }
 
-/* ---------- build atom from block (now returns drivers) ---------- */
+/* ---------- style choice per group (with FORCE) ---------- */
+function chooseModeElectron(atom,i,j){
+  if (FORCE && FORCE.electron!=null) return FORCE.electron|0;
+  const hb = lastByte(atom.block.id||atom.block.hash||'00');
+  const idx = (atom.height + i*7 + j*13 + hb) % 6;
+  const table=[MODE_TOON, MODE_IRIDESCENT, MODE_GLASS, MODE_LAVA, MODE_SPIKES, MODE_WIREFRAME];
+  return table[idx];
+}
+function chooseModeProton(atom,k){
+  if (FORCE && FORCE.proton!=null) return FORCE.proton|0;
+  const v = (atom.height + k*31) % 4;
+  return [MODE_MARBLE, MODE_WIREFRAME, MODE_SPIKES, MODE_IRIDESCENT][v];
+}
+function chooseModeNeutron(atom,k){
+  if (FORCE && FORCE.neutron!=null) return FORCE.neutron|0;
+  const v = (atom.height + k*17) % 4;
+  return [MODE_LAVA, MODE_TOON, MODE_MARBLE, MODE_GLASS][v];
+}
+function modeName(m){ return MODE_NAMES[m] || 'Marble'; }
+
+/* ---------- build atom from block ---------- */
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
   const bits=b.bits??0, nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
   const colors=paletteFromHeight(height);
-
   const baseE=(height%118)+1, eJitter=(byteAt(hash,5)%64)-32;
   const electrons=clamp(baseE+eJitter, 6, 180);
-
   const protonBias=(byteAt(merkleRoot,9)%31)-15;
   const Z=clamp(baseE+protonBias, 6, 160);
   const neutronSkew=((byteAt(hash,2)%101)-50)/180;
   const N=clamp(Math.round(Z*(1.0+neutronSkew)) + (hexByteSum(merkleRoot)%17)-8, 6, 220);
-
   const shells=fillShells(electrons);
-
   const prod=Math.max(1, txCount*Math.max(1,size));
   const lgProd=Math.log10(prod);
   const speedScale=clamp((lgProd-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
-
   const dens=clamp(weight/Math.max(1,size*4),0.6,1.4);
-  const fSpread=feeSpread();
-  const tightness=clamp((dens*0.75)+(1.15-0.55*fSpread), 0.6,1.4);
-  const eccGlobal=clamp(0.08+0.7*fSpread+((version&0xF)/60)+((nonce&0x3f)/255)*0.2, 0.08,0.88);
-
+  const tightness=clamp((dens*0.75)+(1.15-0.55*feeSpread()), 0.6,1.4);
+  const eccGlobal=clamp(0.08+0.7*feeSpread()+((version&0xF)/60)+((nonce&0x3f)/255)*0.2, 0.08,0.88);
   const t2=approxLog2Target(bits), h2=approxLog2Hash(hash), luck=clamp((t2-h2)/24+1.0,0.7,1.5);
   const hashLast=lastByte(hash);
   const ringThickBase=0.8+(hashLast/255)*2.0;
@@ -308,10 +482,8 @@ function buildAtomFromBlock(b){
   const ringAlpha=clamp(140+(luck-1.0)*120,80,255);
   const hueShiftDeg=(hashLast/255-0.5)*36;
   const ringColor=shiftHue(colors.shell, hueShiftDeg);
-
   const orbitSpread=1.0+((version&0xf)-7.5)*0.01;
   const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
-
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){
     electronAngles[i]=[]; eMeta[i]=[];
@@ -326,10 +498,8 @@ function buildAtomFromBlock(b){
       electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset};
     }
   }
-
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
   const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
-
   const totalNuc=Math.min(900,Z+N), nucleusPoints=[];
   for(let i=0;i<totalNuc;i++){
     const rNorm=Math.pow(Math.random(), tightness);
@@ -338,7 +508,6 @@ function buildAtomFromBlock(b){
     const hueOffset = (i*23 + (isProton?177:311)) % 360;
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset});
   }
-
   const mode=height%4; let MARBLE_INT=0.78, MARBLE_SCALE=3.6;
   if(mode===1){ MARBLE_INT=0.65; MARBLE_SCALE=4.4; }
   else if(mode===2){ MARBLE_INT=0.58; MARBLE_SCALE=2.6; }
@@ -346,59 +515,23 @@ function buildAtomFromBlock(b){
   const animAmp=clamp(0.18+((version&0xF)/15)*0.12,0.18,0.45);
   const animSpeed=clamp(0.35+((nonce&0xFF)/255)*0.9,0.35,1.85);
   const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
-
   const isDisco = height===170;
   const halving = !isDisco && isHalving(height);
-
-  const drivers = {
-    // Counts & structure
-    electrons, shells, protons: Z, neutrons: N,
-    radiiMin: radii.length? Math.round(radii[0]):null,
-    radiiMax: radii.length? Math.round(radii[radii.length-1]):null,
-    orbitSpread: +orbitSpread.toFixed(3),
-    // Motion
-    txCount, size, speedScale:+speedScale.toFixed(3), lgProd:+lgProd.toFixed(3),
-    eccentricityBase:+eccGlobal.toFixed(3), nucleusTightness:+tightness.toFixed(3),
-    // Rings
-    ringThick:+ringThick.toFixed(2),
-    ringAlpha, ringHueShiftDeg:+hueShiftDeg.toFixed(1),
-    ringColorHex: toHex(ringColor),
-    // Shader / surface
-    marbleIntensity:+MARBLE_INT.toFixed(2),
-    marbleScale:+MARBLE_SCALE.toFixed(2),
-    animAmp:+animAmp.toFixed(2),
-    animSpeed:+animSpeed.toFixed(2),
-    blockPhase:+blockPhase.toFixed(3),
-    // Palette seeds (from height)
-    palette: {
-      proton: toHex(colors.proton),
-      neutron: toHex(colors.neutron),
-      electron: toHex(colors.electron),
-      shell: toHex(colors.shell),
-      hues: colors.hues
-    },
-    // Special modes
-    disco:isDisco, halving
-  };
-
   return {
     block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
     shader:{MARBLE_INT,MARBLE_SCALE,animAmp,animSpeed,blockPhase},
     style:{
       eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick, ringAlpha, ringColor, nucleusTight:tightness,
+      ringThick, ringAlpha, ringColor, nucleusTight:clamp((b.weight/Math.max(1,b.size*4))*0.75+(1.15-0.55*feeSpread()),0.6,1.4),
       halving, disco:isDisco
-    },
-    drivers
+    }
   };
 }
 
-/* ---------- UI panels (now include Styling drivers) ---------- */
+/* ---------- UI panels ---------- */
 let uiPointerDown = false;
-
-function injectPanels(atom){
+function injectPanels(atom, skinSummary){
   ['legend','blockPanel','infoPanel','warn'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
-
   const legend=document.createElement('div'); legend.id='legend'; legend.className='panel';
   legend.appendChild(document.createElement('div')).innerHTML='<b>Controls</b>';
   ['• Rotate/Tilt: drag','• Pan: right-drag / two-finger','• Zoom: wheel / pinch'].forEach(t=>{
@@ -415,7 +548,6 @@ function injectPanels(atom){
   sum.appendChild(sLeft); sum.appendChild(sRight); det.appendChild(sum);
 
   const body=document.createElement('div'); body.id='blkBody';
-
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
   [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{
     const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);
@@ -424,7 +556,6 @@ function injectPanels(atom){
   else if(atom.style.halving){ const c2=document.createElement('span'); c2.className='chip'; c2.textContent='Halving Mode'; chips.appendChild(c2); }
   body.appendChild(chips);
 
-  // Block header table
   const tbl=document.createElement('table');
   const rows=[
     ['Tx count', blk.tx_count??'n/a'],
@@ -446,35 +577,14 @@ function injectPanels(atom){
   });
   body.appendChild(tbl);
 
-  // NEW: Styling drivers
-  const d=atom.drivers;
   const sec=document.createElement('div');
   sec.innerHTML = `
-    <h4>Styling drivers (derived from this block)</h4>
+    <h4>Skins in use</h4>
     <table>
-      <tr><td><b>Counts & shells</b></td>
-          <td>electrons: <code class="badge">${d.electrons}</code>, protons (Z): <code class="badge">${d.protons}</code>, neutrons (N): <code class="badge">${d.neutrons}</code>, shells: <code class="badge">${d.shells.length}</code></td></tr>
-      <tr><td>Shell radii (approx)</td><td>min: <code class="badge">${d.radiiMin??'n/a'}</code>, max: <code class="badge">${d.radiiMax??'n/a'}</code>, spread: <code class="badge">${d.orbitSpread}</code></td></tr>
-
-      <tr><td><b>Motion</b></td>
-          <td>speed scale (∝ log₁₀(tx_count × size)): <code class="badge">${d.speedScale}</code> (log₁₀: <code class="badge">${d.lgProd}</code>), base eccentricity: <code class="badge">${d.eccentricityBase}</code>, nucleus tightness: <code class="badge">${d.nucleusTightness}</code></td></tr>
-
-      <tr><td><b>Rings</b></td>
-          <td>thickness: <code class="badge">${d.ringThick}</code>, alpha: <code class="badge">${d.ringAlpha}</code>, hue shift: <code class="badge">${d.ringHueShiftDeg}°</code>, color: <code class="badge">${d.ringColorHex}</code></td></tr>
-
-      <tr><td><b>Surface / shader</b></td>
-          <td>marble intensity: <code class="badge">${d.marbleIntensity}</code>, scale: <code class="badge">${d.marbleScale}</code>, anim amp: <code class="badge">${d.animAmp}</code>, anim speed: <code class="badge">${d.animSpeed}</code>, block phase: <code class="badge">${d.blockPhase}</code></td></tr>
-
-      <tr><td><b>Palette (from height)</b></td>
-          <td>
-            proton: <code class="badge">${d.palette.proton}</code>,
-            neutron: <code class="badge">${d.palette.neutron}</code>,
-            electron: <code class="badge">${d.palette.electron}</code>,
-            shell: <code class="badge">${d.palette.shell}</code>
-          </td></tr>
-
-      <tr><td><b>Special modes</b></td>
-          <td>${d.disco? '🎉 Disco 170 enabled' : (d.halving? 'Halving mode enabled' : '—')}</td></tr>
+      <tr><td>Electrons</td><td>${skinSummary.electrons}</td></tr>
+      <tr><td>Protons</td><td>${skinSummary.protons}</td></tr>
+      <tr><td>Neutrons</td><td>${skinSummary.neutrons}</td></tr>
+      <tr><td>Notes</td><td>Skins are chosen deterministically from block data (height, hash bytes, merkle root). HUD overrides take precedence for quick demos.</td></tr>
     </table>
   `;
   body.appendChild(sec);
@@ -482,38 +592,47 @@ function injectPanels(atom){
   det.appendChild(body);
   document.body.appendChild(det);
 
-  // Info panel
   const info=document.createElement('details'); info.id='infoPanel'; info.className='panel';
   const infoSum=document.createElement('summary');
   const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
-  infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works'));
+  infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / Skins'));
   info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction; area uses compressed scaling so more tiles are visible: <code>area ∝ (vsize+base)^γ</code> with γ≈0.55. Color uses a fixed fee-rate gradient: <code>#0B4F35</code> → yellow → orange → red → <code>#81084E</code> at 50,000 sat/vB (clamped).</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: gold nucleus, silver pulsing electrons; background has a subtle orange pulse overlay.</p>';
+  infoBody.innerHTML = `
+    <h3>Skins</h3>
+    <p>Available: Marble, Toon (cel), Iridescent, Glass (alpha), Lava (FBM), Spikes (ferrofluid displacement), Wireframe (neon grid).</p>
+    <p>Halving blocks keep gold nucleus + silver pulsing electrons. Block 170 is Rainbow Disco.</p>
+  `;
   info.appendChild(infoBody);
   document.body.appendChild(info);
 
-  // UI guards
+  const warn=document.createElement('div'); warn.id='warn'; warn.textContent='Shader fallback active (simplified lighting).'; document.body.appendChild(warn);
+
   const guard=n=>{n.addEventListener('pointerdown',()=>uiPointerDown=true);n.addEventListener('pointerup',()=>uiPointerDown=false);
                   n.addEventListener('pointerleave',()=>uiPointerDown=false);n.addEventListener('pointercancel',()=>uiPointerDown=false);
                   n.addEventListener('wheel',(e)=>{e.stopPropagation(); e.preventDefault();},{passive:false});};
   [legend,det,info].forEach(guard);
-
-  const warn=document.createElement('div'); warn.id='warn'; warn.textContent='Shader fallback active (simplified lighting).'; document.body.appendChild(warn);
 }
 
 /* ---------- p5 sketch ---------- */
 let p5Instance=null, orbShader=null, SHADER_OK=true;
-
 function startSketch(blk, txsForBg){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
   SHADER_OK=true; uiPointerDown=false;
 
   const atom=buildAtomFromBlock(blk);
-  injectPanels(atom);
 
+  // background treemap source
   const txs = (txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
   resizeBG(); renderTreemapBase(txs);
+
+  // build skin summary
+  const eSet=new Set(), pSet=new Set(), nSet=new Set();
+  atom.shells.forEach((cnt,i)=>{ for(let j=0;j<cnt;j++){ eSet.add(modeName(chooseModeElectron(atom,i,j))); }});
+  for(let k=0;k<Math.min(24,atom.Z);k++) pSet.add(modeName(chooseModeProton(atom,k)));
+  for(let k=0;k<Math.min(24,atom.N);k++) nSet.add(modeName(chooseModeNeutron(atom,k)));
+  const skinSummary={ electrons:[...eSet].join(', '), protons:[...pSet].join(', '), neutrons:[...nSet].join(', ') };
+  injectPanels(atom, skinSummary);
 
   const sketch=(p)=>{
     p.setup=function(){
@@ -524,27 +643,29 @@ function startSketch(blk, txsForBg){
     };
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs); };
 
-    function drawOrbMat(cA,cB,r,t,metal,rough,amp,spd){
+    function drawOrbMat(cA,cB,r,t,mode,alpha,spikeAmp,amp,spd,blockPhase){
       p.noStroke();
       if(SHADER_OK){
         try{
           p.shader(orbShader);
           orbShader.setUniform('uColorA', cA.map(v=>v/255));
           orbShader.setUniform('uColorB', cB.map(v=>v/255));
-          orbShader.setUniform('uMarbleInt', metal);
-          orbShader.setUniform('uMarbleScale', rough);
+          orbShader.setUniform('uMarbleInt', atom.shader.MARBLE_INT);
+          orbShader.setUniform('uMarbleScale', atom.shader.MARBLE_SCALE);
           orbShader.setUniform('uTime', t);
           orbShader.setUniform('uAnimAmp', amp);
           orbShader.setUniform('uAnimSpeed', spd);
-          orbShader.setUniform('uBlockPhase', atom.shader.blockPhase || 0.0);
-          p.sphere(r);
+          orbShader.setUniform('uBlockPhase', blockPhase||0.0);
+          orbShader.setUniform('uMode', mode|0);
+          orbShader.setUniform('uAlpha', alpha);
+          orbShader.setUniform('uSpikeAmp', spikeAmp||0.0);
+          p.sphere(r, 48, 32);
           p.resetShader(); return;
         }catch(e){ SHADER_OK=false; $('#warn').style.display='block'; p.resetShader(); }
       }
       p.ambientMaterial(cA[0],cA[1],cA[2]); p.sphere(r);
     }
     const hueToRgb=h=>hslToRgb((h%360)/360, 0.95, 0.55);
-
     function drawRainbowRings(t){
       const steps = 180, baseHue = (t*160) % 360;
       for(let i=0;i<atom.shells.length;i++){
@@ -588,6 +709,7 @@ function startSketch(blk, txsForBg){
       const s = uiPointerDown?0:1; p.orbitControl(s,s,1.5);
       p.rotateY(t*0.06); p.rotateX(Math.sin(t*0.23)*0.05);
 
+      // Rings
       if (disco){ drawRainbowRings(t); }
       else {
         for(let i=0;i<atom.shells.length;i++){
@@ -607,20 +729,24 @@ function startSketch(blk, txsForBg){
 
       // Nucleus
       p.push();
-      for(const q of atom.nucleusPoints){
+      for(let idx=0; idx<atom.nucleusPoints.length; idx++){
+        const q = atom.nucleusPoints[idx];
         p.push(); p.translate(q.x,q.y,q.z);
         if (disco){
           const hue = (t*220* (q.isProton?1.0:1.05) + q.hueOffset) % 360;
           const col = hueToRgb(hue);
           const pulse = 1.0 + 0.35*Math.sin(t*9.0 + q.hueOffset*0.05);
-          drawOrbMat(col, col, NUCLEON_R*pulse, t, 0.7, 3.2, 0.25, 1.6);
+          drawOrbMat(col, col, NUCLEON_R*pulse, t, MODE_TOON, 1.0, 0.0, 0.25, 1.6, atom.shader.blockPhase);
         } else if (halving){
           const goldA=[255,215,64], goldB=[255,170,32];
-          drawOrbMat(goldA, goldB, NUCLEON_R, t, 0.92, 3.4, 0.20, 0.65);
-        } else if(q.isProton){
-          drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 0.85, 3.1, atom.shader.animAmp, atom.shader.animSpeed);
+          drawOrbMat(goldA, goldB, NUCLEON_R, t, MODE_IRIDESCENT, 1.0, 0.0, 0.20, 0.65, atom.shader.blockPhase);
         } else {
-          drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 0.30, 4.6, 0.12, 0.35);
+          const mode = q.isProton ? chooseModeProton(atom, idx) : chooseModeNeutron(atom, idx);
+          const cA = q.isProton ? atom.colors.proton : shiftHue(atom.colors.neutron,-22);
+          const cB = q.isProton ? shiftHue(atom.colors.proton,18) : atom.colors.neutron;
+          const alpha = (mode===MODE_GLASS)?0.6:1.0;
+          const spikeAmp = (mode===MODE_SPIKES)? 1.2 : 0.0;
+          drawOrbMat(cA, cB, NUCLEON_R, t, mode, alpha, spikeAmp, atom.shader.animAmp, atom.shader.animSpeed, atom.shader.blockPhase);
         }
         p.pop();
       }
@@ -643,14 +769,17 @@ function startSketch(blk, txsForBg){
             const hue = (t*240 + m.hueOffset) % 360;
             const col = hslToRgb((hue%360)/360, 0.95, 0.55);
             const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
-            drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.65, 3.0, 0.3, 1.8);
+            drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, MODE_TOON, 1.0, 0.0, 0.3, 1.8, atom.shader.blockPhase);
           } else if (halving){
             const silverA=[220,228,235], silverB=[160,170,185];
             const pulse = 1.0 + 0.30*Math.sin(t*3.2 + i*0.7 + j*0.21);
-            drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.90, 3.0, 0.15, 0.9);
+            drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, MODE_IRIDESCENT, 1.0, 0.0, 0.15, 0.9, atom.shader.blockPhase);
           } else {
+            const mode = chooseModeElectron(atom,i,j);
             const mixT=((j%7)/7)*0.35; const eCol=mixRGB(atom.colors.electron, atom.style.ringColor, mixT);
-            drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, atom.shader.MARBLE_INT, atom.shader.MARBLE_SCALE, atom.shader.animAmp, atom.shader.animSpeed);
+            const alpha = (mode===MODE_GLASS)?0.6:1.0;
+            const spikeAmp = (mode===MODE_SPIKES)? 1.0 : 0.0;
+            drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, mode, alpha, spikeAmp, atom.shader.animAmp, atom.shader.animSpeed, atom.shader.blockPhase);
           }
           p.pop();
 
@@ -665,7 +794,6 @@ function startSketch(blk, txsForBg){
       }
     };
   };
-
   const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1';
   document.body.appendChild(container);
   p5Instance=new p5(sketch, container);
@@ -675,7 +803,6 @@ function startSketch(blk, txsForBg){
 const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
-
 async function fetchAllBlockTxs(hash, maxPages=400){
   const txs=[]; let page=0;
   while(page<maxPages){
@@ -688,8 +815,8 @@ async function fetchAllBlockTxs(hash, maxPages=400){
   }
   return txs;
 }
-
 async function loadBlockByHeight(height){
+  __CURRENT_HEIGHT = height;
   $('#progress').style.display='block'; $('#progress').textContent='Resolving block '+height+'…';
   const hash=await fetchText(API+'/block-height/'+height);
   $('#progress').textContent='Fetching header…';
@@ -710,12 +837,22 @@ const hud=$('#hud');
 ['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=false;}));
 
+// build HUD selects
+buildForceSelect(document.getElementById('forceE'));
+buildForceSelect(document.getElementById('forceP'));
+buildForceSelect(document.getElementById('forceN'));
+syncHUDFromForce();
+
+document.getElementById('applyForceBtn').onclick=()=>{ readHUDIntoForce(); reloadCurrent(); };
+document.getElementById('resetForceBtn').onclick=()=>{ FORCE={electron:null,proton:null,neutron:null}; syncHUDFromForce(); reloadCurrent(); };
+
+// Height buttons
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
 $('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
 
 resizeBG();
-// loadLatest(); // optional
+// loadLatest(); // optional auto-load
 </script>
 </body>
 </html>
