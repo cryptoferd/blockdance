@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Disco 170 (fixed)</title>
+<title>Bitcoin Block Atom — Halving & Disco</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -94,9 +94,9 @@ function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
   let hP = baseHue;
-  let hN = mod(baseHue + (90 + rng() * 120), 360);
-  let hE = mod(baseHue + (180 + rng() * 120), 360);
-  let hS = mod(baseHue + (30 + rng() * 120), 360);
+  let hN = mod(hP + (90 + rng() * 120), 360);
+  let hE = mod(hP + (180 + rng() * 120), 360);
+  let hS = mod(hP + (30 + rng() * 120), 360);
   let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
   let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
   let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
@@ -146,6 +146,7 @@ function buildAtomFromBlock(b){
   const orbitSpread=1.0+((version&0xf)-7.5)*0.01;
   const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
 
+  // electrons meta
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){
     electronAngles[i]=[]; eMeta[i]=[];
@@ -156,7 +157,7 @@ function buildAtomFromBlock(b){
       const ref=Math.abs(u[2])<0.9?[0,0,1]:[1,0,0]; let v=vnorm(vcross(u,ref)), w=vcross(u,v);
       const e=clamp(eccGlobal*(0.6+0.8*(b1/255)),0.05,0.93), pre=(0.05+0.45*(b2/255))*speedScale, phase=(b0/255)*Math.PI*2;
       const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
-      const hueOffset=( (i*97 + j*131 + seed) % 360 );
+      const hueOffset=( (i*97 + j*131 + seed) % 360 ); // used only for disco
       electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset};
     }
   }
@@ -164,12 +165,13 @@ function buildAtomFromBlock(b){
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
   const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
 
+  // nucleus points
   const totalNuc=Math.min(900,Z+N), nucleusPoints=[];
   for(let i=0;i<totalNuc;i++){
     const rNorm=Math.pow(Math.random(), tightness);
     const r=NUCLEUS_R0*(0.35+0.65*rNorm), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
     const isProton = i<Z;
-    const hueOffset = (i*23 + (isProton?177:311)) % 360;
+    const hueOffset = (i*23 + (isProton?177:311)) % 360; // used only for disco
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset});
   }
 
@@ -209,7 +211,7 @@ function injectPanels(atom){
   const l4=document.createElement('div'); l4.textContent='• Zoom: wheel / pinch'; legend.appendChild(l4);
   document.body.appendChild(legend);
 
-  // Block details (DOM, no template strings)
+  // Block details
   const blk=atom.block;
   const det=document.createElement('details'); det.id='blockPanel'; det.className='panel';
   const sum=document.createElement('summary');
@@ -225,7 +227,7 @@ function injectPanels(atom){
   const chip2=document.createElement('span'); chip2.className='chip'; chip2.textContent='Protons: ' + atom.Z; chips.appendChild(chip2);
   const chip3=document.createElement('span'); chip3.className='chip'; chip3.textContent='Neutrons: ' + atom.N; chips.appendChild(chip3);
   if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco 170'; chips.appendChild(c); }
-  else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
+  else if(atom.style.halving){ const c2=document.createElement('span'); c2.className='chip'; c2.textContent='Halving Mode'; chips.appendChild(c2); }
   body.appendChild(chips);
 
   const tbl=document.createElement('table');
@@ -251,14 +253,14 @@ function injectPanels(atom){
   det.appendChild(body);
   document.body.appendChild(det);
 
-  // Info panel (small template string kept but very simple)
+  // Info panel
   const info=document.createElement('details'); info.id='infoPanel'; info.className='panel';
   const infoSum=document.createElement('summary');
   const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works'));
   info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<h3>Special case: Block 170</h3><p>Rainbow “disco” mode to honor the first Bitcoin transaction from Satoshi to Hal Finney: all orbs pulse and cycle hue; rings animate through ROYGBIV.</p><h3>Motion</h3><p>Electrons orbit on tilted ellipses with slow precession and rosette wobble. Speed ∝ log₁₀(tx_count × size).</p>';
+  infoBody.innerHTML = '<h3>Special cases</h3><p><b>Block 170</b> (Satoshi → Hal): rainbow disco — all orbs pulse & cycle hue; rings animate ROYGBIV.</p><p><b>Halving blocks</b> (every 210,000): background pulses orange↔black, nucleus turns gold with a soft halo, electrons become silver and pulse.</p><h3>Motion</h3><p>Electrons orbit on tilted ellipses with precession & rosette wobble. Speed ∝ log₁₀(tx_count × size).</p>';
   info.appendChild(infoBody);
   document.body.appendChild(info);
 
@@ -330,19 +332,70 @@ function startSketch(blk){
       }
     }
 
+    // Soft halo as many faint great-circle rings
+    function drawSoftHalo(radius, alpha, rings=24){
+      p.push();
+      p.noFill();
+      for(let i=0;i<rings;i++){
+        const a = i*Math.PI*2/rings;
+        p.rotateY(a);
+        p.stroke(255,170,40, alpha * (1 - i/rings)); // warm orange-ish
+        p.strokeWeight(1);
+        p.beginShape();
+        const steps=220;
+        for(let k=0;k<=steps;k++){
+          const th=(k/steps)*Math.PI*2;
+          p.vertex(radius*Math.cos(th), radius*Math.sin(th), 0);
+        }
+        p.endShape();
+      }
+      p.pop();
+    }
+
     p.draw=function(){
-      p.blendMode(p.BLEND);
-      p.background(8,10,14);
-      const gl=p._renderer.GL; gl.clearDepth(1.0); gl.clear(gl.DEPTH_BUFFER_BIT);
-
-      const s = uiPointerDown?0:1; p.orbitControl(s,s,1.5);
-
       const t=p.millis()*0.001;
-      p.rotateY(t*0.06); p.rotateX(Math.sin(t*0.23)*0.05);
 
       const disco = atom.style.disco;
+      const halving = atom.style.halving && !disco; // disco overrides
 
-      // nucleus
+      // Background
+      if (halving){
+        const pulse = 0.5+0.5*Math.sin(t*2.2);
+        const r = Math.round(255*pulse), g = Math.round(140*pulse), b = Math.round(0*pulse);
+        p.background(r,g,b);
+      } else {
+        p.background(8,10,14);
+      }
+
+      const gl=p._renderer.GL; gl.clearDepth(1.0); gl.clear(gl.DEPTH_BUFFER_BIT);
+
+      // controls
+      const s = uiPointerDown?0:1; p.orbitControl(s,s,1.5);
+
+      // gentle idle rotation
+      p.rotateY(t*0.06); p.rotateX(Math.sin(t*0.23)*0.05);
+
+      // RINGS
+      if (disco){
+        drawRainbowRings(t);
+      } else {
+        for(let i=0;i<atom.shells.length;i++){
+          const r=atom.radii[i];
+          p.push(); p.noFill();
+          if (halving){
+            p.stroke(255,170,0,200);
+            p.strokeWeight(1.6 + 0.8*Math.sin(t*2.0 + i));
+          } else {
+            p.stroke(atom.style.ringColor[0], atom.style.ringColor[1], atom.style.ringColor[2], atom.style.ringAlpha);
+            p.strokeWeight(atom.style.ringThick);
+          }
+          p.beginShape(); const steps=160;
+          for(let k=0;k<steps;k++){ const ang=(k/steps)*Math.PI*2; p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
+          p.endShape(p.CLOSE); p.pop();
+        }
+      }
+
+      // NUCLEUS
       p.push();
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
@@ -351,6 +404,10 @@ function startSketch(blk){
           const col = hueToRgb(hue);
           const pulse = 1.0 + 0.35*Math.sin(t*9.0 + q.hueOffset*0.05);
           drawOrbMat(col, col, NUCLEON_R*pulse, t, 0.7, 3.2, 0.25, 1.6);
+        } else if (halving){
+          // Gold nucleus
+          const goldA=[255,215,64], goldB=[255,170,32];
+          drawOrbMat(goldA, goldB, NUCLEON_R, t, 0.92, 3.4, 0.20, 0.65);
         } else if(q.isProton){
           drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 0.85, 3.1, atom.shader.animAmp, atom.shader.animSpeed);
         } else {
@@ -360,19 +417,7 @@ function startSketch(blk){
       }
       p.pop();
 
-      // rings
-      if (disco){
-        drawRainbowRings(t);
-      } else {
-        for(let i=0;i<atom.shells.length;i++){
-          const r=atom.radii[i];
-          p.push(); p.noFill(); p.stroke(atom.style.ringColor[0], atom.style.ringColor[1], atom.style.ringColor[2], atom.style.ringAlpha); p.strokeWeight(atom.style.ringThick);
-          p.beginShape(); const steps=160; for(let k=0;k<steps;k++){ const ang=(k/steps)*Math.PI*2; p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
-          p.endShape(p.CLOSE); p.pop();
-        }
-      }
-
-      // electrons
+      // ELECTRONS
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -390,6 +435,11 @@ function startSketch(blk){
             const col = hueToRgb(hue);
             const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
             drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.65, 3.0, 0.3, 1.8);
+          } else if (halving){
+            // Silver electrons with pulsing radius
+            const silverA=[220,228,235], silverB=[160,170,185];
+            const pulse = 1.0 + 0.30*Math.sin(t*3.2 + i*0.7 + j*0.21);
+            drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.90, 3.0, 0.15, 0.9);
           } else {
             const mixT=((j%7)/7)*0.35; const eCol=mixRGB(atom.colors.electron, atom.style.ringColor, mixT);
             drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, atom.shader.MARBLE_INT, atom.shader.MARBLE_SCALE, atom.shader.animAmp, atom.shader.animSpeed);
@@ -398,6 +448,16 @@ function startSketch(blk){
 
           atom.electronAngles[i][j]+=baseSpeed*m.spMul;
         }
+      }
+
+      // HALO (draw last so it overlays gently; no depth occlusion)
+      if (halving){
+        const Rmax = atom.radii.length ? atom.radii[atom.radii.length-1] : 120;
+        const haloR = Rmax + 26 + 6*Math.sin(t*2.0);
+        // temporarily disable depth test so the halo doesn't get clipped
+        gl.disable(gl.DEPTH_TEST);
+        drawSoftHalo(haloR, 42, 28); // soft edges from stacked faint rings
+        gl.enable(gl.DEPTH_TEST);
       }
     };
   };
@@ -430,10 +490,9 @@ const hud=$('#hud');
 ['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=false;}));
 
-// Buttons
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
-$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
+$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }});
 
 // // Optional: auto-load latest
 // loadLatest();
