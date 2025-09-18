@@ -93,17 +93,14 @@ const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
-
   let hP = baseHue;
   let hN = mod(baseHue + (90 + rng() * 120), 360);
   let hE = mod(baseHue + (180 + rng() * 120), 360);
   let hS = mod(baseHue + (30 + rng() * 120), 360);
-
   let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
   let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
   let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
   let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
-
   return{
     proton:  hslToRgb(hP/360, sP, lP),
     neutron: hslToRgb(hN/360, sN, lN),
@@ -111,7 +108,7 @@ function paletteFromHeight(height){
     shell:   hslToRgb(hS/360, sS, lS)
   };
 }
-function feeSpread(){ return 0.25; } // treemap removed
+function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
 function buildAtomFromBlock(b){
@@ -149,7 +146,6 @@ function buildAtomFromBlock(b){
   const orbitSpread=1.0+((version&0xf)-7.5)*0.01;
   const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
 
-  // electrons metadata + hue offsets for disco
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){
     electronAngles[i]=[]; eMeta[i]=[];
@@ -160,7 +156,7 @@ function buildAtomFromBlock(b){
       const ref=Math.abs(u[2])<0.9?[0,0,1]:[1,0,0]; let v=vnorm(vcross(u,ref)), w=vcross(u,v);
       const e=clamp(eccGlobal*(0.6+0.8*(b1/255)),0.05,0.93), pre=(0.05+0.45*(b2/255))*speedScale, phase=(b0/255)*Math.PI*2;
       const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
-      const hueOffset=( (i*97 + j*131 + seed) % 360 ); // unique start color
+      const hueOffset=( (i*97 + j*131 + seed) % 360 );
       electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset};
     }
   }
@@ -168,7 +164,6 @@ function buildAtomFromBlock(b){
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
   const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
 
-  // nucleus points (+ hue offsets for disco)
   const totalNuc=Math.min(900,Z+N), nucleusPoints=[];
   for(let i=0;i<totalNuc;i++){
     const rNorm=Math.pow(Math.random(), tightness);
@@ -186,8 +181,7 @@ function buildAtomFromBlock(b){
   const animSpeed=clamp(0.35+((nonce&0xFF)/255)*0.9,0.35,1.85);
   const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
 
-  // Special modes
-  const isDisco = height===170; // Hal + Satoshi
+  const isDisco = height===170;
   const halving = !isDisco && isHalving(height);
 
   return {
@@ -202,44 +196,70 @@ function buildAtomFromBlock(b){
 }
 
 /* ---------- UI panels ---------- */
-let uiPointerDown = false;   /* single global */
+let uiPointerDown = false;
 
 function injectPanels(atom){
   ['legend','blockPanel','infoPanel','warn'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
+
+  // Legend
   const legend=document.createElement('div'); legend.id='legend'; legend.className='panel';
-  legend.innerHTML=`<div><b>Controls</b></div><div>• <b>Rotate/Tilt</b>: drag</div><div>• <b>Pan</b>: right-drag / two-finger</div><div>• <b>Zoom</b>: wheel / pinch</div>`;
+  legend.appendChild(document.createElement('div')).innerHTML='<b>Controls</b>';
+  const l2=document.createElement('div'); l2.textContent='• Rotate/Tilt: drag'; legend.appendChild(l2);
+  const l3=document.createElement('div'); l3.textContent='• Pan: right-drag / two-finger'; legend.appendChild(l3);
+  const l4=document.createElement('div'); l4.textContent='• Zoom: wheel / pinch'; legend.appendChild(l4);
   document.body.appendChild(legend);
 
+  // Block details (DOM, no template strings)
   const blk=atom.block;
   const det=document.createElement('details'); det.id='blockPanel'; det.className='panel';
-  det.innerHTML=`<summary><span>▼ Block Details</span><span style="color:#d7dfff;font-weight:500;">#${blk.height} — ${shortHash(blk.id||blk.hash)}</span></summary>
-  <div id="blkBody">
-    <div style="margin-bottom:6px;">
-      <span class="chip">Electrons: ${atom.electrons}</span>
-      <span class="chip">Protons: ${atom.Z}</span>
-      <span class="chip">Neutrons: ${atom.N}</span>
-      ${atom.style.disco?'<span class="chip">🎉 Disco 170</span>': (atom.style.halving?'<span class="chip">Halving Mode</span>':'')}
-    </div>
-    <table>
-      <tr><td>Tx count</td><td>${(blk.tx_count!=null?blk.tx_count:'n/a')}</td></tr>
-      <tr><td>Size (bytes)</td><td>${(blk.size!=null?blk.size:'n/a')}</td></tr>
-      <tr><td>Weight (WU)</td><td>${(blk.weight!=null?blk.weight:'n/a')}</td></tr>
-      <tr><td>Version</td><td>${(blk.version!=null?blk.version:'n/a')}</td></tr>
-      <tr><td>Bits</td><td>${(blk.bits!=null?blk.bits:'n/a')}</td></tr>
-      <tr><td>Nonce</td><td>${(blk.nonce!=null?blk.nonce:'n/a')}</td></tr>
-      <tr><td>Time</td><td>${(blk.timestamp? new Date(blk.timestamp*1000).toLocaleString() : 'n/a')}</td></tr>
-      <tr><td>Merkle root</td><td><code>${shortHash(blk.merkle_root)}</code></td></tr>
-    </table>
-  </div>`;
+  const sum=document.createElement('summary');
+  const sLeft=document.createElement('span'); sLeft.textContent='▼ Block Details';
+  const sRight=document.createElement('span'); sRight.style.color='#d7dfff'; sRight.style.fontWeight='500';
+  sRight.textContent = '#' + blk.height + ' — ' + shortHash(blk.id||blk.hash);
+  sum.appendChild(sLeft); sum.appendChild(sRight); det.appendChild(sum);
+
+  const body=document.createElement('div'); body.id='blkBody';
+
+  const chips=document.createElement('div'); chips.style.marginBottom='6px';
+  const chip1=document.createElement('span'); chip1.className='chip'; chip1.textContent='Electrons: ' + atom.electrons; chips.appendChild(chip1);
+  const chip2=document.createElement('span'); chip2.className='chip'; chip2.textContent='Protons: ' + atom.Z; chips.appendChild(chip2);
+  const chip3=document.createElement('span'); chip3.className='chip'; chip3.textContent='Neutrons: ' + atom.N; chips.appendChild(chip3);
+  if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco 170'; chips.appendChild(c); }
+  else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
+  body.appendChild(chips);
+
+  const tbl=document.createElement('table');
+  const rows=[
+    ['Tx count', (blk.tx_count!=null?blk.tx_count:'n/a')],
+    ['Size (bytes)', (blk.size!=null?blk.size:'n/a')],
+    ['Weight (WU)', (blk.weight!=null?blk.weight:'n/a')],
+    ['Version', (blk.version!=null?blk.version:'n/a')],
+    ['Bits', (blk.bits!=null?blk.bits:'n/a')],
+    ['Nonce', (blk.nonce!=null?blk.nonce:'n/a')],
+    ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
+    ['Merkle root', shortHash(blk.merkle_root)]
+  ];
+  rows.forEach(([k,v])=>{
+    const tr=document.createElement('tr');
+    const td1=document.createElement('td'); td1.textContent=k;
+    const td2=document.createElement('td');
+    if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code); }
+    else td2.textContent=String(v);
+    tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr);
+  });
+  body.appendChild(tbl);
+  det.appendChild(body);
   document.body.appendChild(det);
 
+  // Info panel (small template string kept but very simple)
   const info=document.createElement('details'); info.id='infoPanel'; info.className='panel';
-  info.innerHTML=`<summary><span class="badge">?</span> Info / How it works</summary>
-  <div id="infoBody">
-    <h3>Special case: Block 170</h3>
-    <p>Rainbow “disco” mode to honor the first Bitcoin transaction from Satoshi to Hal Finney: all orbs pulse and cycle hue; rings animate through ROYGBIV.</p>
-    <h3>Motion</h3><p>Electrons orbit on tilted ellipses with slow precession and rosette wobble. Speed ∝ log₁₀(tx_count × size).</p>
-  </div>`;
+  const infoSum=document.createElement('summary');
+  const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
+  infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works'));
+  info.appendChild(infoSum);
+  const infoBody=document.createElement('div'); infoBody.id='infoBody';
+  infoBody.innerHTML = '<h3>Special case: Block 170</h3><p>Rainbow “disco” mode to honor the first Bitcoin transaction from Satoshi to Hal Finney: all orbs pulse and cycle hue; rings animate through ROYGBIV.</p><h3>Motion</h3><p>Electrons orbit on tilted ellipses with slow precession and rosette wobble. Speed ∝ log₁₀(tx_count × size).</p>';
+  info.appendChild(infoBody);
   document.body.appendChild(info);
 
   const guard=n=>{n.addEventListener('pointerdown',()=>uiPointerDown=true);n.addEventListener('pointerup',()=>uiPointerDown=false);
@@ -256,7 +276,7 @@ let p5Instance=null, orbShader=null, SHADER_OK=true;
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
   SHADER_OK=true;
-  uiPointerDown=false;   // reset only
+  uiPointerDown=false;
 
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
@@ -311,12 +331,10 @@ function startSketch(blk){
     }
 
     p.draw=function(){
-      // CLEAR (no trails)
       p.blendMode(p.BLEND);
       p.background(8,10,14);
       const gl=p._renderer.GL; gl.clearDepth(1.0); gl.clear(gl.DEPTH_BUFFER_BIT);
 
-      // controls
       const s = uiPointerDown?0:1; p.orbitControl(s,s,1.5);
 
       const t=p.millis()*0.001;
@@ -408,16 +426,16 @@ async function loadLatest(){
 }
 
 /* ---------- HUD + guards ---------- */
-let uiPointerDownGlobalHandlerAttached=false;
 const hud=$('#hud');
 ['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=false;}));
 
+// Buttons
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
 $('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }});
 
-// Optional: auto-load latest
+// // Optional: auto-load latest
 // loadLatest();
 </script>
 </body>
