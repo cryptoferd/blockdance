@@ -4,6 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Bitcoin Block Atom — Disco 170 (fixed)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif}
@@ -90,11 +91,25 @@ float rim=pow(1.0-max(dot(n,V),0.0),2.2)*0.12;vec3 col=pow(diff+F*spec+tint*rim,
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
 
 function paletteFromHeight(height){
-  const rng=XS32(height), golden=137.50776405003785; let baseHue=mod((height*golden)+rng()*45,360);
-  let hP=baseHue, hN=mod(baseHue+(90+rng()*120),360), hE=mod(baseHue+(180+rng()*120),360), hS=mod(baseHue+(30+rng()*120),360);
-  let sP=0.82+0.18*rng(), lP=0.48+0.12*rng(); let sN=0.72+0.25*rng(), lN=0.52+0.12*rng();
-  let sE=0.92+0.08*rng(), lE=0.58+0.12*rng(); let sS=0.82+0.18*rng(), lS=0.56+0.12*rng();
-  return{ proton:hslToRgb(hP/360,sP,lP), neutron:hslToRgb(hN/360,sN,lN), electron:hslToRgb(hE/360,sE,lE), shell:hslToRgb(hS/360,sS,lS) };
+  const rng = XS32(height), golden = 137.50776405003785;
+  let baseHue = mod((height * golden) + rng() * 45, 360);
+
+  let hP = baseHue;
+  let hN = mod(baseHue + (90 + rng() * 120), 360);
+  let hE = mod(baseHue + (180 + rng() * 120), 360);
+  let hS = mod(baseHue + (30 + rng() * 120), 360);
+
+  let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
+  let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();   /* <-- fixed */
+  let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
+  let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
+
+  return{
+    proton:  hslToRgb(hP/360, sP, lP),
+    neutron: hslToRgb(hN/360, sN, lN),
+    electron:hslToRgb(hE/360, sE, lE),
+    shell:   hslToRgb(hS/360, sS, lS)
+  };
 }
 function feeSpread(){ return 0.25; } // treemap removed
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
@@ -187,7 +202,7 @@ function buildAtomFromBlock(b){
 }
 
 /* ---------- UI panels ---------- */
-let uiPointerDown = false;   /* <— SINGLE global declaration */
+let uiPointerDown = false;   /* single global */
 
 function injectPanels(atom){
   ['legend','blockPanel','infoPanel','warn'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
@@ -240,7 +255,7 @@ let p5Instance=null, orbShader=null, SHADER_OK=true;
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
   SHADER_OK=true;
-  uiPointerDown=false;   // <— reset, do NOT redeclare
+  uiPointerDown=false;   // reset only
 
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
@@ -391,7 +406,7 @@ async function loadLatest(){
   await loadBlockByHeight(h);
 }
 
-/* ---------- HUD + guards (REUSE the same uiPointerDown) ---------- */
+/* ---------- HUD + guards ---------- */
 const hud=$('#hud');
 ['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>uiPointerDown=true,{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>uiPointerDown=false));
