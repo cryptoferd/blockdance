@@ -100,7 +100,7 @@ function paletteFromHeight(height){
   let hS = mod(baseHue + (30 + rng() * 120), 360);
 
   let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
-  let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();   /* <-- fixed */
+  let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
   let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
   let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
 
@@ -115,8 +115,8 @@ function feeSpread(){ return 0.25; } // treemap removed
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
 function buildAtomFromBlock(b){
-  const height=b.height, txCount=b.tx_count||1, timestamp=b.timestamp||0;
-  const bits=b.bits||0, nonce=b.nonce||0, merkleRoot=b.merkle_root||"", weight=b.weight||0, size=b.size||0, version=b.version||0, hash=b.id||b.hash||"";
+  const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
+  const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
   const colors=paletteFromHeight(height);
 
   const baseE=(height%118)+1, eJitter=(byteAt(hash,5)%64)-32;
@@ -210,7 +210,8 @@ function injectPanels(atom){
   legend.innerHTML=`<div><b>Controls</b></div><div>• <b>Rotate/Tilt</b>: drag</div><div>• <b>Pan</b>: right-drag / two-finger</div><div>• <b>Zoom</b>: wheel / pinch</div>`;
   document.body.appendChild(legend);
 
-  const blk=atom.block; const det=document.createElement('details'); det.id='blockPanel'; det.className='panel';
+  const blk=atom.block;
+  const det=document.createElement('details'); det.id='blockPanel'; det.className='panel';
   det.innerHTML=`<summary><span>▼ Block Details</span><span style="color:#d7dfff;font-weight:500;">#${blk.height} — ${shortHash(blk.id||blk.hash)}</span></summary>
   <div id="blkBody">
     <div style="margin-bottom:6px;">
@@ -220,13 +221,13 @@ function injectPanels(atom){
       ${atom.style.disco?'<span class="chip">🎉 Disco 170</span>': (atom.style.halving?'<span class="chip">Halving Mode</span>':'')}
     </div>
     <table>
-      <tr><td>Tx count</td><td>${blk.tx_count??'n/a'}</td></tr>
-      <tr><td>Size (bytes)</td><td>${blk.size??'n/a'}</td></tr>
-      <tr><td>Weight (WU)</td><td>${blk.weight??'n/a'}</td></tr>
-      <tr><td>Version</td><td>${blk.version??'n/a'}</td></tr>
-      <tr><td>Bits</td><td>${blk.bits??'n/a'}</td></tr>
-      <tr><td>Nonce</td><td>${blk.nonce??'n/a'}</td></tr>
-      <tr><td>Time</td><td>${blk.timestamp ? new Date(blk.timestamp*1000).toLocaleString() : 'n/a'}</td></tr>
+      <tr><td>Tx count</td><td>${(blk.tx_count!=null?blk.tx_count:'n/a')}</td></tr>
+      <tr><td>Size (bytes)</td><td>${(blk.size!=null?blk.size:'n/a')}</td></tr>
+      <tr><td>Weight (WU)</td><td>${(blk.weight!=null?blk.weight:'n/a')}</td></tr>
+      <tr><td>Version</td><td>${(blk.version!=null?blk.version:'n/a')}</td></tr>
+      <tr><td>Bits</td><td>${(blk.bits!=null?blk.bits:'n/a')}</td></tr>
+      <tr><td>Nonce</td><td>${(blk.nonce!=null?blk.nonce:'n/a')}</td></tr>
+      <tr><td>Time</td><td>${(blk.timestamp? new Date(blk.timestamp*1000).toLocaleString() : 'n/a')}</td></tr>
       <tr><td>Merkle root</td><td><code>${shortHash(blk.merkle_root)}</code></td></tr>
     </table>
   </div>`;
@@ -285,7 +286,7 @@ function startSketch(blk){
           p.resetShader(); return;
         }catch(e){ SHADER_OK=false; $('#warn').style.display='block'; p.resetShader(); }
       }
-      p.ambientMaterial(...cA); p.sphere(r);
+      p.ambientMaterial(cA[0],cA[1],cA[2]); p.sphere(r);
     }
 
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
@@ -347,7 +348,7 @@ function startSketch(blk){
       } else {
         for(let i=0;i<atom.shells.length;i++){
           const r=atom.radii[i];
-          p.push(); p.noFill(); p.stroke(...atom.style.ringColor, atom.style.ringAlpha); p.strokeWeight(atom.style.ringThick);
+          p.push(); p.noFill(); p.stroke(atom.style.ringColor[0], atom.style.ringColor[1], atom.style.ringColor[2], atom.style.ringAlpha); p.strokeWeight(atom.style.ringThick);
           p.beginShape(); const steps=160; for(let k=0;k<steps;k++){ const ang=(k/steps)*Math.PI*2; p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
           p.endShape(p.CLOSE); p.pop();
         }
@@ -389,27 +390,28 @@ function startSketch(blk){
 
 /* ---------- networking ---------- */
 const API='https://mempool.space/api';
-async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(`${r.status} ${u}`); return (await r.text()).trim();}
-async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(`${r.status} ${u}`); return r.json();}
+async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
+async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
 
 async function loadBlockByHeight(height){
-  $('#progress').style.display='block'; $('#progress').textContent=`Resolving block ${height}…`;
-  const hash=await fetchText(`${API}/block-height/${height}`);
-  $('#progress').textContent=`Fetching header…`;
-  const blk=await fetchJSON(`${API}/block/${hash}`);
+  $('#progress').style.display='block'; $('#progress').textContent='Resolving block '+height+'…';
+  const hash=await fetchText(API+'/block-height/'+height);
+  $('#progress').textContent='Fetching header…';
+  const blk=await fetchJSON(API+'/block/'+hash);
   $('#progress').style.display='none';
   startSketch(blk);
 }
 async function loadLatest(){
   $('#progress').style.display='block'; $('#progress').textContent='Getting tip height…';
-  const h=await fetchText(`${API}/blocks/tip/height`); $('#heightInput').value=h;
+  const h=await fetchText(API+'/blocks/tip/height'); $('#heightInput').value=h;
   await loadBlockByHeight(h);
 }
 
 /* ---------- HUD + guards ---------- */
+let uiPointerDownGlobalHandlerAttached=false;
 const hud=$('#hud');
-['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>uiPointerDown=true,{passive:false}));
-['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>uiPointerDown=false));
+['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
+['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=false;}));
 
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
