@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Halving & Disco</title>
+<title>Bitcoin Block Atom — Treemap Background</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -34,7 +34,6 @@
 </head>
 <body>
 
-<!-- Loader HUD -->
 <div class="hud" id="hud">
   <label>Height:</label>
   <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000" style="width:140px"/>
@@ -111,6 +110,87 @@ function paletteFromHeight(height){
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
+/* ---------- treemap (2D background) ---------- */
+let bgLayer=null, bgData=null; // p5.Graphics and cached tx weights
+
+function squarifyTreemap(items, x, y, w, h, out){
+  // items: [{w:weight, hue, sat, light}] sorted descending
+  if(!items.length){ return; }
+  if(items.length===1){
+    out.push({x,y,w,h, item:items[0]}); return;
+  }
+  // choose split direction by longer side
+  const horizontal = w >= h;
+  const total = items.reduce((s,it)=>s+it.w,0);
+  let acc=0, bestIdx=0, bestWorst=Infinity;
+  for(let i=0;i<items.length;i++){
+    acc += items[i].w;
+    const ratio = horizontal ? Math.max((acc/total)/(h/w), ((total-acc)/total)/(h/w) )
+                             : Math.max((acc/total)/(w/h), ((total-acc)/total)/(w/h) );
+    if(ratio<bestWorst){ bestWorst=ratio; bestIdx=i; }
+  }
+  const groupA = items.slice(0,bestIdx+1);
+  const groupB = items.slice(bestIdx+1);
+  const sumA = groupA.reduce((s,it)=>s+it.w,0), sumB = total - sumA;
+  if(horizontal){
+    const wA = Math.max(1, Math.round(w*sumA/total));
+    squarifyTreemap(groupA, x, y, wA, h, out);
+    squarifyTreemap(groupB, x+wA, y, w-wA, h, out);
+  }else{
+    const hA = Math.max(1, Math.round(h*sumA/total));
+    squarifyTreemap(groupA, x, y, w, hA, out);
+    squarifyTreemap(groupB, x, y+hA, w, h-hA, out);
+  }
+}
+
+function makeTreemapGraphic(p, txs, width, height){
+  const g = p.createGraphics(width, height, p.P2D);
+  g.noStroke();
+  g.background(8,10,14);
+
+  if(!txs || !txs.length){ return g; }
+
+  // weights & color mapping
+  const items = [];
+  for(const tx of txs){
+    const w = Math.max(1, tx.vsize || tx.size || 1);
+    const feeRate = (tx.fee && (tx.vsize||tx.size)) ? tx.fee/ (tx.vsize||tx.size) : 0;
+    // palette bands by feerate-ish, but add determinism via last byte:
+    const seed = parseInt((tx.txid||'').slice(-2),16) || 0;
+    let hueBase;
+    if (feeRate >= 50) hueBase = 15;       // red/orange for very high
+    else if (feeRate >= 20) hueBase = 35;  // orange
+    else if (feeRate >= 10) hueBase = 55;  // yellow-green
+    else if (feeRate >= 5)  hueBase = 200; // blue
+    else hueBase = 260;                    // purple
+    hueBase = (hueBase + (seed%30) - 15 + (w%17)) % 360;
+    const sat = 70 + (seed%20);
+    const light = 18 + ((seed*7)%18);
+    items.push({w, hue:hueBase, sat, light});
+  }
+
+  // normalize and cap item count for perf if huge:
+  items.sort((a,b)=>b.w-a.w);
+  const MAX_ITEMS = 1200; // safety cap
+  const sliced = items.slice(0, MAX_ITEMS);
+  const out = [];
+  squarifyTreemap(sliced, 0, 0, width, height, out);
+
+  // draw
+  for(const r of out){
+    const [rr,gg,bb] = hslToRgb(r.item.hue/360, r.item.sat/100, r.item.light/100);
+    g.fill(rr,gg,bb);
+    g.rect(r.x, r.y, r.w, r.h);
+    // inner highlight for depth
+    g.noFill();
+    g.stroke(255,255,255,18);
+    g.rect(r.x+0.5, r.y+0.5, Math.max(0,r.w-1), Math.max(0,r.h-1));
+    g.noStroke();
+  }
+  return g;
+}
+
+/* ---------- atom build ---------- */
 function buildAtomFromBlock(b){
   const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
   const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
@@ -146,7 +226,6 @@ function buildAtomFromBlock(b){
   const orbitSpread=1.0+((version&0xf)-7.5)*0.01;
   const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
 
-  // electrons meta
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){
     electronAngles[i]=[]; eMeta[i]=[];
@@ -157,7 +236,7 @@ function buildAtomFromBlock(b){
       const ref=Math.abs(u[2])<0.9?[0,0,1]:[1,0,0]; let v=vnorm(vcross(u,ref)), w=vcross(u,v);
       const e=clamp(eccGlobal*(0.6+0.8*(b1/255)),0.05,0.93), pre=(0.05+0.45*(b2/255))*speedScale, phase=(b0/255)*Math.PI*2;
       const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
-      const hueOffset=( (i*97 + j*131 + seed) % 360 ); // used only for disco
+      const hueOffset=( (i*97 + j*131 + seed) % 360 );
       electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset};
     }
   }
@@ -165,13 +244,12 @@ function buildAtomFromBlock(b){
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
   const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
 
-  // nucleus points
   const totalNuc=Math.min(900,Z+N), nucleusPoints=[];
   for(let i=0;i<totalNuc;i++){
     const rNorm=Math.pow(Math.random(), tightness);
     const r=NUCLEUS_R0*(0.35+0.65*rNorm), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
     const isProton = i<Z;
-    const hueOffset = (i*23 + (isProton?177:311)) % 360; // used only for disco
+    const hueOffset = (i*23 + (isProton?177:311)) % 360;
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset});
   }
 
@@ -191,7 +269,7 @@ function buildAtomFromBlock(b){
     shader:{MARBLE_INT,MARBLE_SCALE,animAmp,animSpeed,blockPhase},
     style:{
       eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick:0.9, ringAlpha:220, ringColor:[180,150,255], nucleusTight:tightness,
+      ringThick:0.9, ringAlpha:220, ringColor:[180,150,255], nucleusTight:clamp((b.weight/Math.max(1,b.size*4))*0.75+(1.15-0.55*feeSpread()),0.6,1.4),
       halving, disco:isDisco
     }
   };
@@ -206,9 +284,9 @@ function injectPanels(atom){
   // Legend
   const legend=document.createElement('div'); legend.id='legend'; legend.className='panel';
   legend.appendChild(document.createElement('div')).innerHTML='<b>Controls</b>';
-  const l2=document.createElement('div'); l2.textContent='• Rotate/Tilt: drag'; legend.appendChild(l2);
-  const l3=document.createElement('div'); l3.textContent='• Pan: right-drag / two-finger'; legend.appendChild(l3);
-  const l4=document.createElement('div'); l4.textContent='• Zoom: wheel / pinch'; legend.appendChild(l4);
+  legend.appendChild(Object.assign(document.createElement('div'),{textContent:'• Rotate/Tilt: drag'}));
+  legend.appendChild(Object.assign(document.createElement('div'),{textContent:'• Pan: right-drag / two-finger'}));
+  legend.appendChild(Object.assign(document.createElement('div'),{textContent:'• Zoom: wheel / pinch'}));
   document.body.appendChild(legend);
 
   // Block details
@@ -221,7 +299,6 @@ function injectPanels(atom){
   sum.appendChild(sLeft); sum.appendChild(sRight); det.appendChild(sum);
 
   const body=document.createElement('div'); body.id='blkBody';
-
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
   const chip1=document.createElement('span'); chip1.className='chip'; chip1.textContent='Electrons: ' + atom.electrons; chips.appendChild(chip1);
   const chip2=document.createElement('span'); chip2.className='chip'; chip2.textContent='Protons: ' + atom.Z; chips.appendChild(chip2);
@@ -231,23 +308,20 @@ function injectPanels(atom){
   body.appendChild(chips);
 
   const tbl=document.createElement('table');
-  const rows=[
-    ['Tx count', (blk.tx_count!=null?blk.tx_count:'n/a')],
-    ['Size (bytes)', (blk.size!=null?blk.size:'n/a')],
-    ['Weight (WU)', (blk.weight!=null?blk.weight:'n/a')],
-    ['Version', (blk.version!=null?blk.version:'n/a')],
-    ['Bits', (blk.bits!=null?blk.bits:'n/a')],
-    ['Nonce', (blk.nonce!=null?blk.nonce:'n/a')],
-    ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
-    ['Merkle root', shortHash(blk.merkle_root)]
-  ];
-  rows.forEach(([k,v])=>{
-    const tr=document.createElement('tr');
-    const td1=document.createElement('td'); td1.textContent=k;
-    const td2=document.createElement('td');
-    if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code); }
-    else td2.textContent=String(v);
-    tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr);
+  [['Tx count', (blk.tx_count!=null?blk.tx_count:'n/a')],
+   ['Size (bytes)', (blk.size!=null?blk.size:'n/a')],
+   ['Weight (WU)', (blk.weight!=null?blk.weight:'n/a')],
+   ['Version', (blk.version!=null?blk.version:'n/a')],
+   ['Bits', (blk.bits!=null?blk.bits:'n/a')],
+   ['Nonce', (blk.nonce!=null?blk.nonce:'n/a')],
+   ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
+   ['Merkle root', shortHash(blk.merkle_root)]].forEach(([k,v])=>{
+      const tr=document.createElement('tr');
+      const td1=document.createElement('td'); td1.textContent=k;
+      const td2=document.createElement('td');
+      if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code); }
+      else td2.textContent=String(v);
+      tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr);
   });
   body.appendChild(tbl);
   det.appendChild(body);
@@ -260,10 +334,11 @@ function injectPanels(atom){
   infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works'));
   info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<h3>Special cases</h3><p><b>Block 170</b> (Satoshi → Hal): rainbow disco — all orbs pulse & cycle hue; rings animate ROYGBIV.</p><p><b>Halving blocks</b> (every 210,000): background pulses orange↔black, nucleus turns gold with a soft halo, electrons become silver and pulse.</p><h3>Motion</h3><p>Electrons orbit on tilted ellipses with precession & rosette wobble. Speed ∝ log₁₀(tx_count × size).</p>';
+  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction from the block; area ≈ vsize, color ≈ fee rate band with subtle variation. It’s drawn as a true background so it never rotates with the atom.</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: orange/black pulse overlay, gold nucleus with soft halo, silver pulsing electrons.</p>';
   info.appendChild(infoBody);
   document.body.appendChild(info);
 
+  // UI guards
   const guard=n=>{n.addEventListener('pointerdown',()=>uiPointerDown=true);n.addEventListener('pointerup',()=>uiPointerDown=false);
                   n.addEventListener('pointerleave',()=>uiPointerDown=false);n.addEventListener('pointercancel',()=>uiPointerDown=false);
                   n.addEventListener('wheel',(e)=>{e.stopPropagation(); e.preventDefault();},{passive:false});};
@@ -275,7 +350,7 @@ function injectPanels(atom){
 /* ---------- p5 sketch ---------- */
 let p5Instance=null, orbShader=null, SHADER_OK=true;
 
-function startSketch(blk){
+function startSketch(blk, txsForBg){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
   SHADER_OK=true;
   uiPointerDown=false;
@@ -283,13 +358,18 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
+  // prepare treemap layer for this block
+  bgData = (txsForBg||[]).map(tx=>({ txid:tx.txid, vsize:tx.vsize||tx.size||1, size:tx.size, fee:tx.fee||0 }));
+  const makeBG = (p)=>{ bgLayer = makeTreemapGraphic(p, bgData, p.width, p.height); };
+
   const sketch=(p)=>{
     p.setup=function(){
       p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       p.setAttributes('antialias', true, 'premultipliedAlpha', false);
       orbShader=p.createShader(VERT,FRAG);
+      makeBG(p);
     };
-    p.windowResized=()=>p.resizeCanvas(p.windowWidth,p.windowHeight);
+    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); makeBG(p); };
 
     function drawOrbMat(cA,cB,r,t,metal,rough,amp,spd){
       p.noStroke();
@@ -310,8 +390,7 @@ function startSketch(blk){
       }
       p.ambientMaterial(cA[0],cA[1],cA[2]); p.sphere(r);
     }
-
-    function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
+    const hueToRgb=h=>hslToRgb((h%360)/360, 0.95, 0.55);
 
     function drawRainbowRings(t){
       const steps = 180;
@@ -331,22 +410,14 @@ function startSketch(blk){
         p.pop();
       }
     }
-
-    // Soft halo as many faint great-circle rings
     function drawSoftHalo(radius, alpha, rings=24){
-      p.push();
-      p.noFill();
+      p.push(); p.noFill();
       for(let i=0;i<rings;i++){
-        const a = i*Math.PI*2/rings;
-        p.rotateY(a);
-        p.stroke(255,170,40, alpha * (1 - i/rings)); // warm orange-ish
+        const a = i*Math.PI*2/rings; p.rotateY(a);
+        p.stroke(255,170,40, alpha * (1 - i/rings));
         p.strokeWeight(1);
-        p.beginShape();
-        const steps=220;
-        for(let k=0;k<=steps;k++){
-          const th=(k/steps)*Math.PI*2;
-          p.vertex(radius*Math.cos(th), radius*Math.sin(th), 0);
-        }
+        p.beginShape(); const steps=220;
+        for(let k=0;k<=steps;k++){ const th=(k/steps)*Math.PI*2; p.vertex(radius*Math.cos(th), radius*Math.sin(th), 0); }
         p.endShape();
       }
       p.pop();
@@ -354,31 +425,35 @@ function startSketch(blk){
 
     p.draw=function(){
       const t=p.millis()*0.001;
-
       const disco = atom.style.disco;
-      const halving = atom.style.halving && !disco; // disco overrides
+      const halving = atom.style.halving && !disco;
 
-      // Background
-      if (halving){
+      // --- TRUE BACKGROUND: draw treemap in screen space ---
+      // Clear with black first to avoid alpha surprises.
+      p.background(0,0,0);
+      // Switch to screen-space: identity matrices, no depth
+      const gl=p._renderer.GL; gl.disable(gl.DEPTH_TEST);
+      p.push();
+      p.resetMatrix();
+      // draw the 2D layer to cover the screen
+      if(bgLayer){ p.image(bgLayer, -p.width/2, -p.height/2, p.width, p.height); }
+      // halving overlay tint (orange/black pulse) on top of treemap
+      if(halving){
         const pulse = 0.5+0.5*Math.sin(t*2.2);
-        const r = Math.round(255*pulse), g = Math.round(140*pulse), b = Math.round(0*pulse);
-        p.background(r,g,b);
-      } else {
-        p.background(8,10,14);
+        p.noStroke(); p.fill(255,140,0, Math.round(110*pulse));
+        p.rect(-p.width/2, -p.height/2, p.width, p.height);
       }
+      p.pop();
+      gl.enable(gl.DEPTH_TEST);
+      // --- END BACKGROUND ---
 
-      const gl=p._renderer.GL; gl.clearDepth(1.0); gl.clear(gl.DEPTH_BUFFER_BIT);
-
-      // controls
+      // Now 3D scene
       const s = uiPointerDown?0:1; p.orbitControl(s,s,1.5);
-
-      // gentle idle rotation
       p.rotateY(t*0.06); p.rotateX(Math.sin(t*0.23)*0.05);
 
-      // RINGS
-      if (disco){
-        drawRainbowRings(t);
-      } else {
+      // Rings
+      if (disco){ drawRainbowRings(t); }
+      else {
         for(let i=0;i<atom.shells.length;i++){
           const r=atom.radii[i];
           p.push(); p.noFill();
@@ -389,13 +464,12 @@ function startSketch(blk){
             p.stroke(atom.style.ringColor[0], atom.style.ringColor[1], atom.style.ringColor[2], atom.style.ringAlpha);
             p.strokeWeight(atom.style.ringThick);
           }
-          p.beginShape(); const steps=160;
-          for(let k=0;k<steps;k++){ const ang=(k/steps)*Math.PI*2; p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
+          p.beginShape(); const steps=160; for(let k=0;k<steps;k++){ const ang=(k/steps)*Math.PI*2; p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
           p.endShape(p.CLOSE); p.pop();
         }
       }
 
-      // NUCLEUS
+      // Nucleus
       p.push();
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
@@ -405,7 +479,6 @@ function startSketch(blk){
           const pulse = 1.0 + 0.35*Math.sin(t*9.0 + q.hueOffset*0.05);
           drawOrbMat(col, col, NUCLEON_R*pulse, t, 0.7, 3.2, 0.25, 1.6);
         } else if (halving){
-          // Gold nucleus
           const goldA=[255,215,64], goldB=[255,170,32];
           drawOrbMat(goldA, goldB, NUCLEON_R, t, 0.92, 3.4, 0.20, 0.65);
         } else if(q.isProton){
@@ -417,7 +490,7 @@ function startSketch(blk){
       }
       p.pop();
 
-      // ELECTRONS
+      // Electrons
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -435,8 +508,7 @@ function startSketch(blk){
             const col = hueToRgb(hue);
             const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
             drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.65, 3.0, 0.3, 1.8);
-          } else if (halving){
-            // Silver electrons with pulsing radius
+          } else if (atom.style.halving && !disco){
             const silverA=[220,228,235], silverB=[160,170,185];
             const pulse = 1.0 + 0.30*Math.sin(t*3.2 + i*0.7 + j*0.21);
             drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.90, 3.0, 0.15, 0.9);
@@ -450,14 +522,13 @@ function startSketch(blk){
         }
       }
 
-      // HALO (draw last so it overlays gently; no depth occlusion)
+      // Halving halo last (depth off so it overlays softly)
       if (halving){
-        const Rmax = atom.radii.length ? atom.radii[atom.radii.length-1] : 120;
+        const gl2=p._renderer.GL; const Rmax = atom.radii.length ? atom.radii[atom.radii.length-1] : 120;
         const haloR = Rmax + 26 + 6*Math.sin(t*2.0);
-        // temporarily disable depth test so the halo doesn't get clipped
-        gl.disable(gl.DEPTH_TEST);
-        drawSoftHalo(haloR, 42, 28); // soft edges from stacked faint rings
-        gl.enable(gl.DEPTH_TEST);
+        gl2.disable(gl2.DEPTH_TEST);
+        drawSoftHalo(haloR, 42, 28);
+        gl2.enable(gl2.DEPTH_TEST);
       }
     };
   };
@@ -471,13 +542,35 @@ const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
 
+// page through txs: /block/{hash}/txs/0, /1, ...
+async function fetchAllBlockTxs(hash, maxPages=400){
+  const txs=[]; let page=0;
+  while(page<maxPages){
+    try{
+      const arr = await fetchJSON(`${API}/block/${hash}/txs/${page}`);
+      if(!arr || !arr.length) break;
+      // Keep only fields we use for bg
+      for(const t of arr){
+        txs.push({ txid:t.txid||t.hash, vsize:t.vsize||t.size, size:t.size, fee:t.fee });
+      }
+      page++;
+    }catch(e){
+      // 400 usually means no more pages
+      break;
+    }
+  }
+  return txs;
+}
+
 async function loadBlockByHeight(height){
   $('#progress').style.display='block'; $('#progress').textContent='Resolving block '+height+'…';
   const hash=await fetchText(API+'/block-height/'+height);
   $('#progress').textContent='Fetching header…';
   const blk=await fetchJSON(API+'/block/'+hash);
+  $('#progress').textContent='Fetching transactions…';
+  const txs=await fetchAllBlockTxs(hash);
   $('#progress').style.display='none';
-  startSketch(blk);
+  startSketch(blk, txs);
 }
 async function loadLatest(){
   $('#progress').style.display='block'; $('#progress').textContent='Getting tip height…';
@@ -492,7 +585,7 @@ const hud=$('#hud');
 
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
-$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
+$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }});
 
 // // Optional: auto-load latest
 // loadLatest();
