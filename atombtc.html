@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Treemap ordered & scaled</title>
+<title>Bitcoin Block Atom — Treemap static gradient</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -116,46 +116,38 @@ function paletteFromHeight(height){
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
-/* ---------- mempool.space treemap colors (fee-rate bands) ---------- */
-const FEE_BANDS = [
-  {min:0,   max:2,   col:"#d81b60"},
-  {min:2,   max:3,   col:"#8e24aa"},
-  {min:3,   max:4,   col:"#5e35b1"},
-  {min:4,   max:5,   col:"#3949ab"},
-  {min:5,   max:6,   col:"#1e88e5"},
-  {min:6,   max:8,   col:"#039be5"},
-  {min:8,   max:10,  col:"#00acc1"},
-  {min:10,  max:12,  col:"#00897b"},
-  {min:12,  max:15,  col:"#43a047"},
-  {min:15,  max:20,  col:"#7cb342"},
-  {min:20,  max:30,  col:"#c0ca33"},
-  {min:30,  max:40,  col:"#fdd835"},
-  {min:40,  max:50,  col:"#ffb300"},
-  {min:50,  max:60,  col:"#fb8c00"},
-  {min:60,  max:70,  col:"#f4511e"},
-  {min:70,  max:80,  col:"#6d4c41"},
-  {min:80,  max:90,  col:"#757575"},
-  {min:90,  max:100, col:"#546e7a"},
-  {min:100, max:125, col:"#b71c1c"},
-  {min:125, max:150, col:"#880e4f"},
-  {min:150, max:1e9, col:"#4a148c"},
-];
-const hex2rgb = hex => [parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
-function feeColor(frate){
-  for(const b of FEE_BANDS){ if(frate>=b.min && frate<b.max) return hex2rgb(b.col); }
-  return hex2rgb("#4a148c");
+/* ---------- Treemap static gradient (0 → 50,000 sat/vB) ---------- */
+const BG_GREEN = [0x0B,0x4F,0x35]; // #0B4F35
+const BG_YELLOW= [0xFF,0xFF,0x00]; // yellow
+const BG_ORANGE= [0xFF,0xA5,0x00]; // orange
+const BG_RED   = [0xFF,0x00,0x00]; // red
+const BG_PURPLE= [0x81,0x08,0x4E]; // #81084E
+const FEERATE_MAX = 50000; // sat/vB clamp
+const lerp = (a,b,t)=>a+(b-a)*t;
+function lerpRGB(a,b,t){ return [Math.round(lerp(a[0],b[0],t)), Math.round(lerp(a[1],b[1],t)), Math.round(lerp(a[2],b[2],t))]; }
+function feeToColor(fr){
+  // Normalize & clamp to [0,1] using static range [0, 50k]
+  const t = clamp(fr / FEERATE_MAX, 0, 1);
+  // Piecewise stops: green -> yellow -> orange -> red -> purple
+  if(t <= 0.25){ // 0..12.5k
+    const u = t / 0.25; return lerpRGB(BG_GREEN, BG_YELLOW, u);
+  }else if(t <= 0.50){ // 12.5k..25k
+    const u = (t-0.25)/0.25; return lerpRGB(BG_YELLOW, BG_ORANGE, u);
+  }else if(t <= 0.75){ // 25k..37.5k
+    const u = (t-0.50)/0.25; return lerpRGB(BG_ORANGE, BG_RED, u);
+  }else{ // 37.5k..50k+
+    const u = (t-0.75)/0.25; return lerpRGB(BG_RED, BG_PURPLE, clamp(u,0,1));
+  }
 }
 
-/* ---------- Treemap background (true 2D screen layer) ---------- */
 const bgCanvas = document.getElementById('bg2d');
 const bgCtx    = bgCanvas.getContext('2d');
-let bgBaseCanvas = document.createElement('canvas'); // offscreen base (static)
+let bgBaseCanvas = document.createElement('canvas');
 let bgBaseCtx    = bgBaseCanvas.getContext('2d');
-let bgTxs = []; // cached txs used by last render
+let bgTxs = [];
 let DPR = 1, bgW = 0, bgH = 0;
 
 function resizeBG(){
-  // Cap DPR a bit for perf on mobile but preserve sharpness
   DPR = Math.min(2, window.devicePixelRatio || 1);
   bgW = Math.floor(window.innerWidth);
   bgH = Math.floor(window.innerHeight);
@@ -166,32 +158,27 @@ function resizeBG(){
     c.style.width  = bgW + 'px';
     c.style.height = bgH + 'px';
   }
-  // Use CSS pixel coordinates for both contexts
   for(const ctx of [bgCtx, bgBaseCtx]){
     ctx.setTransform(1,0,0,1,0,0);
-    ctx.scale(DPR, DPR); // draw in CSS pixels
+    ctx.scale(DPR, DPR);
   }
   if(bgTxs.length){ renderTreemapBase(bgTxs); }
 }
 window.addEventListener('resize', resizeBG);
 
-// Ordered "strip treemap" (preserves left→right item order)
+// Ordered strip treemap (preserves left→right order)
 function layoutStrip(items, W, H){
-  // items: [{area, color}]
-  // Returns rects: [{x,y,w,h,color}]
   const rects = [];
   let y = 0;
   let row = [];
   let rowAreaSum = 0;
-
   const width = W;
-  let remainingArea = items.reduce((s,it)=>s+it.area,0);
 
   function worstAspect(rowAreas, rowHeight){
     if(!rowAreas.length) return Infinity;
     let worst = 0;
     for(const a of rowAreas){
-      const w = a / rowHeight; // width per item
+      const w = a / rowHeight;
       const ar = Math.max(w/rowHeight, rowHeight/w);
       if(ar > worst) worst = ar;
     }
@@ -207,7 +194,6 @@ function layoutStrip(items, W, H){
     const currentWorst = worstAspect(row.map(r=>r.area), rowAreaSum ? (rowAreaSum/width) : newRowHeight);
     const newWorst     = worstAspect(row.map(r=>r.area).concat(a), newRowHeight);
 
-    // If adding the item would worsen aspect ratio, finalize current row
     if(row.length && newWorst > currentWorst){
       const h = rowAreaSum / width;
       let x = 0;
@@ -217,10 +203,8 @@ function layoutStrip(items, W, H){
         x += w;
       }
       y += h;
-      remainingArea -= rowAreaSum;
       row = [];
       rowAreaSum = 0;
-      // continue without consuming i, re-evaluate
     }else{
       row.push(items[i]);
       rowAreaSum = newRowArea;
@@ -228,7 +212,6 @@ function layoutStrip(items, W, H){
     }
   }
 
-  // flush last row
   if(row.length){
     const h = Math.max(1, rowAreaSum / width);
     let x = 0;
@@ -251,25 +234,21 @@ function renderTreemapBase(txs){
 
   if(!txs || !txs.length) return;
 
-  // Build items with fee-rate & vsize; sort by fee-rate ascending (left→right)
+  // Build items (fee-rate & vsize) and sort by actual fee-rate low→high
   const itemsAll = [];
   for(const tx of txs){
     const vs = Math.max(1, tx.vsize || tx.size || 1);
-    const fr = (tx.fee && vs) ? (tx.fee / vs) : 0;
-    const [r,g,b] = feeColor(fr);
-    // small jitter to avoid huge flat fields but keep band recognizable
-    const jit = ((parseInt((tx.txid||"").slice(-2),16)||0)%18) - 9;
-    itemsAll.push({ vsize:vs, fr, color:[clamp(r+jit,0,255),clamp(g+jit,0,255),clamp(b+jit,0,255)] });
+    const fr = (tx.fee && vs) ? (tx.fee / vs) : 0; // sat/vB
+    const col = feeToColor(fr);
+    // tiny jitter to avoid perfectly uniform blocks
+    const jit = ((parseInt((tx.txid||"").slice(-2),16)||0)%12) - 6;
+    itemsAll.push({ vsize:vs, fr, color:[clamp(col[0]+jit,0,255),clamp(col[1]+jit,0,255),clamp(col[2]+jit,0,255)] });
   }
-
-  // Include broader range of txs with an adaptive cap (more on desktop)
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const CAP = isMobile ? 3000 : 6000;
-
-  // Sort by fee-rate ascending for left→right order
   itemsAll.sort((a,b)=>a.fr - b.fr);
 
-  // If too many, keep a stratified sample that preserves the distribution (both tiny & big)
+  // Adaptive cap (bigger variety while staying fast)
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const CAP = isMobile ? 3500 : 7000;
   let items = itemsAll;
   if(itemsAll.length > CAP){
     const stride = Math.max(1, Math.floor(itemsAll.length / CAP));
@@ -277,17 +256,19 @@ function renderTreemapBase(txs){
     for(let i=0;i<itemsAll.length;i+=stride) items.push(itemsAll[i]);
   }
 
-  // Convert weights (vsize) into areas in screen pixels
+  // Convert to screen areas
   const totalWeight = items.reduce((s,it)=>s+it.vsize,0) || 1;
   const unitArea = (W * H) / totalWeight;
-  const itemsWithArea = items.map(it => ({ area: Math.max(1, it.vsize * unitArea), color: it.color }));
+  const itemsWithArea = items.map(it => ({
+    area: Math.max(1, it.vsize * unitArea),
+    color: it.color
+  }));
 
-  // Ordered strip treemap (left→right order preserved)
   const rects = layoutStrip(itemsWithArea, W, H);
 
   // Draw
   bgBaseCtx.save();
-  bgBaseCtx.translate(0.5,0.5); // crisp borders
+  bgBaseCtx.translate(0.5,0.5);
   for(const r of rects){
     bgBaseCtx.fillStyle = `rgb(${r.color[0]},${r.color[1]},${r.color[2]})`;
     bgBaseCtx.fillRect(r.x, r.y, r.w, r.h);
@@ -297,39 +278,17 @@ function renderTreemapBase(txs){
   bgBaseCtx.restore();
 }
 
-// Draw one background animation frame (called from p5 draw)
 function drawBackgroundFrame({halving}, t){
   bgCtx.clearRect(0,0,bgW,bgH);
   bgCtx.drawImage(bgBaseCanvas, 0, 0);
-
-  // Optional subtle halving tint
   if(halving){
     const pulse = 0.5 + 0.5*Math.sin(t*2.2);
-    bgCtx.fillStyle = `rgba(255,140,0,${0.20 + 0.25*pulse})`;
+    bgCtx.fillStyle = `rgba(255,140,0,${0.18 + 0.22*pulse})`;
     bgCtx.fillRect(0,0,bgW,bgH);
   }
 }
 
 /* ---------- build atom from block ---------- */
-function paletteFromHeight(height){
-  const rng = XS32(height), golden = 137.50776405003785;
-  let baseHue = mod((height * golden) + rng() * 45, 360);
-  let hP = baseHue;
-  let hN = mod(hP + (90 + rng() * 120), 360);
-  let hE = mod(hP + (180 + rng() * 120), 360);
-  let hS = mod(hP + (30 + rng() * 120), 360);
-  let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
-  let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
-  let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
-  let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
-  return{
-    proton:  hslToRgb(hP/360, sP, lP),
-    neutron: hslToRgb(hN/360, sN, lN),
-    electron:hslToRgb(hE/360, sE, lE),
-    shell:   hslToRgb(hS/360, sS, lS)
-  };
-}
-
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
   const bits=b.bits??0, nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
@@ -475,7 +434,7 @@ function injectPanels(atom){
   infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works'));
   info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction; area ≈ vsize, color = mempool.space fee-rate band. Left→right ordered by fee-rate.</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: gold nucleus, silver pulsing electrons; background keeps treemap with a subtle orange pulse overlay.</p>';
+  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction; area ≈ vsize. Color uses a static fee-rate gradient: <code>#0B4F35</code> at 0 sat/vB → yellow → orange → red → <code>#81084E</code> at 50,000 sat/vB (fees above 50k are clamped).</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: gold nucleus, silver pulsing electrons; background keeps the treemap with a subtle orange pulse overlay.</p>';
   info.appendChild(infoBody);
   document.body.appendChild(info);
 
@@ -507,7 +466,6 @@ function startSketch(blk, txsForBg){
     p.setup=function(){
       const cnv = p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
-      // alpha:true so WebGL canvas is transparent over the 2D bg
       p.setAttributes('alpha', true, 'antialias', true, 'premultipliedAlpha', false);
       orbShader=p.createShader(VERT,FRAG);
     };
@@ -694,6 +652,7 @@ async function loadBlockByHeight(height){
   const blk=await fetchJSON(API+'/block/'+hash);
   $('#progress').textContent='Fetching transactions…';
   const txs=await fetchAllBlockTxs(hash);
+  $('#progress').display='none';
   $('#progress').style.display='none';
   startSketch(blk, txs);
 }
@@ -712,11 +671,11 @@ $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
 $('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
 
-// Optional: auto-load latest
-// loadLatest();
-
 // Initial resize for correct scaling
 resizeBG();
+
+// Optional: auto-load latest
+// loadLatest();
 </script>
 </body>
 </html>
