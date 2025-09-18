@@ -143,11 +143,11 @@ let bgTxs = [];
 let DPR = 1, bgW = 0, bgH = 0;
 
 // density knobs
-const TREEMAP_GAMMA = 0.55;
-const TREEMAP_BASE  = 120;
-const MIN_RECT_PX   = 2;
-const BORDER_ALPHA  = 0.06;
-const BORDER_SKIP_PX= 6;
+const TREEMAP_GAMMA = 0.25;
+const TREEMAP_BASE  = 0;
+const MIN_RECT_PX   = 1;
+const BORDER_ALPHA  = 0.04;
+const BORDER_SKIP_PX= 5;
 
 function resizeBG(){
   DPR = Math.min(2, window.devicePixelRatio || 1);
@@ -712,7 +712,7 @@ const hud=$('#hud');
 
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
-$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }});
+$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
 
 resizeBG();
 // loadLatest(); // optional
