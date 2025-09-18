@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Treemap (denser)</title>
+<title>Bitcoin Block Atom — Styling Drivers</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -15,22 +15,26 @@
   .hud input, .hud button{font:inherit;border-radius:8px;border:1px solid var(--border);background:#121820;color:var(--text);padding:6px 8px}
   .hud button{cursor:pointer}
   .panel{position:fixed;z-index:11;font-size:12px;color:var(--muted);padding:8px 10px;background:var(--panel);
-         border:1px solid var(--border);border-radius:12px;max-width:min(480px,calc(100vw - 20px));backdrop-filter:blur(6px)}
+         border:1px solid var(--border);border-radius:12px;max-width:min(520px,calc(100vw - 20px));backdrop-filter:blur(6px)}
   #legend{left:10px;top:70px}
-  details#blockPanel{right:10px;bottom:10px}
+  details#blockPanel{right:10px;bottom:10px;max-height:min(80vh,900px);overflow:auto}
   details#blockPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;justify-content:space-between;gap:8px}
   details#blockPanel[open]>summary{border-bottom:1px solid var(--border)}
   details#blockPanel summary::-webkit-details-marker{display:none}
   #blkBody{padding:10px 12px;color:#b7d2ea}
+  #blkBody h4{margin:14px 0 6px;color:#d7ecff}
+  #blkBody table{border-collapse:collapse;width:100%}
   #blkBody td{padding:4px 0;vertical-align:top}
-  #blkBody td:first-child{color:#9cc9ee;width:36%}
+  #blkBody td:first-child{color:#9cc9ee;width:42%;padding-right:10px}
+  code.badge{display:inline-block;border:1px solid #2b3a44;border-radius:8px;padding:1px 6px;margin:0 2px;color:#d7ecff;background:#0c1218}
+  .kv{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{display:inline-block;padding:2px 6px;border:1px solid #2b3a44;border-radius:8px;margin:2px;color:#d7ecff;font-size:11px}
   details#infoPanel{left:10px;bottom:10px}
   details#infoPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;gap:8px;align-items:center}
   details#infoPanel[open]>summary{border-bottom:1px solid var(--border)}
   details#infoPanel summary .badge{width:22px;height:22px;display:inline-grid;place-items:center;border-radius:999px;background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
   #warn{position:fixed;left:10px;top:120px;color:#ffd26f;font-weight:600;display:none;z-index:12}
   #progress{position:fixed;left:10px;top:48px;z-index:21;color:#d7ecff;font-size:12px;background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none}
-  .chip{display:inline-block;padding:2px 6px;border:1px solid #2b3a44;border-radius:8px;margin:2px;color:#d7ecff;font-size:11px}
 </style>
 </head>
 <body>
@@ -39,7 +43,7 @@
 
 <div class="hud" id="hud">
   <label>Height:</label>
-  <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000" style="width:140px"/>
+  <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000" style="width:160px"/>
   <button id="loadBtn">Load</button>
   <button id="latestBtn">Latest</button>
 </div>
@@ -57,6 +61,7 @@ function hslToRgb(h,s,l){let r,g,b;if(s===0){r=g=b=l;}else{const hue2rgb=(p,q,t)
 function rgbToHsl(r,g,b){r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b);let h,s,l=(max+min)/2;if(max===min){h=s=0;}else{const d=max-min;s=l>0.5?d/(2-max-min):d/(max+min);switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4;break;}h/=6;}return[h,s,l];}
 const shiftHue=(rgb,deg)=>{const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);let hh=(h+(deg/360))%1; if(hh<0)hh+=1; return hslToRgb(hh,s,l);}
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
+const toHex=([r,g,b])=>('#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join(''));
 const lastByte = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; return parseInt(c.slice(-2),16)||0; };
 const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<c.length;i+=2){ const b=parseInt(c.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; };
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
@@ -107,13 +112,14 @@ function paletteFromHeight(height){
     proton:  hslToRgb(hP/360, sP, lP),
     neutron: hslToRgb(hN/360, sN, lN),
     electron:hslToRgb(hE/360, sE, lE),
-    shell:   hslToRgb(hS/360, sS, lS)
+    shell:   hslToRgb(hS/360, sS, lS),
+    hues: {hP, hN, hE, hS}
   };
 }
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
-/* ---------- Treemap static gradient + denser sizing ---------- */
+/* ---------- Treemap (static gradient, ordered, dense) ---------- */
 const BG_GREEN = [0x0B,0x4F,0x35];
 const BG_YELLOW= [0xFF,0xFF,0x00];
 const BG_ORANGE= [0xFF,0xA5,0x00];
@@ -129,7 +135,6 @@ function feeToColor(fr){
   else if(t <= 0.75){ const u=(t-0.50)/0.25; return lerpRGB(BG_ORANGE, BG_RED, u); }
   else{ const u=(t-0.75)/0.25; return lerpRGB(BG_RED, BG_PURPLE, clamp(u,0,1)); }
 }
-
 const bgCanvas = document.getElementById('bg2d');
 const bgCtx    = bgCanvas.getContext('2d');
 let bgBaseCanvas = document.createElement('canvas');
@@ -138,17 +143,16 @@ let bgTxs = [];
 let DPR = 1, bgW = 0, bgH = 0;
 
 // density knobs
-const TREEMAP_GAMMA = 0.1;   // area ∝ vsize^gamma ( <1 => compress dynamic range )
-const TREEMAP_BASE  = 1;    // tiny base so very small txs still visible
-const MIN_RECT_PX   = 2;      // smallest on-screen width/height in px for a tile
-const BORDER_ALPHA  = 0.06;   // subtle grid
-const BORDER_SKIP_PX= 6;      // skip borders for very small tiles
+const TREEMAP_GAMMA = 0.55;
+const TREEMAP_BASE  = 120;
+const MIN_RECT_PX   = 2;
+const BORDER_ALPHA  = 0.06;
+const BORDER_SKIP_PX= 6;
 
 function resizeBG(){
   DPR = Math.min(2, window.devicePixelRatio || 1);
   bgW = Math.floor(window.innerWidth);
   bgH = Math.floor(window.innerHeight);
-
   for(const c of [bgCanvas,bgBaseCanvas]){
     c.width  = Math.max(1, Math.floor(bgW * DPR));
     c.height = Math.max(1, Math.floor(bgH * DPR));
@@ -163,12 +167,11 @@ function resizeBG(){
 }
 window.addEventListener('resize', resizeBG);
 
-// strip treemap (ordered left→right)
+// strip treemap
 function layoutStrip(items, W, H){
   const rects = [];
   let y = 0, row = [], rowAreaSum = 0;
   const width = W;
-
   function worstAspect(rowAreas, rowHeight){
     if(!rowAreas.length) return Infinity;
     let worst = 0;
@@ -179,7 +182,6 @@ function layoutStrip(items, W, H){
     }
     return worst;
   }
-
   let i=0;
   while(i < items.length){
     const a = items[i].area;
@@ -203,7 +205,6 @@ function layoutStrip(items, W, H){
       row.push(items[i]); rowAreaSum = newRowArea; i++;
     }
   }
-
   if(row.length){
     const h = Math.max(MIN_RECT_PX, rowAreaSum / width);
     let x = 0;
@@ -219,26 +220,24 @@ function layoutStrip(items, W, H){
 function renderTreemapBase(txs){
   bgTxs = txs||[];
   const W = bgW, H = bgH;
-
   bgBaseCtx.clearRect(0,0,W,H);
   bgBaseCtx.fillStyle = "#000";
   bgBaseCtx.fillRect(0,0,W,H);
-
   if(!txs || !txs.length) return;
 
   const itemsAll = [];
   for(const tx of txs){
     const vsRaw = Math.max(1, tx.vsize || tx.size || 1);
-    const vs    = Math.pow(vsRaw + TREEMAP_BASE, TREEMAP_GAMMA); // compressed weight
-    const fr    = (tx.fee && vsRaw) ? (tx.fee / vsRaw) : 0;      // sat/vB (true rate)
+    const vs    = Math.pow(vsRaw + TREEMAP_BASE, TREEMAP_GAMMA);
+    const fr    = (tx.fee && vsRaw) ? (tx.fee / vsRaw) : 0;
     const col   = feeToColor(fr);
-    const jit   = ((parseInt((tx.txid||"").slice(-2),16)||0)%10) - 5; // tiny jitter
+    const jit   = ((parseInt((tx.txid||"").slice(-2),16)||0)%10) - 5;
     itemsAll.push({ weight:vs, color:[clamp(col[0]+jit,0,255),clamp(col[1]+jit,0,255),clamp(col[2]+jit,0,255)], fr });
   }
   itemsAll.sort((a,b)=>a.fr - b.fr);
 
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const CAP = isMobile ? 12000 : 25000;
+  const CAP = isMobile ? 6000 : 12000;
   let items = itemsAll;
   if(itemsAll.length > CAP){
     const stride = Math.max(1, Math.floor(itemsAll.length / CAP));
@@ -261,7 +260,6 @@ function renderTreemapBase(txs){
     bgBaseCtx.fillRect(r.x, r.y, r.w, r.h);
     if (r.w >= BORDER_SKIP_PX && r.h >= BORDER_SKIP_PX){
       bgBaseCtx.strokeStyle = `rgba(255,255,255,${BORDER_ALPHA})`;
-      // shrink by 0.5px so borders don't swallow tiny tiles
       bgBaseCtx.strokeRect(r.x+0.5, r.y+0.5, Math.max(0,r.w-1), Math.max(0,r.h-1));
     }
   }
@@ -278,7 +276,7 @@ function drawBackgroundFrame({halving}, t){
   }
 }
 
-/* ---------- build atom from block ---------- */
+/* ---------- build atom from block (now returns drivers) ---------- */
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
   const bits=b.bits??0, nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
@@ -295,8 +293,8 @@ function buildAtomFromBlock(b){
   const shells=fillShells(electrons);
 
   const prod=Math.max(1, txCount*Math.max(1,size));
-  const lg=Math.log10(prod);
-  const speedScale=clamp((lg-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
+  const lgProd=Math.log10(prod);
+  const speedScale=clamp((lgProd-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
 
   const dens=clamp(weight/Math.max(1,size*4),0.6,1.4);
   const fSpread=feeSpread();
@@ -306,6 +304,7 @@ function buildAtomFromBlock(b){
   const t2=approxLog2Target(bits), h2=approxLog2Hash(hash), luck=clamp((t2-h2)/24+1.0,0.7,1.5);
   const hashLast=lastByte(hash);
   const ringThickBase=0.8+(hashLast/255)*2.0;
+  const ringThick=ringThickBase*(((version>>0)&1)?1.8:1.0);
   const ringAlpha=clamp(140+(luck-1.0)*120,80,255);
   const hueShiftDeg=(hashLast/255-0.5)*36;
   const ringColor=shiftHue(colors.shell, hueShiftDeg);
@@ -351,18 +350,50 @@ function buildAtomFromBlock(b){
   const isDisco = height===170;
   const halving = !isDisco && isHalving(height);
 
+  const drivers = {
+    // Counts & structure
+    electrons, shells, protons: Z, neutrons: N,
+    radiiMin: radii.length? Math.round(radii[0]):null,
+    radiiMax: radii.length? Math.round(radii[radii.length-1]):null,
+    orbitSpread: +orbitSpread.toFixed(3),
+    // Motion
+    txCount, size, speedScale:+speedScale.toFixed(3), lgProd:+lgProd.toFixed(3),
+    eccentricityBase:+eccGlobal.toFixed(3), nucleusTightness:+tightness.toFixed(3),
+    // Rings
+    ringThick:+ringThick.toFixed(2),
+    ringAlpha, ringHueShiftDeg:+hueShiftDeg.toFixed(1),
+    ringColorHex: toHex(ringColor),
+    // Shader / surface
+    marbleIntensity:+MARBLE_INT.toFixed(2),
+    marbleScale:+MARBLE_SCALE.toFixed(2),
+    animAmp:+animAmp.toFixed(2),
+    animSpeed:+animSpeed.toFixed(2),
+    blockPhase:+blockPhase.toFixed(3),
+    // Palette seeds (from height)
+    palette: {
+      proton: toHex(colors.proton),
+      neutron: toHex(colors.neutron),
+      electron: toHex(colors.electron),
+      shell: toHex(colors.shell),
+      hues: colors.hues
+    },
+    // Special modes
+    disco:isDisco, halving
+  };
+
   return {
     block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
     shader:{MARBLE_INT,MARBLE_SCALE,animAmp,animSpeed,blockPhase},
     style:{
       eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick:0.9, ringAlpha:220, ringColor:[180,150,255], nucleusTight:clamp((b.weight/Math.max(1,b.size*4))*0.75+(1.15-0.55*feeSpread()),0.6,1.4),
+      ringThick, ringAlpha, ringColor, nucleusTight:tightness,
       halving, disco:isDisco
-    }
+    },
+    drivers
   };
 }
 
-/* ---------- UI panels ---------- */
+/* ---------- UI panels (now include Styling drivers) ---------- */
 let uiPointerDown = false;
 
 function injectPanels(atom){
@@ -376,7 +407,7 @@ function injectPanels(atom){
   document.body.appendChild(legend);
 
   const blk=atom.block;
-  const det=document.createElement('details'); det.id='blockPanel'; det.className='panel';
+  const det=document.createElement('details'); det.id='blockPanel'; det.className='panel'; det.open=true;
   const sum=document.createElement('summary');
   const sLeft=document.createElement('span'); sLeft.textContent='▼ Block Details';
   const sRight=document.createElement('span'); sRight.style.color='#d7dfff'; sRight.style.fontWeight='500';
@@ -384,6 +415,7 @@ function injectPanels(atom){
   sum.appendChild(sLeft); sum.appendChild(sRight); det.appendChild(sum);
 
   const body=document.createElement('div'); body.id='blkBody';
+
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
   [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{
     const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);
@@ -392,42 +424,82 @@ function injectPanels(atom){
   else if(atom.style.halving){ const c2=document.createElement('span'); c2.className='chip'; c2.textContent='Halving Mode'; chips.appendChild(c2); }
   body.appendChild(chips);
 
+  // Block header table
   const tbl=document.createElement('table');
-  [['Tx count', blk.tx_count??'n/a'],
-   ['Size (bytes)', blk.size??'n/a'],
-   ['Weight (WU)', blk.weight??'n/a'],
-   ['Version', blk.version??'n/a'],
-   ['Bits', blk.bits??'n/a'],
-   ['Nonce', blk.nonce??'n/a'],
-   ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
-   ['Merkle root', shortHash(blk.merkle_root)]].forEach(([k,v])=>{
-      const tr=document.createElement('tr');
-      const td1=document.createElement('td'); td1.textContent=k;
-      const td2=document.createElement('td');
-      if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code); }
-      else td2.textContent=String(v);
-      tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr);
+  const rows=[
+    ['Tx count', blk.tx_count??'n/a'],
+    ['Size (bytes)', blk.size??'n/a'],
+    ['Weight (WU)', blk.weight??'n/a'],
+    ['Version', blk.version??'n/a'],
+    ['Bits', blk.bits??'n/a'],
+    ['Nonce', blk.nonce??'n/a'],
+    ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
+    ['Merkle root', shortHash(blk.merkle_root)]
+  ];
+  rows.forEach(([k,v])=>{
+    const tr=document.createElement('tr');
+    const td1=document.createElement('td'); td1.textContent=k;
+    const td2=document.createElement('td');
+    if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code); }
+    else td2.textContent=String(v);
+    tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr);
   });
   body.appendChild(tbl);
+
+  // NEW: Styling drivers
+  const d=atom.drivers;
+  const sec=document.createElement('div');
+  sec.innerHTML = `
+    <h4>Styling drivers (derived from this block)</h4>
+    <table>
+      <tr><td><b>Counts & shells</b></td>
+          <td>electrons: <code class="badge">${d.electrons}</code>, protons (Z): <code class="badge">${d.protons}</code>, neutrons (N): <code class="badge">${d.neutrons}</code>, shells: <code class="badge">${d.shells.length}</code></td></tr>
+      <tr><td>Shell radii (approx)</td><td>min: <code class="badge">${d.radiiMin??'n/a'}</code>, max: <code class="badge">${d.radiiMax??'n/a'}</code>, spread: <code class="badge">${d.orbitSpread}</code></td></tr>
+
+      <tr><td><b>Motion</b></td>
+          <td>speed scale (∝ log₁₀(tx_count × size)): <code class="badge">${d.speedScale}</code> (log₁₀: <code class="badge">${d.lgProd}</code>), base eccentricity: <code class="badge">${d.eccentricityBase}</code>, nucleus tightness: <code class="badge">${d.nucleusTightness}</code></td></tr>
+
+      <tr><td><b>Rings</b></td>
+          <td>thickness: <code class="badge">${d.ringThick}</code>, alpha: <code class="badge">${d.ringAlpha}</code>, hue shift: <code class="badge">${d.ringHueShiftDeg}°</code>, color: <code class="badge">${d.ringColorHex}</code></td></tr>
+
+      <tr><td><b>Surface / shader</b></td>
+          <td>marble intensity: <code class="badge">${d.marbleIntensity}</code>, scale: <code class="badge">${d.marbleScale}</code>, anim amp: <code class="badge">${d.animAmp}</code>, anim speed: <code class="badge">${d.animSpeed}</code>, block phase: <code class="badge">${d.blockPhase}</code></td></tr>
+
+      <tr><td><b>Palette (from height)</b></td>
+          <td>
+            proton: <code class="badge">${d.palette.proton}</code>,
+            neutron: <code class="badge">${d.palette.neutron}</code>,
+            electron: <code class="badge">${d.palette.electron}</code>,
+            shell: <code class="badge">${d.palette.shell}</code>
+          </td></tr>
+
+      <tr><td><b>Special modes</b></td>
+          <td>${d.disco? '🎉 Disco 170 enabled' : (d.halving? 'Halving mode enabled' : '—')}</td></tr>
+    </table>
+  `;
+  body.appendChild(sec);
+
   det.appendChild(body);
   document.body.appendChild(det);
 
+  // Info panel
   const info=document.createElement('details'); info.id='infoPanel'; info.className='panel';
   const infoSum=document.createElement('summary');
   const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works'));
   info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction; area uses compressed scaling so more tiles are visible: <code>area ∝ vsize^0.55</code> (with a tiny base). Color: static fee-rate gradient — <code>#0B4F35</code> at 0 sat/vB → yellow → orange → red → <code>#81084E</code> at 50,000 sat/vB (clamped).</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: gold nucleus, silver pulsing electrons; background has a subtle orange pulse overlay.</p>';
+  infoBody.innerHTML = '<h3>Background treemap</h3><p>Each rectangle is a transaction; area uses compressed scaling so more tiles are visible: <code>area ∝ (vsize+base)^γ</code> with γ≈0.55. Color uses a fixed fee-rate gradient: <code>#0B4F35</code> → yellow → orange → red → <code>#81084E</code> at 50,000 sat/vB (clamped).</p><h3>Special cases</h3><p><b>Block 170</b>: rainbow disco. <b>Halving blocks</b>: gold nucleus, silver pulsing electrons; background has a subtle orange pulse overlay.</p>';
   info.appendChild(infoBody);
   document.body.appendChild(info);
 
-  const warn=document.createElement('div'); warn.id='warn'; warn.textContent='Shader fallback active (simplified lighting).'; document.body.appendChild(warn);
-
+  // UI guards
   const guard=n=>{n.addEventListener('pointerdown',()=>uiPointerDown=true);n.addEventListener('pointerup',()=>uiPointerDown=false);
                   n.addEventListener('pointerleave',()=>uiPointerDown=false);n.addEventListener('pointercancel',()=>uiPointerDown=false);
                   n.addEventListener('wheel',(e)=>{e.stopPropagation(); e.preventDefault();},{passive:false});};
   [legend,det,info].forEach(guard);
+
+  const warn=document.createElement('div'); warn.id='warn'; warn.textContent='Shader fallback active (simplified lighting).'; document.body.appendChild(warn);
 }
 
 /* ---------- p5 sketch ---------- */
@@ -533,6 +605,7 @@ function startSketch(blk, txsForBg){
         }
       }
 
+      // Nucleus
       p.push();
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
@@ -553,6 +626,7 @@ function startSketch(blk, txsForBg){
       }
       p.pop();
 
+      // Electrons
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -638,7 +712,7 @@ const hud=$('#hud');
 
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
-$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
+$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }});
 
 resizeBG();
 // loadLatest(); // optional
