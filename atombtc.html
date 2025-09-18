@@ -252,7 +252,7 @@ function drawBackgroundFrame({halving}, t){
 }
 
 /* ---------- build atom from block ---------- */
-const NUCLEON_R=2.7;
+
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
   const bits=b.bits??0, nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
