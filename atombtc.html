@@ -1,623 +1,370 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Bitcoin Block Atom — Halving Mode Transparency Fix</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.dom.min.js"></script>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Bitcoin Block Atom — clean (no treemap, no trails)</title>
 <style>
-  :root { --panel-bg: rgba(10,14,18,0.90); --panel-border:#1e2a33; --text:#cfe4ff; --muted:#8fbfe6; --accent:#9fd2ff; }
-  html, body { margin:0; height:100%; background:#0b0f12; color:var(--text); font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; }
-  canvas { display:block; }
-
-  #ui { position: fixed; top:10px; left:10px; z-index:12; background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px rgba(0,0,0,0.35); backdrop-filter: blur(6px); }
-  #ui h1 { font-size:14px; margin:0 0 8px; color:var(--accent); font-weight:600; }
-  #ui input { width:140px; background:#0e1419; border:1px solid #2b3a44; color:#e6f2ff; border-radius:8px; padding:6px 8px; }
-  #ui button { background:#133a5a; color:#e6f2ff; border:1px solid #1f4f78; border-radius:8px; padding:6px 10px; cursor:pointer; }
-  #ui button:hover { filter:brightness(1.15); }
-  #meta { margin-top:8px; font-size:12px; line-height:1.35; color:#b7d2ea; max-width:420px; }
-  .panel { position: fixed; z-index:11; font-size:12px; color:var(--muted); padding:8px 10px; background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px; max-width:420px; }
-  #legend { right:10px; top:10px; }
-  #fx { right:10px; top:150px; min-width:270px; }
-  #fx label { display:flex; gap:8px; align-items:center; margin:6px 0; }
-  input[type="range"] { width:100%; }
-  #blockPanel { position: fixed; right:10px; bottom:10px; z-index:11; width:min(420px, calc(100vw - 20px)); background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px; overflow:hidden; }
-  details#blockPanel > summary { list-style:none; cursor:pointer; padding:10px 12px; color:var(--accent); font-weight:600; display:flex; align-items:center; justify-content:space-between; }
-  details#blockPanel[open] > summary { border-bottom:1px solid var(--panel-border); }
-  details#blockPanel summary::-webkit-details-marker { display:none }
-  #blkBody { padding:10px 12px; color:#b7d2ea; }
-  #blkBody table { width:100%; border-collapse: collapse; }
-  #blkBody td { padding:4px 0; vertical-align: top; }
-  #blkBody td:first-child { color:#8fbfe6; width:34%; }
-  .chip { display:inline-block; padding:2px 6px; border:1px solid #2b3a44; border-radius:8px; margin:2px 2px 2px 0; color:#d7ecff; font-size:11px; }
-  .chip.warn { border-color:#ffae5a; color:#ffd9b0; }
-  #warn { color:#ffd26f; font-weight:600; display:none; margin-top:6px; }
-
-  /* Info panel */
-  details#infoPanel { left:10px; top:150px; width:min(480px, calc(100vw - 20px)); }
-  details#infoPanel > summary { list-style:none; cursor:pointer; padding:10px 12px; color:#d7ecff; font-weight:700; display:flex; gap:8px; align-items:center; }
-  details#infoPanel[open] > summary { border-bottom:1px solid var(--panel-border); }
-  details#infoPanel summary .badge { width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; background:#1e2a33; color:#cfe4ff; border:1px solid #2b3a44; font-weight:800; }
-  #infoBody { padding:10px 12px; color:#b7d2ea; }
-  #infoBody h3 { margin:8px 0 4px; color:#e3f1ff; font-size:13px; }
-  #infoBody p { margin:6px 0; }
-  #infoBody ul { margin:6px 0 6px 18px; }
-  #infoBody code { background:#0e1419; border:1px solid #2b3a44; padding:1px 4px; border-radius:6px; color:#e8f4ff; }
-  #infoBody table { width:100%; border-collapse:collapse; margin-top:6px; }
-  #infoBody td { padding:4px 0; vertical-align:top; }
-  #infoBody td:first-child { width:32%; color:#9cc9ee; }
+  :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
+  html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  canvas{display:block;touch-action:none}
+  .hud{position:fixed;z-index:20;left:10px;top:10px;display:flex;gap:8px;align-items:center;background:var(--panel);
+       border:1px solid var(--border);border-radius:12px;padding:8px 10px;backdrop-filter:blur(6px);font-size:12px}
+  .hud input, .hud button{font:inherit;border-radius:8px;border:1px solid var(--border);background:#121820;color:var(--text);padding:6px 8px}
+  .hud button{cursor:pointer}
+  .panel{position:fixed;z-index:11;font-size:12px;color:var(--muted);padding:8px 10px;background:var(--panel);
+         border:1px solid var(--border);border-radius:12px;max-width:min(480px,calc(100vw - 20px));backdrop-filter:blur(6px)}
+  #legend{left:10px;top:70px}
+  details#blockPanel{right:10px;bottom:10px}
+  details#blockPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;justify-content:space-between;gap:8px}
+  details#blockPanel[open]>summary{border-bottom:1px solid var(--border)}
+  details#blockPanel summary::-webkit-details-marker{display:none}
+  #blkBody{padding:10px 12px;color:#b7d2ea}
+  #blkBody td{padding:4px 0;vertical-align:top}
+  #blkBody td:first-child{color:#9cc9ee;width:36%}
+  details#infoPanel{left:10px;bottom:10px}
+  details#infoPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;gap:8px;align-items:center}
+  details#infoPanel[open]>summary{border-bottom:1px solid var(--border)}
+  details#infoPanel summary .badge{width:22px;height:22px;display:inline-grid;place-items:center;border-radius:999px;background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
+  #warn{position:fixed;left:10px;top:120px;color:#ffd26f;font-weight:600;display:none;z-index:12}
+  #progress{position:fixed;left:10px;top:48px;z-index:21;color:#d7ecff;font-size:12px;background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none}
+  .chip{display:inline-block;padding:2px 6px;border:1px solid #2b3a44;border-radius:8px;margin:2px;color:#d7ecff;font-size:11px}
 </style>
 </head>
 <body>
-  <div id="ui">
-    <h1>Bitcoin Block → Atom</h1>
-    <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
-      <label for="height">Height:</label>
-      <input id="height" type="number" min="0" placeholder="e.g. 840000" />
-      <button id="load">Load</button>
-      <button id="latest">Latest</button>
-    </div>
-    <div id="meta"><b>Controls:</b> Rotate = drag · Zoom = scroll/pinch · Pan = right-drag / 3-finger (touch)</div>
-    <div id="warn">Shader fallback active (colors OK, simplified)</div>
-  </div>
 
-  <div id="legend" class="panel">
-    <div><b>Nucleus:</b> protons / neutrons</div>
-    <div><b>Shells:</b> electrons (2n² capacity)</div>
-    <div><b>Halving:</b> special theme w/ pulsing bg, gold nucleus + glow, silver electrons (overrides)</div>
-  </div>
+<!-- Loader HUD -->
+<div class="hud" id="hud">
+  <label>Height:</label>
+  <input id="heightInput" type="number" min="1" placeholder="e.g. 840000" style="width:120px"/>
+  <button id="loadBtn">Load</button>
+  <button id="latestBtn">Latest</button>
+</div>
+<div id="progress">…</div>
 
-  <div id="fx" class="panel">
-    <div style="font-weight:600;color:#cfe4ff;margin-bottom:6px;">Visual dials</div>
-    <label>Mode from height <span id="modeName" style="color:#d7ecff;font-weight:600;">(auto)</span></label>
-    <label>Metalness <span id="marbleIntVal">0.85</span>
-      <input id="marbleInt" type="range" min="0" max="1" step="0.01" value="0.85"/>
-    </label>
-    <label>Roughness/Grain <span id="marbleScaleVal">3.2</span>
-      <input id="marbleScale" type="range" min="0.8" max="6.0" step="0.1" value="3.2"/>
-    </label>
-    <label><input id="fxRings" type="checkbox" checked /> Show shell rings</label>
-  </div>
-
-  <details id="blockPanel">
-    <summary>
-      <span>▼ Block Details</span>
-      <span id="blkTitle" style="color:#d7dfff;font-weight:500;">(none loaded)</span>
-    </summary>
-    <div id="blkBody"><div style="margin-bottom:6px;">Load a block (height or Latest) to populate details.</div></div>
-  </details>
-
-  <details id="infoPanel" class="panel" open>
-    <summary><span class="badge">?</span> Info / Help</summary>
-    <div id="infoBody">
-      <h3>Halving Mode</h3>
-      <p>At heights divisible by <b>210,000</b>: pulsing orange/black background, <b>gold metallic</b> nucleus with a soft <b>glow</b>, and <b>silver metallic</b> electrons that pulse in size. This overrides other effects.</p>
-    </div>
-  </details>
-
+<script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* ----------------- Basics ----------------- */
-function safeHTML(id, html){ const el=document.getElementById(id); if(el) el.innerHTML = html; }
-function safeText(id, text){ const el=document.getElementById(id); if(el) el.textContent = text; }
-function escapeHtml(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function setMeta(text){ safeHTML('meta', text); }
-const API = "https://mempool.space/api";
+/* ---------- utils ---------- */
+const $=s=>document.querySelector(s);
+const shortHash=h=>h?(String(h).slice(0,10)+'…'+String(h).slice(-8)):'n/a';
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const mod=(a,n)=>((a%n)+n)%n;
+function XS32(seed){let x=seed>>>0||1;return()=>{x^=x<<13;x^=x>>>17;x^=x<<5;return (x>>>0)/0xFFFFFFFF;};}
+function hslToRgb(h,s,l){let r,g,b;if(s===0){r=g=b=l;}else{const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;r=hue2rgb(p,q,h+1/3);g=hue2rgb(p,q,h);b=hue2rgb(p,q,h-1/3);}return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];}
+function rgbToHsl(r,g,b){r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b);let h,s,l=(max+min)/2;if(max===min){h=s=0;}else{const d=max-min;s=l>0.5?d/(2-max-min):d/(max+min);switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4;break;}h/=6;}return[h,s,l];}
+const shiftHue=(rgb,deg)=>{const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);let hh=(h+(deg/360))%1; if(hh<0)hh+=1; return hslToRgb(hh,s,l);}
+const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
+const lastByte = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; return parseInt(c.slice(-2),16)||0; };
+const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<c.length;i+=2){ const b=parseInt(c.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; };
+const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
+const approxLog2Target=bits=>{const exp=(bits>>>24)&0xff, mant=bits&0x007fffff||1; return Math.log2(mant)+8*(exp-3);};
+const approxLog2Hash=hex=>{const c=(hex||'').replace(/[^0-9a-fA-F]/g,''); if(!c.length) return 0; let i=0; while(i<c.length && c[i]==='0') i++; const lead=parseInt(c.substr(i,2)||'01',16)||1; const bitsFromPos=(c.length-i)/2*8; return Math.log2(lead)+bitsFromPos-8;};
+const isHalving=h=>h>0&&(h%210000)===0;
+const v3=(x,y,z)=>[x,y,z], vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
+function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
-const NUCLEUS_BASE_R = 28, SHELL_R_STEP = 22, ELECTRON_R = 3.6, NUCLEON_R = 2.7;
-let MARBLE_INT = 0.85, MARBLE_SCALE = 3.2, FX_RINGS = true;
+/* ---------- shader ---------- */
+const VERT=`precision mediump float;attribute vec3 aPosition;uniform mat4 uModelViewMatrix,uProjectionMatrix;varying vec3 vObjPos;void main(){vObjPos=aPosition;gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(aPosition,1.0));}`;
+const FRAG=`precision mediump float;varying vec3 vObjPos;uniform vec3 uColorA,uColorB;uniform float uMarbleInt,uMarbleScale,uTime,uAnimAmp,uAnimSpeed,uBlockPhase;
+float h(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
+float n3(vec3 p){vec3 i=floor(p),f=fract(p);float n000=h(i+vec3(0,0,0)),n100=h(i+vec3(1,0,0));float n010=h(i+vec3(0,1,0)),n110=h(i+vec3(1,1,0));float n001=h(i+vec3(0,0,1)),n101=h(i+vec3(1,0,1));float n011=h(i+vec3(0,1,1)),n111=h(i+vec3(1,1,1));
+vec3 u=f*f*(3.0-2.0*f);float n00=mix(n000,n100,u.x),n10=mix(n010,n110,u.x);float n01=mix(n001,n101,u.x),n11=mix(n011,n111,u.x);float n0=mix(n00,n10,u.y),n1=mix(n01,n11,u.y);return mix(n0,n1,u.z);}
+float stripe2D(vec2 uv,float ph,float f){float zm=1.0+uAnimAmp*0.35*sin(uTime*(0.7+uAnimSpeed)+ph+uBlockPhase);uv*=zm;vec2 w1=vec2(n3(vec3(uv*0.8*f,uTime*0.35+ph+uBlockPhase)),n3(vec3(uv*1.1*f+3.17,uTime*0.28+ph+1.7+uBlockPhase)));
+uv+=(w1-0.5)*(0.35+0.45*uAnimAmp);float s=sin((uv.x*6.2831*f*0.85)+(uv.y*6.2831*f*0.45)+3.2*w1.x+(uTime*(0.55+0.6*uAnimSpeed))+ph+uBlockPhase);return 0.5+0.5*s;}
+float blinn(vec3 n,vec3 l,vec3 v,float sh){vec3 hh=normalize(l+v);return pow(max(dot(n,hh),0.0),sh);}
+void main(){vec3 p=vObjPos;float r=length(p.xy);float sw=uAnimAmp*(0.5+0.5*sin(uTime*(0.6+uAnimSpeed)+uBlockPhase));float a=sw*r*1.8;float ca=cos(a),sa=sin(a);p.xz=mat2(ca,-sa,sa,ca)*p.xz;
+vec3 n=normalize(p);vec3 w=pow(abs(n),vec3(6.0));w/=max(w.x+w.y+w.z,1e-4);float f=uMarbleScale;float sx=stripe2D(p.yz,0.0,f),sy=stripe2D(p.zx,2.1,f),sz=stripe2D(p.xy,4.2,f);
+float t=pow(smoothstep(0.10,0.90,sx*w.x+sy*w.y+sz*w.z),0.85);vec3 tint=mix(uColorA,uColorB,t);float roughK=clamp((uMarbleScale-0.8)/5.2,0.0,1.0);float freq=mix(40.0,140.0,roughK);
+float gx=stripe2D(p.yz,1.7,freq),gy=stripe2D(p.zx,3.8,freq),gz=stripe2D(p.xy,5.9,freq);vec3 base=tint*(0.83+0.17*(gx*w.x+gy*w.y+gz*w.z));
+vec3 L1=normalize(vec3(0.6,0.7,0.5)),L2=normalize(vec3(-0.4,0.65,-0.2)),V=normalize(vec3(0.0,0.0,1.0));float ndl1=max(dot(n,L1),0.0),ndl2=max(dot(n,L2),0.0);
+float rough=mix(0.55,0.12,roughK),shin=mix(36.0,200.0,1.0-rough);float m=clamp(uMarbleInt,0.0,1.0),mC=min(m,0.92);vec3 F0=mix(vec3(0.06),tint,mC);float VoH=max(dot(n,V),0.0);
+vec3 F=F0+(1.0-F0)*pow(1.0-VoH,5.0);float spec=(blinn(n,L1,V,shin)*0.95+blinn(n,L2,V,shin)*0.75)*(0.95-0.5*rough);vec3 diff=base*max(0.12,mix(0.65,0.18,mC)*(0.35+(0.55*ndl1+0.45*ndl2)));
+float rim=pow(1.0-max(dot(n,V),0.0),2.2)*0.12;vec3 col=pow(diff+F*spec+tint*rim,vec3(0.96));gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);} `;
 
-let atom = null, orbShader, SHADER_OK = true;
-let bgStars = [], BG_STAR_COUNT = 350;
-let uiPointerDown = false;
-
-/* ----------------- Shaders ----------------- */
-const ORB_VERT = `
-precision mediump float;
-attribute vec3 aPosition;
-uniform mat4 uModelViewMatrix, uProjectionMatrix;
-varying vec3 vObjPos;
-void main(){
-  vObjPos = aPosition;
-  gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(aPosition,1.0));
-}
-`;
-const ORB_FRAG = `
-precision mediump float;
-varying vec3 vObjPos;
-uniform vec3  uColorA, uColorB;
-uniform float uMarbleInt, uMarbleScale, uTime, uAnimAmp, uAnimSpeed, uBlockPhase;
-
-float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719))) * 43758.5453); }
-float n3(vec3 p){
-  vec3 i=floor(p), f=fract(p);
-  float n000=h(i+vec3(0,0,0)), n100=h(i+vec3(1,0,0));
-  float n010=h(i+vec3(0,1,0)), n110=h(i+vec3(1,1,0));
-  float n001=h(i+vec3(0,0,1)), n101=h(i+vec3(1,0,1));
-  float n011=h(i+vec3(0,1,1)), n111=h(i+vec3(1,1,1));
-  vec3 u=f*f*(3.0-2.0*f);
-  float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
-  float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
-  float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
-  return mix(n0,n1,u.z);
-}
-float stripe2D(vec2 uv, float phase, float f){
-  float zoomOsc = 1.0 + uAnimAmp*0.35 * sin(uTime*(0.7+uAnimSpeed) + phase + uBlockPhase);
-  uv *= zoomOsc;
-  vec2 w1 = vec2(
-    n3(vec3(uv*0.8*f, uTime*0.35 + phase + uBlockPhase)),
-    n3(vec3(uv*1.1*f + 3.17, uTime*0.28 + phase + 1.7 + uBlockPhase))
-  );
-  uv += (w1 - 0.5) * (0.35 + 0.45*uAnimAmp);
-  float s = sin( (uv.x*6.2831*f*0.85) + (uv.y*6.2831*f*0.45) + 3.2*w1.x + (uTime*(0.55+0.6*uAnimSpeed)) + phase + uBlockPhase );
-  return 0.5 + 0.5*s;
-}
-float blinnSpec(vec3 n, vec3 l, vec3 v, float shin){ vec3 h = normalize(l+v); return pow(max(dot(n,h),0.0), shin); }
-void main(){
-  vec3 p = vObjPos;
-  float r = length(p.xy);
-  float swirl = uAnimAmp * (0.5 + 0.5*sin(uTime*(0.6+0.7*uAnimSpeed) + uBlockPhase));
-  float a = swirl * r * 1.8;
-  float ca = cos(a), sa = sin(a);
-  p.xz = mat2(ca,-sa,sa,ca) * p.xz;
-
-  vec3 nrm = normalize(p);
-  vec3 w = pow(abs(nrm), vec3(6.0));
-  w /= max(w.x + w.y + w.z, 1e-4);
-
-  float f = uMarbleScale;
-  float sx = stripe2D(p.yz, 0.0, f);
-  float sy = stripe2D(p.zx, 2.1, f);
-  float sz = stripe2D(p.xy, 4.2, f);
-  float stripes = sx*w.x + sy*w.y + sz*w.z;
-  float t = pow(smoothstep(0.10, 0.90, stripes), 0.85);
-  vec3 marbleTint = mix(uColorA, uColorB, t);
-
-  float roughK = clamp((uMarbleScale - 0.8) / 5.2, 0.0, 1.0);
-  float freq = mix(40.0, 140.0, roughK);
-  float gx = stripe2D(p.yz, 1.7, freq);
-  float gy = stripe2D(p.zx, 3.8, freq);
-  float gz = stripe2D(p.xy, 5.9, freq);
-  float grain = (gx*w.x + gy*w.y + gz*w.z);
-  vec3 base = marbleTint * (0.83 + 0.17 * grain);
-
-  vec3 L1 = normalize(vec3(0.6, 0.7, 0.5));
-  vec3 L2 = normalize(vec3(-0.4, 0.65, -0.2));
-  vec3 V  = normalize(vec3(0.0, 0.0, 1.0));
-
-  float ndl1 = max(dot(nrm, L1), 0.0);
-  float ndl2 = max(dot(nrm, L2), 0.0);
-
-  float rough = mix(0.55, 0.12, roughK);
-  float shin  = mix(36.0, 200.0, 1.0 - rough);
-
-  float m     = clamp(uMarbleInt, 0.0, 1.0);
-  float mClmp = min(m, 0.92);
-  vec3  F0    = mix(vec3(0.06), marbleTint, mClmp);
-  float VoH   = max(dot(nrm, V), 0.0);
-  vec3  F     = F0 + (1.0 - F0) * pow(1.0 - VoH, 5.0);
-
-  float spec1 = blinnSpec(nrm, L1, V, shin);
-  float spec2 = blinnSpec(nrm, L2, V, shin);
-  float specAmt = (spec1*0.95 + spec2*0.75) * (0.95 - 0.5*rough);
-  vec3  specCol = F * specAmt;
-
-  float minDiffuse = 0.12;
-  float diffMix = mix(0.65, 0.18, mClmp);
-  float lightNL = (0.55*ndl1 + 0.45*ndl2);
-  vec3  diffCol = base * max(minDiffuse, diffMix * (0.35 + lightNL));
-
-  float rim = pow(1.0 - max(dot(nrm,V),0.0), 2.2) * 0.12;
-  vec3 color = diffCol + specCol + marbleTint*rim;
-  color = pow(color, vec3(0.96));
-  gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-}
-`;
-
-/* ----------------- Utils ----------------- */
-function XS32(seed){ let x=seed>>>0||1; return ()=>{ x^=x<<13; x^=x>>>17; x^=x<<5; return (x>>>0)/0xFFFFFFFF; }; }
-function mod(a,n){ return ((a%n)+n)%n; }
-function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-function isHalving(h){ return h>0 && (h % 210000) === 0; }
-
-function hslToRgb(h,s,l){ let r,g,b;if(s===0){r=g=b=l;}else{const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;r=hue2rgb(p,q,h+1/3); g=hue2rgb(p,q,h); b=hue2rgb(p,q,h-1/3);} return [Math.round(r*255),Math.round(g*255),Math.round(b*255)]; }
-function rgbToHsl(r,g,b){ r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b); let h, s, l=(max+min)/2; if(max===min){ h=s=0; } else { const d=max-min; s=l>0.5 ? d/(2-max-min) : d/(max+min); switch(max){ case r: h=(g-b)/d+(g<b?6:0); break; case g: h=(b-r)/d+2; break; case b: h=(r-g)/d+4; break; } h/=6; } return [h,s,l]; }
-function shiftHue(rgb, deg){ const [h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]); let hh=(h+(deg/360))%1; if(hh<0) hh+=1; return hslToRgb(hh,s,l); }
-function mixRGB(a,b,t){ return [Math.round(a[0]*(1-t)+b[0]*t), Math.round(a[1]*(1-t)+b[1]*t), Math.round(a[2]*(1-t)+b[2]*t)]; }
-
-function paletteFromHeightWide(height){
-  const rng=XS32(height), golden=137.50776405003785;
-  let baseHue=mod((height*golden)+rng()*45,360);
+/* ---------- mapping ---------- */
+const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
+function paletteFromHeight(height){
+  const rng=XS32(height), golden=137.50776405003785; let baseHue=mod((height*golden)+rng()*45,360);
   let hP=baseHue, hN=mod(baseHue+(90+rng()*120),360), hE=mod(baseHue+(180+rng()*120),360), hS=mod(baseHue+(30+rng()*120),360);
-  let sP=0.82+0.18*rng(), lP=0.48+0.12*rng();
-  let sN=0.72+0.25*rng(), lN=0.52+0.12*rng();
-  let sE=0.92+0.08*rng(), lE=0.58+0.12*rng();
-  let sS=0.82+0.18*rng(), lS=0.56+0.12*rng();
+  let sP=0.82+0.18*rng(), lP=0.48+0.12*rng(); let sN=0.72+0.25*rng(), lN=0.52+0.12*rng(); let sE=0.92+0.08*rng(), lE=0.58+0.12*rng(); let sS=0.82+0.18*rng(), lS=0.56+0.12*rng();
   return{ proton:hslToRgb(hP/360,sP,lP), neutron:hslToRgb(hN/360,sN,lN), electron:hslToRgb(hE/360,sE,lE), shell:hslToRgb(hS/360,sS,lS) };
 }
-function hexByteSum(hex){ if(!hex) return 0; hex=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<hex.length;i+=2){ let b=parseInt(hex.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; }
-function byteAt(hex,idx){ if(!hex) return 0; hex=hex.replace(/[^0-9a-fA-F]/g,''); if(hex.length<2) return 0; let i=(idx*2)%(hex.length-1); let b=parseInt(hex.substr(i,2),16); return isNaN(b)?0:b; }
-function lastByte(hex){ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; return parseInt(c.slice(-2),16)||0; }
-function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ let cap=2*n*n; let take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
-function fract(x){ return x-Math.floor(x); }
-function sinHash(x){ return Math.sin(x*43758.5453123)*0.5+0.5; }
-function shortHash(h){ return h ? (h.slice(0,10)+'…'+h.slice(-8)) : 'n/a'; }
+function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
+function feeSpread(){ return 0.25; } // with treemap removed we use a safe default
 
-function approxLog2Target(bits){ const exp=(bits>>>24)&0xff; const mant=bits&0x007fffff||1; return Math.log2(mant)+8*(exp-3); }
-function approxLog2Hash(hashHex){
-  const hex=(hashHex||'').replace(/[^0-9a-fA-F]/g,''); if(!hex.length) return 0;
-  let i=0; while(i<hex.length && hex[i]==='0') i++;
-  const byteStr=hex.substr(i,2)||'01'; const lead=parseInt(byteStr,16)||1;
-  const bitsFromPos=(hex.length-i)/2*8;
-  return Math.log2(lead)+bitsFromPos-8;
-}
+function buildAtomFromBlock(b){
+  const height=b.height, txCount=b.tx_count||1, timestamp=b.timestamp||0;
+  const bits=b.bits||0, nonce=b.nonce||0, merkleRoot=b.merkle_root||"", weight=b.weight||0, size=b.size||0, version=b.version||0, hash=b.id||b.hash||"";
+  const colors=paletteFromHeight(height);
 
-/* ----------------- Block → Atom ----------------- */
-function buildAtomFromBlock(block){
-  const height=block.height, txCount=block.tx_count||1, timestamp=block.timestamp||0, mediantime=block.mediantime||timestamp;
-  const bits=block.bits||0, nonce=block.nonce||0, merkleRoot=block.merkle_root||block.merkleRoot||"";
-  const weight=block.weight||0, size=block.size||0, version=block.version||0, hash=block.id||block.hash||"";
+  const baseE=(height%118)+1, eJitter=(byteAt(hash,5)%64)-32;
+  const electrons=clamp(baseE+eJitter, 6, 180);
 
-  const halving=isHalving(height);
+  const protonBias=(byteAt(merkleRoot,9)%31)-15;
+  const Z=clamp(baseE+protonBias, 6, 160);
+  const neutronSkew=((byteAt(hash,2)%101)-50)/180;
+  const N=clamp(Math.round(Z*(1.0+neutronSkew)) + (hexByteSum(merkleRoot)%17)-8, 6, 220);
 
-  let colors=paletteFromHeightWide(height);
-  const flipPN=((version>>1)&1)===1; if(flipPN){ const t=colors.proton; colors.proton=colors.neutron; colors.neutron=t; }
+  const shells=fillShells(electrons);
 
-  const Z=(height%118)+1, N=(hexByteSum(merkleRoot)%200), electrons=Z, shells=fillShells(electrons);
+  const prod=Math.max(1, txCount*Math.max(1,size));
+  const lg=Math.log10(prod);
+  const speedScale=clamp((lg-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
 
-  const t2=approxLog2Target(bits), h2=approxLog2Hash(hash), luck=clamp((t2-h2)/24+1.0, 0.7, 1.5);
-  const speedScale=clamp(map(txCount,50,6000,0.9,1.6),0.7,1.8)*luck;
+  const dens=clamp(weight/Math.max(1,size*4),0.6,1.4);
+  const fSpread=feeSpread();
+  const tightness=clamp((dens*0.75)+(1.15-0.55*fSpread), 0.6,1.4);
+  const eccGlobal=clamp(0.08+0.7*fSpread+((version&0xF)/60)+((nonce&0x3f)/255)*0.2, 0.08,0.88);
 
-  const weightOrSize=weight||size*4;
-  const eSizeScale=map(constrain(weightOrSize,2.8e6,4.0e6),2.8e6,4.0e6,0.90,1.50);
-
-  const dens=clamp((weight/Math.max(1,size*4)),0.6,1.4);
-  const nonceNorm=(nonce>>>0)/4294967295;
-  let nucleusScale=map(nonceNorm,0,1,0.65,1.10); nucleusScale*=dens; nucleusScale*=1.0/Math.sqrt(luck);
-
-  const spreadTx=map(constrain(txCount,1,6000),1,6000,0.9,1.35);
-  const spreadVer=1.0+((version&0xF)-7.5)*0.01;
-  const orbitSpread=spreadTx*spreadVer;
-  const radii=shells.map((_,i)=>(NUCLEUS_BASE_R*1.3+SHELL_R_STEP*(i+1))*orbitSpread);
-
-  const shellTilt=shells.map((_,s)=>map(byteAt(merkleRoot,s*3),0,255,0.05,0.7));
-  const eccA=[], eccB=[]; for(let i=0;i<shells.length;i++){ const rng=XS32(nonce^(i*0x9e3779b1)); const e=rng(); eccA.push(1.0+0.08*e); eccB.push(1.0-0.08*e); }
-
-  const jitterAmp=clamp(map(txCount,50,6000,0.0,0.45),0.0,0.5);
-  const electronAngles=[], eColorMix=[], eTiltJitter=[];
-  for(let i=0;i<shells.length;i++){
-    electronAngles[i]=[]; eColorMix[i]=[]; eTiltJitter[i]=[];
-    for(let j=0;j<shells[i];j++){
-      const sb=byteAt(merkleRoot,(i*31+j)%Math.max(1,merkleRoot.length));
-      let ang=(sb/255)*TWO_PI;
-      const jit=((byteAt(merkleRoot,i*97+j*11)/255)-0.5)*jitterAmp; ang+=jit;
-      electronAngles[i][j]=ang;
-      eColorMix[i][j]=clamp((byteAt(merkleRoot,i*53+j*7)/255)*0.35,0.0,0.35);
-      eTiltJitter[i][j]=map(byteAt(merkleRoot,i*19+j*5),0,255,-0.08,0.08);
-    }
-  }
-
-  const nucleusPoints=[];
-  const nucleusCount=Math.min(900,Z+N);
-  for(let i=0;i<nucleusCount;i++){
-    const r=NUCLEUS_BASE_R*nucleusScale*(0.55+Math.random()*0.45);
-    const th=Math.random()*TWO_PI, ph=Math.acos(2*Math.random()-1);
-    nucleusPoints.push({ x:r*Math.sin(ph)*Math.cos(th), y:r*Math.sin(ph)*Math.sin(th), z:r*Math.cos(ph), isProton:i<Z });
-  }
-
+  const t2=approxLog2Target(bits), h2=approxLog2Hash(hash), luck=clamp((t2-h2)/24+1.0,0.7,1.5);
   const hashLast=lastByte(hash);
   const ringThickBase=0.8+(hashLast/255)*2.0;
   const ringThick=ringThickBase*(((version>>0)&1)?1.8:1.0);
   const ringAlpha=clamp(140+(luck-1.0)*120,80,255);
-  const hueShiftDeg=(hashLast/255 - 0.5)*36;
-  const shellColorShifted=shiftHue(colors.shell,hueShiftDeg);
+  const hueShiftDeg=(hashLast/255-0.5)*36;
+  const ringColor=shiftHue(colors.shell, hueShiftDeg);
+
+  const orbitSpread=1.0+((version&0xf)-7.5)*0.01;
+  const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
+
+  const electronAngles=[], eMeta=[];
+  for(let i=0;i<shells.length;i++){
+    electronAngles[i]=[]; eMeta[i]=[];
+    for(let j=0;j<shells[i];j++){
+      const b0=byteAt(merkleRoot,(i*31+j*11+1)), b1=byteAt(hash,(i*17+j*7+5)), b2=byteAt(merkleRoot,(i*53+j*13+9));
+      const seed=(b0<<16)^(b1<<8)^b2;
+      let u=vnorm(v3((b0/255)-0.5,(b1/255)-0.5,(b2/255)-0.5)); if(vlen(u)<1e-6) u=[0,0,1];
+      const ref=Math.abs(u[2])<0.9?[0,0,1]:[1,0,0]; let v=vnorm(vcross(u,ref)), w=vcross(u,v);
+      const e=clamp(eccGlobal*(0.6+0.8*(b1/255)),0.05,0.93), pre=(0.05+0.45*(b2/255))*speedScale, phase=(b0/255)*Math.PI*2;
+      const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
+      electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul};
+    }
+  }
 
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
-  const speeds=shells.map((_,i)=>(0.005+(0.018*fract(sinHash(base+i*0.137+noiseSeed))))*speedScale);
+  const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
 
-  const timeSkew=clamp((timestamp-mediantime)/600,-1,1);
-  const wobbleAmp=map(timeSkew,-1,1,0.97,1.03), wobbleFreq=0.5+Math.abs(timeSkew)*0.8;
+  const totalNuc=Math.min(900,Z+N), nucleusPoints=[];
+  for(let i=0;i<totalNuc;i++){
+    const rNorm=Math.pow(Math.random(), tightness);
+    const r=NUCLEUS_R0*(0.35+0.65*rNorm), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+    nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton:i<Z});
+  }
 
-  const mode=height%4; let modeName='';
-  if(mode===0){ modeName='Metal: Swirled'; MARBLE_INT=0.88; MARBLE_SCALE=3.6; }
-  else if(mode===1){ modeName='Metal: Brushed'; MARBLE_INT=0.72; MARBLE_SCALE=4.4; }
-  else if(mode===2){ modeName='Metal: Geode';   MARBLE_INT=0.62; MARBLE_SCALE=2.6; }
-  else{               modeName='Metal: Neon';    MARBLE_INT=0.40; MARBLE_SCALE=2.0; }
+  const mode=height%4; let MARBLE_INT=0.78, MARBLE_SCALE=3.6;
+  if(mode===1){ MARBLE_INT=0.65; MARBLE_SCALE=4.4; }
+  else if(mode===2){ MARBLE_INT=0.58; MARBLE_SCALE=2.6; }
+  else if(mode===3){ MARBLE_INT=0.42; MARBLE_SCALE=2.0; }
+  const animAmp=clamp(0.18+((version&0xF)/15)*0.12,0.18,0.45);
+  const animSpeed=clamp(0.35+((nonce&0xFF)/255)*0.9,0.35,1.85);
+  const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
 
-  const animAmp=clamp(0.12+(txCount/6000)*0.35+((version&0xF)/15)*0.08,0.12,0.60);
-  const animSpeed=clamp(0.35+((height%12)/12)*0.9+((nonce&0xFF)/255)*0.6,0.35,1.85);
-  const blockPhase=(byteAt(merkleRoot,7)/255)*TWO_PI;
-
-  const halvingColors={ gold:[255,215,64], silver:[200,210,225], orange:[255,136,0] };
-  const halvingStyle={
-    halving, nucleusScale,
-    bgPulseSpeed:0.9, ePulseSpeed:2.6,
-    metalnessGold:0.92, roughGold:3.2,
-    metalnessSilver:0.88, roughSilver:3.6,
-    colors:halvingColors
-  };
-
-  safeText('modeName', halving ? 'HALVING MODE' : modeName);
-
+  const halving = isHalving(height);
   return {
-    block:{ height, hash, timestamp, mediantime, bits, txCount, weight, size, nonce, version, merkleRoot,
-            modeName: halving?'HALVING MODE':modeName, luck:+((t2-h2)/24+1.0).toFixed(3) },
-    height, Z, N, electrons, shells, radii, speeds, electronAngles, nucleusPoints, colors,
-    shellTilt, eccA, eccB, eColorMix, eTiltJitter,
+    block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
+    shader:{MARBLE_INT,MARBLE_SCALE,animAmp,animSpeed,blockPhase},
     style:{
-      eSizeScale, orbitSpread, ringThick, ringAlpha, ringColor:shellColorShifted,
-      wobbleAmp, wobbleFreq, animAmp, animSpeed, blockPhase,
-      ...halvingStyle
+      eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
+      ringThick,ringAlpha,ringColor,nucleusTight:tightness,
+      halving,colorsHalving:{ gold:[255,215,64], silver:[200,210,225] }
     }
   };
 }
 
-function updateElectrons(a){ for(let i=0;i<a.shells.length;i++){ for(let j=0;j<a.shells[i];j++){ a.electronAngles[i][j]+=a.speeds[i]; } } }
+/* ---------- UI panels ---------- */
+let uiPointerDown=false;
+function injectPanels(atom){
+  ['legend','blockPanel','infoPanel','warn'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
+  const legend=document.createElement('div'); legend.id='legend'; legend.className='panel';
+  legend.innerHTML=`<div><b>Controls</b></div><div>• <b>Rotate/Tilt</b>: drag</div><div>• <b>Pan</b>: right-drag / two-finger</div><div>• <b>Zoom</b>: wheel / pinch</div>`;
+  document.body.appendChild(legend);
 
-/* ----------------- p5 setup/draw ----------------- */
-window.addEventListener('error', e => setMeta('Error: '+e.message));
-function setup(){
-  createCanvas(windowWidth, windowHeight, WEBGL);
-  setAttributes('antialias', true); frameRate(60);
-  orbShader=createShader(ORB_VERT, ORB_FRAG);
-  for(let i=0;i<BG_STAR_COUNT;i++){ bgStars.push({x:random(-2800,2800), y:random(-2800,2800), z:random(-2800,2800), s:random(0.4,1.0)}); }
-  document.getElementById('load').addEventListener('click', loadByHeight);
-  document.getElementById('latest').addEventListener('click', loadLatest);
-  document.getElementById('marbleInt').addEventListener('input', e=>{ MARBLE_INT=parseFloat(e.target.value); safeText('marbleIntVal', MARBLE_INT.toFixed(2)); });
-  document.getElementById('marbleScale').addEventListener('input', e=>{ MARBLE_SCALE=parseFloat(e.target.value); safeText('marbleScaleVal', MARBLE_SCALE.toFixed(1)); });
-  document.getElementById('fxRings').addEventListener('change', e=>{ FX_RINGS=e.target.checked; });
-  attachUIEventGuards();
-}
-function windowResized(){ resizeCanvas(windowWidth, windowHeight); }
-function attachUIEventGuards(){
-  const panels=['ui','fx','blockPanel','infoPanel'].map(id=>document.getElementById(id)).filter(Boolean);
-  const down=()=>{ uiPointerDown=true; }, up=()=>{ uiPointerDown=false; };
-  panels.forEach(p=>{
-    p.addEventListener('pointerdown', down); p.addEventListener('pointerup', up);
-    p.addEventListener('pointercancel', up); p.addEventListener('pointerleave', up);
-    p.addEventListener('wheel', e=>{ e.stopPropagation(); e.preventDefault(); }, {passive:false});
-  });
-  document.addEventListener('pointerup', up);
-}
+  const blk=atom.block; const det=document.createElement('details'); det.id='blockPanel'; det.className='panel';
+  det.innerHTML=`<summary><span>▼ Block Details</span><span style="color:#d7dfff;font-weight:500;">#${blk.height} — ${shortHash(blk.id||blk.hash)}</span></summary>
+  <div id="blkBody">
+    <div style="margin-bottom:6px;">
+      <span class="chip">Electrons: ${atom.electrons}</span>
+      <span class="chip">Protons: ${atom.Z}</span>
+      <span class="chip">Neutrons: ${atom.N}</span>
+    </div>
+    <table>
+      <tr><td>Tx count</td><td>${blk.tx_count??'n/a'}</td></tr>
+      <tr><td>Size (bytes)</td><td>${blk.size??'n/a'}</td></tr>
+      <tr><td>Weight (WU)</td><td>${blk.weight??'n/a'}</td></tr>
+      <tr><td>Version</td><td>${blk.version??'n/a'}</td></tr>
+      <tr><td>Bits</td><td>${blk.bits??'n/a'}</td></tr>
+      <tr><td>Nonce</td><td>${blk.nonce??'n/a'}</td></tr>
+      <tr><td>Time</td><td>${blk.timestamp ? new Date(blk.timestamp*1000).toLocaleString() : 'n/a'}</td></tr>
+      <tr><td>Merkle root</td><td><code>${shortHash(blk.merkle_root)}</code></td></tr>
+    </table>
+  </div>`;
+  document.body.appendChild(det);
 
-function draw(){
-  // Halving pulsing background
-  if (atom && atom.style.halving){
-    const t=millis()*0.001; const p=0.5+0.5*Math.sin(t*atom.style.bgPulseSpeed*TWO_PI);
-    const o=atom.style.colors.orange;
-    const r=Math.round((1-p)*11 + p*o[0]), g=Math.round((1-p)*14 + p*o[1]), b=Math.round((1-p)*18 + p*o[2]);
-    background(r,g,b);
-  } else { background(9,12,15); }
+  const info=document.createElement('details'); info.id='infoPanel'; info.className='panel';
+  info.innerHTML=`<summary><span class="badge">?</span> Info / How it works</summary>
+  <div id="infoBody">
+    <h3>Motion</h3><p>Electrons orbit on tilted ellipses whose planes slowly precess. Speed ∝ log₁₀(tx_count × size). Protons are glossier/warmer; neutrons are matte/cooler.</p>
+  </div>`;
+  document.body.appendChild(info);
 
-  if (!uiPointerDown) orbitControl(1,1,1.5);
+  const guard=n=>{n.addEventListener('pointerdown',()=>uiPointerDown=true);n.addEventListener('pointerup',()=>uiPointerDown=false);
+                  n.addEventListener('pointerleave',()=>uiPointerDown=false);n.addEventListener('pointercancel',()=>uiPointerDown=false);
+                  n.addEventListener('wheel',(e)=>{e.stopPropagation(); e.preventDefault();},{passive:false});};
+  [legend,det,info].forEach(guard);
 
-  if (!(atom && atom.style.halving)){
-    push(); noStroke(); ambientMaterial(200);
-    for(const s of bgStars){ push(); translate(s.x,s.y,s.z); sphere(s.s); pop(); }
-    pop();
-  }
-
-  if(atom){
-    const t=millis()*0.001;
-    rotateY(t*0.07 + Math.sin(t*atom.style.wobbleFreq)*0.02);
-    rotateX(Math.sin(t*0.23)*0.05);
-    drawAtom(atom, t);
-    updateElectrons(atom);
-  }
+  const warn=document.createElement('div'); warn.id='warn'; warn.textContent='Shader fallback active (simplified lighting).'; document.body.appendChild(warn);
 }
 
-function drawAtom(a, time){
-  if (a.style.halving){ drawAtomHalving(a, time); return; }
+/* ---------- p5 sketch ---------- */
+let p5Instance=null, orbShader=null, SHADER_OK=true;
 
-  // Normal path (animated marble)
-  push();
-  const breath = 1.0 + (Math.sin(time * a.style.wobbleFreq*2.0)*0.02) * (a.style.wobbleAmp-1.0);
-  scale(breath, 1.0, 1.0);
-  for(const p of a.nucleusPoints){
-    push(); translate(p.x,p.y,p.z);
-    drawOrb(a, p.isProton? a.colors.proton : a.colors.neutron,
-               p.isProton? a.colors.neutron : a.colors.proton,
-               NUCLEON_R, time);
-    pop();
-  }
-  pop();
+function startSketch(blk){
+  if(p5Instance){ p5Instance.remove(); p5Instance=null; }
+  SHADER_OK=true; uiPointerDown=false;
 
-  if (FX_RINGS){
-    for(let i=0;i<a.shells.length;i++){
-      const r=a.radii[i];
-      push(); noFill();
-      stroke(a.style.ringColor[0],a.style.ringColor[1],a.style.ringColor[2], a.style.ringAlpha);
-      strokeWeight(a.style.ringThick);
-      beginShape(); const steps=160;
-      for(let k=0;k<steps;k++){ const ang=(k/steps)*TWO_PI; vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
-      endShape(CLOSE); pop();
+  const atom=buildAtomFromBlock(blk);
+  injectPanels(atom);
+
+  const sketch=(p)=>{
+    p.setup=function(){
+      p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
+      p.setAttributes('antialias', true, 'premultipliedAlpha', false);
+      orbShader=p.createShader(VERT,FRAG);
+    };
+    p.windowResized=()=>p.resizeCanvas(p.windowWidth,p.windowHeight);
+
+    function drawOrbMat(cA,cB,r,t,metal,rough,amp=atom.shader.animAmp,spd=atom.shader.animSpeed){
+      p.noStroke();
+      if(SHADER_OK){
+        try{
+          p.shader(orbShader);
+          orbShader.setUniform('uColorA', cA.map(v=>v/255));
+          orbShader.setUniform('uColorB', cB.map(v=>v/255));
+          orbShader.setUniform('uMarbleInt', metal);
+          orbShader.setUniform('uMarbleScale', rough);
+          orbShader.setUniform('uTime', t);
+          orbShader.setUniform('uAnimAmp', amp);
+          orbShader.setUniform('uAnimSpeed', spd);
+          orbShader.setUniform('uBlockPhase', atom.shader.blockPhase || 0.0);
+          p.sphere(r);
+          p.resetShader(); return;
+        }catch(e){ SHADER_OK=false; $('#warn').style.display='block'; p.resetShader(); }
+      }
+      p.ambientMaterial(...cA); p.sphere(r);
     }
-  }
 
-  for(let i=0;i<a.shells.length;i++){
-    const r=a.radii[i], aMul=a.eccA[i], bMul=a.eccB[i];
-    for(let j=0;j<a.shells[i];j++){
-      const ang=a.electronAngles[i][j], tilt=a.shellTilt[i]+a.eTiltJitter[i][j];
-      const ex=(r*aMul)*Math.cos(ang), ey=(r*bMul)*Math.sin(ang)*Math.cos(tilt), ez=(r*bMul)*Math.sin(ang)*Math.sin(tilt);
-      const mixT=a.eColorMix[i][j], eCol=mixRGB(a.colors.electron, a.style.ringColor, mixT);
-      push(); translate(ex,ey,ez); drawOrb(a, eCol, a.style.ringColor, ELECTRON_R * a.style.eSizeScale, time); pop();
+    function glowOverlay(){
+      const gl=p._renderer.GL;
+      p.push(); p.resetShader(); p.noStroke();
+      gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+      p.blendMode(p.ADD);
+      const baseR=NUCLEUS_R0*(atom.style.nucleusTight||1.0), glowR=baseR*2.6;
+      for(let i=0;i<5;i++){ const tt=i/4; p.fill(255,160,0,Math.round(28*(1.0-tt))); p.push(); p.sphere(glowR*(1.0+tt*0.55)); p.pop(); }
+      p.blendMode(p.BLEND); gl.depthMask(true); gl.enable(gl.DEPTH_TEST); p.pop();
     }
-  }
+
+    p.draw=function(){
+      // HARD CLEAR (fixes trails)
+      p.blendMode(p.BLEND);
+      p.background(9,12,15);
+      const gl=p._renderer.GL;
+      gl.clearDepth(1.0);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+
+      // controls
+      const s = uiPointerDown?0:1; p.orbitControl(s,s,1.5);
+
+      const t=p.millis()*0.001;
+      p.rotateY(t*0.06); p.rotateX(Math.sin(t*0.23)*0.05);
+
+      // nucleus
+      p.push();
+      for(const q of atom.nucleusPoints){
+        p.push(); p.translate(q.x,q.y,q.z);
+        if(atom.style.halving) drawOrbMat(atom.style.colorsHalving.gold, atom.style.colorsHalving.gold, NUCLEON_R, t, 0.92, 3.2, 0.0, 0.0);
+        else if(q.isProton)   drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 0.85, 3.1);
+        else                  drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 0.30, 4.6, 0.12, 0.35);
+        p.pop();
+      }
+      p.pop();
+
+      // rings (stroke only here)
+      for(let i=0;i<atom.shells.length;i++){
+        const r=atom.radii[i];
+        p.push(); p.noFill();
+        if(atom.style.halving){ p.stroke(255,136,0,160); p.strokeWeight(atom.style.ringThick*1.1); }
+        else { p.stroke(...atom.style.ringColor, atom.style.ringAlpha); p.strokeWeight(atom.style.ringThick); }
+        p.beginShape(); const steps=160; for(let k=0;k<steps;k++){ const ang=(k/steps)*Math.PI*2; p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
+        p.endShape(p.CLOSE); p.pop();
+      }
+
+      // electrons
+      for(let i=0;i<atom.shells.length;i++){
+        const r=atom.radii[i], baseSpeed=atom.speeds[i];
+        for(let j=0;j<atom.shells[i];j++){
+          const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
+          const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
+          const pre=t*m.pre + m.phase;
+          const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
+          const basePt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
+          const wob=1.0 + m.rosAmp*Math.sin(th*m.rosK + m.phase*0.7);
+          const pt=vmul(basePt, wob);
+
+          p.push(); p.translate(pt[0],pt[1],pt[2]);
+          if(atom.style.halving){
+            const pulse=1.0+0.22*Math.sin(t*2.6 + i*0.7 + j*1.13);
+            drawOrbMat(atom.style.colorsHalving.silver, atom.style.colorsHalving.silver, ELECTRON_R*atom.style.eSizeScale*pulse, t, 0.88, 3.6, 0.0, 0.0);
+          }else{
+            const mixT=((j%7)/7)*0.35; const eCol=mixRGB(atom.colors.electron, atom.style.ringColor, mixT);
+            drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, atom.shader.MARBLE_INT, atom.shader.MARBLE_SCALE, atom.shader.animAmp, atom.shader.animSpeed);
+          }
+          p.pop();
+
+          atom.electronAngles[i][j]+=baseSpeed*m.spMul;
+        }
+      }
+
+      if(atom.style.halving) glowOverlay();
+    };
+  };
+
+  const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; document.body.appendChild(container);
+  p5Instance=new p5(sketch, container);
 }
 
-/* ---------- HALVING MODE (fixed transparency) ---------- */
-function drawAtomHalving(a, time){
-  const gold=a.style.colors.gold, silver=a.style.colors.silver;
+/* ---------- networking ---------- */
+const API='https://mempool.space/api';
+async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(`${r.status} ${u}`); return (await r.text()).trim();}
+async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(`${r.status} ${u}`); return r.json();}
 
-  // 1) Nucleus (gold)
-  push();
-  const breath=1.0 + (Math.sin(time*a.style.wobbleFreq*2.0)*0.02) * (a.style.wobbleAmp-1.0);
-  scale(breath, 1.0, 1.0);
-  for(const p of a.nucleusPoints){
-    push(); translate(p.x,p.y,p.z);
-    drawOrbFixed(a, gold, gold, NUCLEON_R, time, a.style.metalnessGold, a.style.roughGold);
-    pop();
-  }
-  pop();
-
-  // 2) Rings (subtle orange)
-  if (FX_RINGS){
-    for(let i=0;i<a.shells.length;i++){
-      const r=a.radii[i];
-      push(); noFill(); stroke(255,136,0, 160); strokeWeight(a.style.ringThick*1.1);
-      beginShape(); const steps=160;
-      for(let k=0;k<steps;k++){ const ang=(k/steps)*TWO_PI; vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
-      endShape(CLOSE); pop();
-    }
-  }
-
-  // 3) Electrons (silver, pulsing)
-  const pulseSpeed=a.style.ePulseSpeed||2.6;
-  for(let i=0;i<a.shells.length;i++){
-    const r=a.radii[i], aMul=a.eccA[i], bMul=a.eccB[i];
-    for(let j=0;j<a.shells[i];j++){
-      const ang=a.electronAngles[i][j], tilt=a.shellTilt[i]+a.eTiltJitter[i][j];
-      const ex=(r*aMul)*Math.cos(ang), ey=(r*bMul)*Math.sin(ang)*Math.cos(tilt), ez=(r*bMul)*Math.sin(ang)*Math.sin(tilt);
-      const phase=(i*0.7 + j*1.13), pulse=1.0 + 0.22*Math.sin(time*pulseSpeed + phase);
-      const radius=ELECTRON_R * a.style.eSizeScale * pulse;
-      push(); translate(ex,ey,ez); drawOrbFixed(a, silver, silver, radius, time, a.style.metalnessSilver, a.style.roughSilver); pop();
-    }
-  }
-
-  // 4) Soft glow OVERLAY (draw last, no depth test/writes)  << FIX
-  drawNucleusGlowOverlay(a);
-}
-
-// Pure additive glow that never occludes objects
-function drawNucleusGlowOverlay(a){
-  const gl = drawingContext; // WebGLRenderingContext
-  push();
-  resetShader();
-  noStroke();
-  // Disable depth testing & writing so the halo doesn't block electrons
-  gl.disable(gl.DEPTH_TEST);
-  gl.depthMask(false);
-  blendMode(ADD);
-
-  const baseR = NUCLEUS_BASE_R * (a.style.nucleusScale || 1.0);
-  const glowR = baseR * 2.8;          // slightly larger for softness
-  const layers = 5;                    // more layers => smoother edge
-  for (let i=0;i<layers;i++){
-    const t = i/(layers-1);
-    const alpha = Math.round(28 * (1.0 - t)); // 28 → 0
-    fill(255, 160, 0, alpha);
-    push(); sphere(glowR * (1.0 + t*0.55)); pop();
-  }
-
-  // Restore state
-  blendMode(BLEND);
-  gl.depthMask(true);
-  gl.enable(gl.DEPTH_TEST);
-  pop();
-}
-
-/* -------- Sphere draw helpers -------- */
-function drawOrbFixed(a, colorA255, colorB255, radius, time, metal, rough){
-  noStroke();
-  if (SHADER_OK){
-    try{
-      shader(orbShader);
-      orbShader.setUniform('uColorA', colorA255.map(v=>v/255));
-      orbShader.setUniform('uColorB', colorB255.map(v=>v/255));
-      orbShader.setUniform('uMarbleInt', metal);
-      orbShader.setUniform('uMarbleScale', rough);
-      orbShader.setUniform('uTime', time);
-      orbShader.setUniform('uAnimAmp', 0.0);
-      orbShader.setUniform('uAnimSpeed', 0.0);
-      orbShader.setUniform('uBlockPhase', 0.0);
-      sphere(radius);
-      resetShader(); return;
-    }catch(e){ SHADER_OK=false; document.getElementById('warn').style.display='block'; resetShader(); }
-  }
-  ambientMaterial(colorA255[0], colorA255[1], colorA255[2]); sphere(radius);
-}
-function drawOrb(a, colorA255, colorB255, radius, time){
-  noStroke();
-  if (SHADER_OK){
-    try{
-      shader(orbShader);
-      orbShader.setUniform('uColorA', colorA255.map(v=>v/255));
-      orbShader.setUniform('uColorB', colorB255.map(v=>v/255));
-      orbShader.setUniform('uMarbleInt', MARBLE_INT);
-      orbShader.setUniform('uMarbleScale', MARBLE_SCALE);
-      orbShader.setUniform('uTime', time);
-      orbShader.setUniform('uAnimAmp', a.style.animAmp || 0.25);
-      orbShader.setUniform('uAnimSpeed', a.style.animSpeed || 0.8);
-      orbShader.setUniform('uBlockPhase', a.style.blockPhase || 0.0);
-      sphere(radius);
-      resetShader(); return;
-    }catch(e){ SHADER_OK=false; document.getElementById('warn').style.display='block'; resetShader(); }
-  }
-  ambientMaterial(colorA255[0], colorA255[1], colorA255[2]); sphere(radius);
-}
-
-/* ----------------- Data loading ----------------- */
-function syncSliders(){
-  const mi=document.getElementById('marbleInt'), ms=document.getElementById('marbleScale');
-  if (mi){ mi.value=String(MARBLE_INT); safeText('marbleIntVal', (+MARBLE_INT).toFixed(2)); }
-  if (ms){ ms.value=String(MARBLE_SCALE); safeText('marbleScaleVal', (+MARBLE_SCALE).toFixed(1)); }
-}
-async function loadByHeight(){
-  const val=document.getElementById('height').value.trim(); if(!val) return setMeta("Enter a block height.");
-  const h=parseInt(val,10); if(isNaN(h)||h<0) return setMeta("Invalid height.");
-  try{
-    setMeta("Resolving hash for height "+h+" …");
-    const hash=await fetchText(API+"/block-height/"+h); if(!hash||hash.length<10) throw new Error("Unexpected response for block height.");
-    setMeta("Fetching block "+hash.slice(0,16)+"…");
-    const block=await fetchJSON(API+"/block/"+hash);
-    atom=buildAtomFromBlock(block); syncSliders(); setMeta(describeBlock(atom)); updateBlockPanel(atom);
-  }catch(e){ console.error(e); setMeta("Error: "+e.message); }
+async function loadBlockByHeight(height){
+  $('#progress').style.display='block'; $('#progress').textContent=`Resolving block ${height}…`;
+  const hash=await fetchText(`${API}/block-height/${height}`);
+  $('#progress').textContent=`Fetching header…`;
+  const blk=await fetchJSON(`${API}/block/${hash}`);
+  $('#progress').style.display='none';
+  startSketch(blk);
 }
 async function loadLatest(){
-  try{
-    setMeta("Fetching latest block…");
-    const arr=await fetchJSON(API+"/blocks"); if(!Array.isArray(arr)||arr.length===0) throw new Error("No blocks returned.");
-    const hash=arr[0].id||arr[0].hash;
-    const block=await fetchJSON(API+"/block/"+hash);
-    atom=buildAtomFromBlock(block); syncSliders(); setMeta(describeBlock(atom)); updateBlockPanel(atom);
-  }catch(e){ console.error(e); setMeta("Error: "+e.message); }
+  $('#progress').style.display='block'; $('#progress').textContent='Getting tip height…';
+  const h=await fetchText(`${API}/blocks/tip/height`); $('#heightInput').value=h;
+  await loadBlockByHeight(h);
 }
-async function fetchJSON(url){ const res=await fetch(url,{headers:{'accept':'application/json'}}); if(!res.ok){ if(res.status===404) throw new Error('Resource not found on mempool.space'); throw new Error(`HTTP ${res.status} on ${url}`);} return await res.json(); }
-async function fetchText(url){ const res=await fetch(url,{headers:{'accept':'text/plain'}}); if(!res.ok){ if(res.status===404) throw new Error('Block height not found on mempool.space'); throw new Error(`HTTP ${res.status} on ${url}`);} return (await res.text()).trim(); }
 
-function describeBlock(a){
-  const b=a.block||{}, date=b.timestamp?new Date(b.timestamp*1000).toLocaleString():"n/a";
-  const mdate=b.mediantime?new Date(b.mediantime*1000).toLocaleString():"n/a";
-  const halvingChip=(a.style.halving? ' <span class="chip warn">Halving Mode</span>' : '');
-  return `<b>Height:</b> ${b.height ?? 'n/a'}${halvingChip}<br/>
-          <b>Time:</b> ${date} (median: ${mdate})<br/>
-          <b>Tx Count:</b> ${b.txCount ?? 'n/a'}<br/>
-          <b>Bits:</b> ${b.bits ?? 'n/a'} &nbsp; <b>Luck:</b> ${b.luck ?? '—'}<br/>
-          <b>Merkle Root:</b> ${b.merkleRoot ? escapeHtml(shortHash(b.merkleRoot)) : 'n/a'}<br/>
-          <b>Atom:</b> Z=${a.Z} (p), N≈${a.N} (n), e⁻=${a.electrons}, shells=${a.shells.join(', ')}`;
-}
-function updateBlockPanel(a){
-  const b=a.block||{}, date=b.timestamp?new Date(b.timestamp*1000).toLocaleString():'n/a';
-  const mdate=b.mediantime?new Date(b.mediantime*1000).toLocaleString():'n/a';
-  safeText('blkTitle', b.height ? `#${b.height} — ${shortHash(b.hash)}` : '(none loaded)');
-  const chips=[ `<span class="chip">${a.style.halving?'Halving Mode':'Mode: '+(b.modeName||'—')}</span>`,
-                `<span class="chip">Z=${a.Z}</span>`, `<span class="chip">N≈${a.N}</span>`,
-                `<span class="chip">e⁻=${a.electrons}</span>`, `<span class="chip">shells=[${a.shells.join(', ')}]</span>`,
-                `<span class="chip">Luck=${b.luck}</span>` ];
-  safeHTML('blkBody', `<div style="margin-bottom:6px;">${chips.join(' ')}</div>
-    <table>
-      <tr><td>Height</td><td>${b.height ?? 'n/a'}</td></tr>
-      <tr><td>Hash</td><td><code>${shortHash(b.hash)}</code></td></tr>
-      <tr><td>Time</td><td>${date} (median: ${mdate})</td></tr>
-      <tr><td>Tx count</td><td>${b.txCount ?? 'n/a'}</td></tr>
-      <tr><td>Size (bytes)</td><td>${b.size ?? 'n/a'}</td></tr>
-      <tr><td>Weight (WU)</td><td>${b.weight ?? 'n/a'}</td></tr>
-      <tr><td>Version</td><td>${b.version ?? 'n/a'}</td></tr>
-      <tr><td>Bits</td><td>${b.bits ?? 'n/a'}</td></tr>
-      <tr><td>Nonce</td><td>${b.nonce ?? 'n/a'}</td></tr>
-      <tr><td>Merkle root</td><td><code>${shortHash(b.merkleRoot)}</code></td></tr>
-    </table>`);
-}
+/* ---------- HUD + guards ---------- */
+const hud=$('#hud');
+['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>uiPointerDown=true,{passive:false}));
+['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>uiPointerDown=false));
+
+$('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
+  try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
+$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
+
+// Optional: auto-load latest
+// loadLatest();
 </script>
 </body>
 </html>
