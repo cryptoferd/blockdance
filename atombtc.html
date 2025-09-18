@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Disco 170</title>
+<title>Bitcoin Block Atom — Disco 170 (fixed)</title>
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif}
@@ -36,7 +36,7 @@
 <!-- Loader HUD -->
 <div class="hud" id="hud">
   <label>Height:</label>
-  <input id="heightInput" type="number" min="1" placeholder="e.g. 840000" style="width:120px"/>
+  <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000" style="width:140px"/>
   <button id="loadBtn">Load</button>
   <button id="latestBtn">Latest</button>
 </div>
@@ -92,11 +92,11 @@ const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
 function paletteFromHeight(height){
   const rng=XS32(height), golden=137.50776405003785; let baseHue=mod((height*golden)+rng()*45,360);
   let hP=baseHue, hN=mod(baseHue+(90+rng()*120),360), hE=mod(baseHue+(180+rng()*120),360), hS=mod(baseHue+(30+rng()*120),360);
-  let sP=0.82+0.18*rng(), lP=0.48+0.12*rng(); let sN=0.72+0.25*rng(), lN=0.52+0.12;rng(); let sE=0.92+0.08*rng(), lE=0.58+0.12*rng(); let sS=0.82+0.18*rng(), lS=0.56+0.12*rng();
+  let sP=0.82+0.18*rng(), lP=0.48+0.12*rng(); let sN=0.72+0.25*rng(), lN=0.52+0.12*rng();
+  let sE=0.92+0.08*rng(), lE=0.58+0.12*rng(); let sS=0.82+0.18*rng(), lS=0.56+0.12*rng();
   return{ proton:hslToRgb(hP/360,sP,lP), neutron:hslToRgb(hN/360,sN,lN), electron:hslToRgb(hE/360,sE,lE), shell:hslToRgb(hS/360,sS,lS) };
 }
 function feeSpread(){ return 0.25; } // treemap removed
-
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
 function buildAtomFromBlock(b){
@@ -187,7 +187,8 @@ function buildAtomFromBlock(b){
 }
 
 /* ---------- UI panels ---------- */
-let uiPointerDown=false;
+let uiPointerDown = false;   /* <— SINGLE global declaration */
+
 function injectPanels(atom){
   ['legend','blockPanel','infoPanel','warn'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
   const legend=document.createElement('div'); legend.id='legend'; legend.className='panel';
@@ -238,7 +239,8 @@ let p5Instance=null, orbShader=null, SHADER_OK=true;
 
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
-  SHADER_OK=true; uiPointerDown=false;
+  SHADER_OK=true;
+  uiPointerDown=false;   // <— reset, do NOT redeclare
 
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
@@ -274,16 +276,15 @@ function startSketch(blk){
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
 
     function drawRainbowRings(t){
-      // ROYGBIV sweep around each ring; animate hue over time
       const steps = 180;
-      const baseHue = (t*160) % 360; // fast cycle
+      const baseHue = (t*160) % 360;
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i];
         p.push(); p.noFill(); p.strokeWeight(1.6);
         p.beginShape();
         for(let k=0;k<=steps;k++){
           const ang=(k/steps)*Math.PI*2;
-          const hue = baseHue + (k/steps)*360 + i*18; // ring phase offset
+          const hue = baseHue + (k/steps)*360 + i*18;
           const c=hueToRgb(hue);
           p.stroke(c[0],c[1],c[2],220);
           p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
@@ -303,8 +304,6 @@ function startSketch(blk){
       const s = uiPointerDown?0:1; p.orbitControl(s,s,1.5);
 
       const t=p.millis()*0.001;
-
-      // gentle drift
       p.rotateY(t*0.06); p.rotateX(Math.sin(t*0.23)*0.05);
 
       const disco = atom.style.disco;
@@ -392,15 +391,14 @@ async function loadLatest(){
   await loadBlockByHeight(h);
 }
 
-/* ---------- HUD + guards ---------- */
-let uiPointerDown=false;
+/* ---------- HUD + guards (REUSE the same uiPointerDown) ---------- */
 const hud=$('#hud');
 ['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>uiPointerDown=true,{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>uiPointerDown=false));
 
 $('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
-$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
+$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }});
 
 // Optional: auto-load latest
 // loadLatest();
