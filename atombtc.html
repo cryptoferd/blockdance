@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — overrides, treemap, halving glow, 1337 special</title>
+<title>Bitcoin Block Atom — marble/spikes fix + per-orb lava seed</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -57,7 +57,7 @@
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* ========== utils ========== */
+/* ---------- utils ---------- */
 const $=s=>document.querySelector(s);
 const shortHash=h=>h?(String(h).slice(0,10)+'…'+String(h).slice(-8)):'n/a';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -78,7 +78,7 @@ const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[
 const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
-/* ========== shader: simple & robust ========== */
+/* ---------- shader (robust) ---------- */
 const VERT=`
 #ifdef GL_ES
 precision mediump float;
@@ -94,7 +94,8 @@ void main(){
   gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(aPosition, 1.0));
 }
 `;
-// uMode: 0=marble,1=glass,2=wireframe,3=lava,4=toon,5=iridescent,6=spikes,7=metallic,8=safe
+// uModeF is a float to avoid int-uniform driver quirks.
+// m = 0 marble,1 glass,2 wireframe,3 lava,4 toon,5 iridescent,6 spikes,7 metallic,8 safe
 const FRAG=`
 #ifdef GL_ES
 precision mediump float;
@@ -106,7 +107,8 @@ varying vec3 vNormal;
 
 uniform vec3 uColorA, uColorB;
 uniform float uTime, uAlpha, uPhase, uAmp, uSpeed;
-uniform int uMode;
+uniform float uModeF;
+uniform float uObjSeed;
 
 float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
 float n3(vec3 p){
@@ -134,56 +136,60 @@ void main(){
 
   vec3 colA=uColorA, colB=uColorB;
   float t = uTime*(0.6+uSpeed);
+  int m = int(floor(uModeF+0.5));
   vec3 col;
 
-  if(uMode==0){ // marble
-    float s = fbm(normalize(vPos)*3.2 + vec3(0.0, t*0.25+uPhase, 0.0));
-    float veins = sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase);
-    float m = smoothstep(-0.2,0.7,veins);
-    vec3 base = mix(colA,colB,m);
+  if(m==0){ // marble (seeded)
+    vec3 seed = vec3(uObjSeed, uObjSeed*1.7, uObjSeed*2.3);
+    float s = fbm(normalize(vPos)*3.2 + vec3(0.0, t*0.25+uPhase, 0.0) + seed);
+    float veins = sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
+    float mm = smoothstep(-0.2,0.7,veins);
+    vec3 base = mix(colA,colB,mm);
     col = base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(uMode==1){ // glass
+  } else if(m==1){ // glass
     float fres = pow(1.0 - max(dot(n,V),0.0), 3.0);
     col = mix(colA, colB, 0.5) * (0.08 + 0.15*ndl) + vec3(1.0)*fres*0.85;
-  } else if(uMode==2){ // wireframe
-    float k = 8.0;
+  } else if(m==2){ // wireframe
+    float k = 8.0 + 1.5*fract(uObjSeed*7.0);
     vec3 q = normalize(vPos);
     float gx = abs(sin(q.x*k));
     float gy = abs(sin(q.y*k));
     float gz = abs(sin(q.z*k));
     float g = max(max(gx,gy),gz);
     float edge = smoothstep(0.92, 0.98, g);
-    vec3 base = mix(colA,colB,0.5+0.5*sin(t*0.5));
+    vec3 base = mix(colA,colB,0.5+0.5*sin(t*0.5 + uObjSeed));
     col = base*(0.18+0.48*ndl) + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
-  } else if(uMode==3){ // lava
-    float f = fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0));
+  } else if(m==3){ // lava (seeded per orb)
+    vec3 seed = vec3(uObjSeed, uObjSeed*2.1, uObjSeed*3.3);
+    float f = fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + seed);
     float veins = smoothstep(0.55,0.8,f);
     vec3 hot = vec3(1.0,0.35,0.0);
     vec3 cool = vec3(0.05,0.02,0.02);
     col = mix(cool, hot, veins)* (0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
-  } else if(uMode==4){ // toon
+  } else if(m==4){ // toon
     float s = step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base = mix(colA,colB,0.5);
     col = base * (0.2 + s) + vec3(1.0)*step(0.8,rim)*0.2;
-  } else if(uMode==5){ // iridescent
-    float h = fract(0.5 + 0.35*dot(n,vec3(0.3,0.8,0.5)) + 0.15*sin(t + uPhase));
+  } else if(m==5){ // iridescent
+    float h = fract(0.5 + 0.35*dot(n,vec3(0.3,0.8,0.5)) + 0.15*sin(t + uPhase + uObjSeed));
     vec3 iri = hsv2rgb(vec3(h, 0.9, 1.0));
     col = mix(iri, mix(colA,colB,0.4), 0.3) * (0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
-  } else if(uMode==6){ // spikes
-    float s = fbm(normalize(vPos)*6.0 + vec3(0.0,t*1.1,0.0));
+  } else if(m==6){ // spikes (seeded)
+    vec3 seed = vec3(uObjSeed, uObjSeed*1.9, uObjSeed*2.7);
+    float s = fbm(normalize(vPos)*6.0 + vec3(0.0,t*1.1,0.0) + seed);
     float spikes = pow(s, 6.0);
     col = mix(colA,colB, spikes) * (0.25+0.75*ndl) + vec3(1.0)*rim*0.12;
-  } else if(uMode==7){ // metallic
+  } else if(m==7){ // metallic
     float w = pow(abs(dot(n, normalize(L1+L2))), 32.0);
     col = mix(colA,colB,0.5)*(0.18+0.5*ndl) + vec3(1.0)*w*0.8 + vec3(1.0)*rim*0.1;
-  } else {
+  } else { // safe
     col = mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
   gl_FragColor = vec4(clamp(col,0.0,1.0), uAlpha);
 }
 `;
 
-/* ========== mapping & atom build ========== */
+/* ---------- mapping & atom ---------- */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
 
 function paletteFromHeight(height){
@@ -251,7 +257,8 @@ function buildAtomFromBlock(b){
       const e=clamp(eccGlobal*(0.6+0.8*(b1/255)),0.05,0.93), pre=(0.05+0.45*(b2/255))*speedScale, phase=(b0/255)*Math.PI*2;
       const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
       const hueOffset=( (i*97 + j*131 + seed) % 360 );
-      electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset};
+      const objSeed = ( (seed * 2654435761) >>> 0 ) / 4294967295; // 0..1
+      electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset,objSeed};
     }
   }
 
@@ -264,14 +271,14 @@ function buildAtomFromBlock(b){
     const r=NUCLEUS_R0*(0.35+0.65*rNorm), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
     const isProton = i<Z;
     const hueOffset = (i*23 + (isProton?177:311)) % 360;
-    nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset});
+    const seed = ((i+1)*1103515245 ^ (height*12345)) >>> 0;
+    const objSeed = (seed % 1000003) / 1000003; // 0..1
+    nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset,objSeed});
   }
 
   const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
-
   const disco = height===170;
   const halving = !disco && isHalving(height);
-
   let mode = styleModeFromHeight(height);
   if (disco) mode = 5;
   if (halving) mode = 7;
@@ -287,7 +294,7 @@ function buildAtomFromBlock(b){
   };
 }
 
-/* ========== panels ========== */
+/* ---------- panels ---------- */
 let uiPointerDown=false;
 function injectPanels(atom){
   ['legend','blockPanel','infoPanel'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
@@ -321,7 +328,6 @@ function injectPanels(atom){
     ['Size (bytes)', blk.size??'n/a'],
     ['Weight (WU)', blk.weight??'n/a'],
     ['Version', blk.version??'n/a'],
-    ['Bits', blk.bits??'n/a'],
     ['Nonce', blk.nonce??'n/a'],
     ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
     ['Merkle root', shortHash(blk.merkle_root)]
@@ -343,6 +349,7 @@ function injectPanels(atom){
   <li><b>Colors:</b> Height → palette via golden-angle hue; rings hue-shifted by hash.</li>\
   <li><b>Background:</b> Treemap of transactions colored by fee rate (0 → 50k sat/vB).</li>\
   <li><b>Specials:</b> Halving = pulsing orange/black + nucleus glow. Block 170 = ROYGBIV + iridescence.</li>\
+  <li><b>Materials:</b> Select per-type in HUD. “Lava”, “Marble”, and “Spikes” now vary per orb via seeded noise.</li>\
   </ul>';
   info.appendChild(infoBody); document.body.appendChild(info);
 
@@ -352,7 +359,7 @@ function injectPanels(atom){
   [legend,det,info].forEach(guard);
 }
 
-/* ========== treemap background ========== */
+/* ---------- treemap background ---------- */
 const BG_GREEN=[0x0B,0x4F,0x35], BG_YELLOW=[0xFF,0xFF,0x00], BG_ORANGE=[0xFF,0xA5,0x00], BG_RED=[0xFF,0x00,0x00], BG_PURPLE=[0x81,0x08,0x4E];
 const FEERATE_MAX=50000;
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -442,7 +449,7 @@ function drawBackgroundFrame(atom,t){
   }
 }
 
-/* ========== per-type override UI ========== */
+/* ---------- override UI ---------- */
 const MODE_NAMES=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Safe'];
 function populateSelectors(){
   const opts = MODE_NAMES.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
@@ -462,7 +469,7 @@ let overrides = { proton:null, neutron:null, electron:null };
   });
 });
 
-/* ========== p5 sketch ========== */
+/* ---------- p5 sketch ---------- */
 let p5Instance=null, orbShader=null, currentAtom=null;
 
 function startSketch(blk, txsForBg){
@@ -470,7 +477,7 @@ function startSketch(blk, txsForBg){
   uiPointerDown=false;
 
   const atom=buildAtomFromBlock(blk);
-  currentAtom = atom; // for access in draw
+  currentAtom = atom;
   injectPanels(atom);
 
   const txs=(txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
@@ -488,7 +495,7 @@ function startSketch(blk, txsForBg){
     };
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs); };
 
-    function drawOrbMat(cA,cB,r,t,alpha,mode){
+    function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       if(orbShader){
         try{
           p.noStroke();
@@ -497,10 +504,11 @@ function startSketch(blk, txsForBg){
           orbShader.setUniform('uColorB', cB.map(v=>v/255));
           orbShader.setUniform('uTime', t);
           orbShader.setUniform('uAlpha', alpha);
-          orbShader.setUniform('uMode', mode|0);
+          orbShader.setUniform('uModeF', mode*1.0);
           orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0);
           orbShader.setUniform('uAmp', atom.shader.amp||0.25);
           orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
+          orbShader.setUniform('uObjSeed', seed||0.0);
           p.sphere(r, 64, 40);
           p.resetShader();
           return;
@@ -529,7 +537,6 @@ function startSketch(blk, txsForBg){
     }
 
     function drawHalvingGlow(t){
-      // soft additive glow around nucleus
       p.push();
       p.blendMode(p.ADD);
       p.noStroke();
@@ -562,8 +569,7 @@ function startSketch(blk, txsForBg){
           const r=atom.radii[i];
           p.push(); p.noFill();
           if(is1337){
-            p.stroke(0,255,120,230); // neon green rings
-            p.strokeWeight(1.8);
+            p.stroke(0,255,120,230); p.strokeWeight(1.8);
           } else if(atom.style.halving){
             p.stroke(255,170,0,200); p.strokeWeight(1.6+0.8*Math.sin(t*2.0+i));
           } else {
@@ -574,7 +580,6 @@ function startSketch(blk, txsForBg){
         }
       }
 
-      // Additional halving nucleus glow
       if(atom.style.halving && !atom.style.disco){ drawHalvingGlow(t); }
 
       // Nucleus
@@ -582,32 +587,28 @@ function startSketch(blk, txsForBg){
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
 
-        // choose mode/color per type with overrides + specials
+        // override mapping
         let modeP = overrides.proton ?? (atom.style.halving ? 7 : atom.shader.mode);
         let modeN = overrides.neutron ?? (atom.style.halving ? 7 : atom.shader.mode);
-        let modeE = overrides.electron ?? (atom.style.halving ? 7 : atom.shader.mode);
-
-        if(atom.style.disco){ // block 170 – iridescent pulsing
+        if(atom.style.disco){
           const hue = (t*240 + q.hueOffset) % 360;
           const col = hueToRgb(hue);
           const pulse = 1.0 + 0.35*Math.sin(t*9.0 + q.hueOffset*0.05);
-          drawOrbMat(col, col, NUCLEON_R*pulse, t, 1.0, 5);
+          drawOrbMat(col, col, NUCLEON_R*pulse, t, 1.0, 5, q.objSeed);
         } else if(is1337){
-          // wireframe neon: protons=yellow, neutrons=orange
           if(q.isProton){
-            drawOrbMat([255,255,0],[255,255,0], NUCLEON_R, t, 1.0, 2);
+            drawOrbMat([255,255,0],[255,255,0], NUCLEON_R, t, 1.0, 2, q.objSeed);
           } else {
-            drawOrbMat([255,165,0],[255,165,0], NUCLEON_R, t, 1.0, 2);
+            drawOrbMat([255,165,0],[255,165,0], NUCLEON_R, t, 1.0, 2, q.objSeed);
           }
         } else if(atom.style.halving){
           const goldA=[255,215,64], goldB=[255,170,32];
-          drawOrbMat(goldA, goldB, NUCLEON_R, t, 1.0, 7);
+          drawOrbMat(goldA, goldB, NUCLEON_R, t, 1.0, 7, q.objSeed);
         } else {
           if(q.isProton){
-            drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 1.0, modeP);
+            drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 1.0, modeP, q.objSeed);
           } else {
-            // give neutrons slightly different palette and allow override
-            drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 1.0, modeN);
+            drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 1.0, modeN, q.objSeed);
           }
         }
         p.pop();
@@ -628,29 +629,26 @@ function startSketch(blk, txsForBg){
 
           p.push(); p.translate(pt[0],pt[1],pt[2]);
 
+          let eMode = overrides.electron ?? (([0,3,2,1,6,4,7,5])[(i+j+atom.shader.mode)%8]);
           if (atom.style.disco){
             const hue = (t*240 + m.hueOffset) % 360;
             const col = hueToRgb(hue);
             const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
-            drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 5);
+            drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 5, m.objSeed);
           } else if (is1337){
-            // electrons = wireframe neon green
-            drawOrbMat([0,255,120],[0,255,120], ELECTRON_R*atom.style.eSizeScale, t, 1.0, 2);
+            drawOrbMat([0,255,120],[0,255,120], ELECTRON_R*atom.style.eSizeScale, t, 1.0, 2, m.objSeed);
           } else if (atom.style.halving){
             const silverA=[220,228,235], silverB=[160,170,185];
             const pulse=1.0+0.30*Math.sin(t*3.2+i*0.7+j*0.21);
-            drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 7);
+            drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 7, m.objSeed);
           } else {
-            const modeCycle=[0,3,2,1,6,4,7,5];
-            const autoMode=modeCycle[(i+j+atom.shader.mode)%modeCycle.length];
-            const mode = overrides.electron ?? autoMode;
             const mixT=((j%7)/7)*0.35;
             const eCol=[
               Math.round(atom.colors.electron[0]*(1-mixT)+atom.style.ringColor[0]*mixT),
               Math.round(atom.colors.electron[1]*(1-mixT)+atom.style.ringColor[1]*mixT),
               Math.round(atom.colors.electron[2]*(1-mixT)+atom.style.ringColor[2]*mixT),
             ];
-            drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, 1.0, mode);
+            drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, 1.0, eMode, m.objSeed);
           }
           p.pop();
 
@@ -665,7 +663,7 @@ function startSketch(blk, txsForBg){
   p5Instance=new p5(sketch, container);
 }
 
-/* ========== networking & loading ========== */
+/* ---------- networking ---------- */
 const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
@@ -719,7 +717,7 @@ async function loadLatest(){
   await loadBlockByHeight(h);
 }
 
-/* ========== HUD wiring ========== */
+/* ---------- HUD wiring ---------- */
 ['pointerdown','wheel'].forEach(ev=>$('#hud').addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>$('#hud').addEventListener(ev,()=>{uiPointerDown=false;}));
 
@@ -727,12 +725,9 @@ document.getElementById('loadBtn').onclick=async()=>{const h=Number(document.get
   try{ await loadBlockByHeight(h);}catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 document.getElementById('latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 
-function resizeBG(){ /* already defined above */ }
-window.addEventListener('resize', ()=>{}); // no-op; real handler already attached
-
 resizeBG();
 // loadLatest(); // optional autoload
-// new3
+// new4
 </script>
 </body>
 </html>
