@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — robust shader & paging</title>
+<title>Bitcoin Block Atom — stable shaders & paging</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -29,7 +29,6 @@
   #infoPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;gap:8px;align-items:center}
   #infoPanel[open]>summary{border-bottom:1px solid var(--border)}
   #infoPanel summary .badge{width:22px;height:22px;display:inline-grid;place-items:center;border-radius:999px;background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
-  #warn{position:fixed;left:10px;top:120px;color:#ffd26f;font-weight:600;display:none;z-index:12}
   #progress{position:fixed;left:10px;top:48px;z-index:21;color:#d7ecff;font-size:12px;background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none}
 </style>
 </head>
@@ -68,26 +67,26 @@ const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[
 const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
-/* ---------- shader (derivative-free wireframe) ---------- */
+/* ---------- shader: no fragile attributes, no pre-link check ---------- */
 const VERT=`
 #ifdef GL_ES
 precision mediump float;
 precision mediump int;
 #endif
 attribute vec3 aPosition;
-attribute vec3 aNormal;
 uniform mat4 uModelViewMatrix, uProjectionMatrix;
-uniform mat3 uNormalMatrix;
 varying vec3 vPos;
 varying vec3 vNormal;
 void main(){
   vPos = aPosition;
-  vNormal = normalize(uNormalMatrix * aNormal);
+  // Approximate normal: works for spheres and small deformations,
+  // avoids dependency on aNormal/uNormalMatrix across drivers
+  vNormal = normalize(aPosition);
   gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(aPosition, 1.0));
 }
 `;
 
-// uMode: 0=marble,1=glass,2=wireframe(no fwidth),3=lava,4=toon,5=iridescent,6=spikes,7=metallic,8=safe
+// uMode: 0=marble,1=glass,2=wireframe,3=lava,4=toon,5=iridescent,6=spikes,7=metallic,8=safe
 const FRAG=`
 #ifdef GL_ES
 precision mediump float;
@@ -266,9 +265,8 @@ function buildAtomFromBlock(b){
   const halving = !disco && isHalving(height);
 
   let mode = styleModeFromHeight(height);
-  if (disco) mode = 5;
-  if (halving) mode = 7;
-
+  if (disco) mode = 5; // iridescent for disco
+  if (halving) mode = 7; // metallic for halving nucleus/e-
   return {
     block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
     shader:{blockPhase, mode, amp:0.28, speed:0.9},
@@ -283,7 +281,7 @@ function buildAtomFromBlock(b){
 /* ---------- panels ---------- */
 let uiPointerDown=false;
 function injectPanels(atom){
-  ['legend','blockPanel','infoPanel','warn'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
+  ['legend','blockPanel','infoPanel'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
 
   const legend=document.createElement('div'); legend.id='legend'; legend.className='panel';
   legend.appendChild(document.createElement('div')).innerHTML='<b>Controls</b>';
@@ -339,10 +337,8 @@ function injectPanels(atom){
   </ul>\
   <h3>Specials</h3>\
   <p><b>Halving blocks:</b> Pulsing orange backdrop, gold nucleus, silver electrons pulsing size.</p>\
-  <p><b>Block 170:</b> ROYGBIV rainbow rings & iridescent, independently pulsing, smoothly cycling orbs.</p>';
+  <p><b>Block 170:</b> Full ROYGBIV rainbow rings & iridescent/pulsing orbs.</p>';
   info.appendChild(infoBody); document.body.appendChild(info);
-
-  const warn=document.createElement('div'); warn.id='warn'; warn.textContent='Shader fallback active (simplified lighting).'; document.body.appendChild(warn);
 
   const guard=n=>{n.addEventListener('pointerdown',()=>uiPointerDown=true);n.addEventListener('pointerup',()=>uiPointerDown=false);
                   n.addEventListener('pointerleave',()=>uiPointerDown=false);n.addEventListener('pointercancel',()=>uiPointerDown=false);
@@ -437,23 +433,11 @@ function drawBackgroundFrame(atom,t){
   }
 }
 
-/* ---------- shader guard ---------- */
-let orbShader=null, SHADER_OK=true;
-function isProgramLinked(p, sh){
-  try{
-    const gl = p._renderer.GL;
-    const prog = sh && (sh._glProgram || sh.glProgram || sh.program);
-    if(!prog) return false;
-    return !!gl.getProgramParameter(prog, gl.LINK_STATUS);
-  }catch(_){ return false; }
-}
-
 /* ---------- p5 sketch ---------- */
-let p5Instance=null;
-
+let p5Instance=null, orbShader=null;
 function startSketch(blk, txsForBg){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
-  SHADER_OK=true; uiPointerDown=false;
+  uiPointerDown=false;
 
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
@@ -467,52 +451,45 @@ function startSketch(blk, txsForBg){
       cnv.canvas.classList.add('p5canvas');
       p.setAttributes('alpha', false);
       p.setAttributes('antialias', true, 'premultipliedAlpha', false);
-
       try{
-        orbShader=p.createShader(VERT,FRAG);
-        SHADER_OK = isProgramLinked(p, orbShader);
-        if(!SHADER_OK){ console.warn('Shader not linked, using fallback'); $('#warn').style.display='block'; }
+        orbShader=p.createShader(VERT,FRAG); // rely on runtime draw-catch instead of pre-link probing
       }catch(err){
         console.error('Shader creation error:', err);
-        SHADER_OK=false; $('#warn').style.display='block';
+        orbShader=null;
       }
-
       p.ambientLight(120);
       p.directionalLight(255,255,255, 0.5,0.6,0.4);
     };
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs); };
 
     function drawOrbMat(cA,cB,r,t,alpha,mode){
-      if(!(SHADER_OK && orbShader && isProgramLinked(p, orbShader))){
-        p.noStroke();
-        p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha));
-        p.shininess(30);
-        p.specularMaterial(80);
-        p.sphere(r, 48, 36);
-        return;
+      if(orbShader){
+        try{
+          p.noStroke();
+          p.shader(orbShader);
+          orbShader.setUniform('uColorA', cA.map(v=>v/255));
+          orbShader.setUniform('uColorB', cB.map(v=>v/255));
+          orbShader.setUniform('uTime', t);
+          orbShader.setUniform('uAlpha', alpha);
+          orbShader.setUniform('uMode', mode|0);
+          orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0);
+          orbShader.setUniform('uAmp', atom.shader.amp||0.25);
+          orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
+          p.sphere(r, 64, 40);
+          p.resetShader();
+          return;
+        }catch(e){
+          console.warn('Shader draw error — fallback material:', e);
+          orbShader=null; // disable for the session
+        }
       }
-      try{
-        p.noStroke();
-        p.shader(orbShader);
-        orbShader.setUniform('uColorA', cA.map(v=>v/255));
-        orbShader.setUniform('uColorB', cB.map(v=>v/255));
-        orbShader.setUniform('uTime', t);
-        orbShader.setUniform('uAlpha', alpha);
-        orbShader.setUniform('uMode', mode|0);
-        orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0);
-        orbShader.setUniform('uAmp', atom.shader.amp||0.25);
-        orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
-        p.sphere(r, 64, 40);
-      }catch(e){
-        console.warn('Shader draw error — switching to fallback:', e);
-        SHADER_OK=false; $('#warn').style.display='block';
-        p.resetShader();
-        p.noStroke();
-        p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha));
-        p.sphere(r, 48, 36);
-      }finally{
-        if (SHADER_OK) p.resetShader();
-      }
+      // Fallback lit material
+      p.resetShader();
+      p.noStroke();
+      p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha));
+      p.shininess(30);
+      p.specularMaterial(80);
+      p.sphere(r, 48, 36);
     }
 
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
@@ -524,7 +501,7 @@ function startSketch(blk, txsForBg){
         p.beginShape();
         for(let k=0;k<=steps;k++){
           const ang=(k/steps)*Math.PI*2;
-          const hue = ( (k/steps)*360 + t*160 + i*15 ) % 360;
+          const hue = ( (k/steps)*360 + t*160 + i*15 ) % 360; // full ROYGBIV sweep
           const c=hueToRgb(hue);
           p.stroke(c[0],c[1],c[2],230);
           p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
@@ -550,7 +527,7 @@ function startSketch(blk, txsForBg){
           const r=atom.radii[i];
           p.push(); p.noFill();
           if(atom.style.halving){ p.stroke(255,170,0,200); p.strokeWeight(1.6+0.8*Math.sin(t*2.0+i)); }
-          else{ p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],atom.style.ringAlpha); p.strokeWeight(atom.style.ringThick); }
+          else{ p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220); p.strokeWeight(1.2); }
           p.beginShape(); const steps=200; for(let k=0;k<steps;k++){ const ang=(k/steps)*Math.PI*2; p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
           p.endShape(p.CLOSE); p.pop();
         }
@@ -681,11 +658,13 @@ document.getElementById('loadBtn').onclick=async()=>{const h=Number(document.get
   try{ await loadBlockByHeight(h);}catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 document.getElementById('latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 
+function resizeBG(){ /* redefined above; keep once */ }
+const _rb = window.addEventListener ? window.addEventListener : ()=>{};
+_rb('resize', ()=>{ /* noop, already attached */ });
+
 resizeBG();
 // loadLatest(); // optional autoload
-// new1
+// new2
 </script>
 </body>
 </html>
-
-
