@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — spikes fix + tiny treemap + per-type styles</title>
+<title>Bitcoin Block Atom — true spikes + transparent halving glow + per-set styles</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -79,19 +79,59 @@ const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; re
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
 /* ---------- shader ---------- */
+/* Vertex shader now supports real displacement for mode==spikes (6) */
 const VERT=`
 #ifdef GL_ES
 precision mediump float;
 precision mediump int;
 #endif
+
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix, uProjectionMatrix;
+
+/* spike controls */
+uniform float uModeF;
+uniform float uTime;
+uniform float uAmp;     // global amp
+uniform float uSpeed;
+uniform float uObjSeed; // per-orb seed
+
 varying vec3 vPos;
 varying vec3 vNormal;
+
+float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
+float n3(vec3 p){
+  vec3 i=floor(p), f=fract(p);
+  float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
+  float n010=hash(i+vec3(0,1,0)), n110=hash(i+vec3(1,1,0));
+  float n001=hash(i+vec3(0,0,1)), n101=hash(i+vec3(1,0,1));
+  float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
+  vec3 u=f*f*(3.0-2.0*f);
+  float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
+  float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
+  float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
+  return mix(n0,n1,u.z);
+}
+float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.03; a*=0.5; } return s; }
+
 void main(){
-  vPos = aPosition;
-  vNormal = normalize(aPosition);
-  gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(aPosition, 1.0));
+  vec3 pos = aPosition;
+  vec3 nrm = normalize(aPosition);
+
+  int m = int(floor(clamp(uModeF,0.0,8.0)+0.5));
+  if(m==6){ // spikes
+    // Displace along normal using animated fbm
+    vec3 seed = vec3(uObjSeed, uObjSeed*1.9, uObjSeed*2.7);
+    float t = uTime * (1.0 + uSpeed);
+    float s = fbm(normalize(pos)*6.0 + seed + vec3(0.0, t*1.2, 0.0));
+    float spike = smoothstep(0.55, 0.95, s);     // sharper peaks
+    float amp   = 0.18 * (0.65 + 0.35*uAmp);     // physical amplitude
+    pos += nrm * (amp * spike * length(aPosition)); // scale with radius
+  }
+
+  vPos = pos;
+  vNormal = normalize(pos);
+  gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(pos, 1.0));
 }
 `;
 
@@ -180,7 +220,7 @@ void main(){
     vec3 iri = hsv2rgb(vec3(h, 0.9, 1.0));
     col = mix(iri, mix(colA,colB,0.4), 0.3) * (0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
 
-  } else if(m==6){ // spikes (more pronounced; per-orb seeded)
+  } else if(m==6){ // spikes surface shading
     vec3 seed = vec3(uObjSeed, uObjSeed*1.9, uObjSeed*2.7);
     float s = fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + seed);
     float spike = smoothstep(0.62, 0.90, s);
@@ -224,7 +264,21 @@ function paletteFromHeight(height){
 }
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
-function styleModeFromHeight(h){ const cycle=[0,3,7,4,2,5,1,6]; return cycle[h % cycle.length]; }
+
+/* Deterministic per-set style selection from different block fields */
+function chooseSetModesFromBlock(b){
+  // Keep modes: 0 marble,1 glass,2 wire,3 lava,4 toon,5 irid,6 spikes,7 metallic,8 safe
+  // Distinct drivers per set:
+  // electrons -> top byte of nonce
+  // protons   -> low byte of version
+  // neutrons  -> sum of merkle root bytes
+  // rings     -> last byte of block hash
+  const mE = ( ( (b.nonce||0) >>> 24) % 9 );
+  const mP = ( (b.version||0) & 0xff) % 9;
+  const mN = ( hexByteSum(b.merkle_root||'') % 9 );
+  const ringVar = lastByte(b.id||b.hash||'') % 3; // 0 default, 1 rainbow, 2 neon
+  return { mE, mP, mN, ringVar };
+}
 
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
@@ -291,13 +345,14 @@ function buildAtomFromBlock(b){
   const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
   const disco = height===170;
   const halving = !disco && isHalving(height);
-  let mode = styleModeFromHeight(height);
-  if (disco) mode = 5;
-  if (halving) mode = 7;
+
+  // distinct set modes
+  const {mE, mP, mN, ringVar} = chooseSetModesFromBlock(b);
 
   return {
     block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
-    shader:{blockPhase, mode, amp:0.28, speed:0.9},
+    shader:{blockPhase, amp:0.32, speed:0.9},
+    setModes:{ electrons:mE, protons:mP, neutrons:mN, ringVar },
     style:{
       eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
       ringThick, ringAlpha, ringColor, nucleusTight:tightness,
@@ -339,7 +394,8 @@ function injectPanels(atom){
     ['Version', blk.version??'n/a'],
     ['Nonce', blk.nonce??'n/a'],
     ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
-    ['Merkle root', shortHash(blk.merkle_root)]
+    ['Merkle root', shortHash(blk.merkle_root)],
+    ['Style drivers (sets)', `e=${atom.setModes.electrons} p=${atom.setModes.protons} n=${atom.setModes.neutrons} ringsVar=${atom.setModes.ringVar}`]
   ];
   rows.forEach(([k,v])=>{ const tr=document.createElement('tr'); const td1=document.createElement('td'); td1.textContent=k; const td2=document.createElement('td'); if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code);} else td2.textContent=String(v); tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr); });
   body.appendChild(tbl);
@@ -352,13 +408,14 @@ function injectPanels(atom){
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
   infoBody.innerHTML = '<h3>Visual Mapping</h3>\
   <ul>\
+  <li><b>Per-set styles:</b> electrons ⇢ nonce[31..24], protons ⇢ version LSB, neutrons ⇢ Σ(merkle bytes), rings ⇢ last byte of block hash.</li>\
   <li><b>Counts:</b> Electron/proton/neutron counts from height & merkle bytes.</li>\
   <li><b>Speeds:</b> Orbit speed ∝ log₁₀(tx_count × size).</li>\
   <li><b>Orbits:</b> Ellipticity & precession from version, nonce, merkle.</li>\
-  <li><b>Colors:</b> Height → palette via golden-angle hue; rings hue-shifted by hash.</li>\
-  <li><b>Background:</b> Treemap of transactions colored by fee rate (0 → 50k sat/vB) with very fine tiles.</li>\
-  <li><b>Specials:</b> Halving = subtle nucleus glow + pulsing orange/black background. 170 = ROYGBIV + iridescence. 1337 = neon wireframes.</li>\
-  <li><b>Materials:</b> Per-type selection (all protons share one, etc.). Lava/Marble/Spikes vary per orb via seeded noise.</li>\
+  <li><b>Colors:</b> Height → golden-angle palette; rings hue-shifted by hash.</li>\
+  <li><b>Background:</b> Tiny treemap of tx colored by fee rate (0 → 50k sat/vB).</li>\
+  <li><b>Specials:</b> Halving = subtle additive nucleus glow + pulsing orange/black background. 170 = ROYGBIV + iridescence. 1337 = neon wireframes.</li>\
+  <li><b>Materials:</b> Marble/Glass/Wire/Lava/Toon/Iridescent/Spikes/Metallic (+ Safe fallback). Spikes are <i>true</i> geometry displacement.</li>\
   </ul>';
   info.appendChild(infoBody); document.body.appendChild(info);
 
@@ -384,12 +441,12 @@ const bgCanvas=document.getElementById('bg2d'); const bgCtx=bgCanvas.getContext(
 let bgBaseCanvas=document.createElement('canvas'), bgBaseCtx=bgBaseCanvas.getContext('2d');
 let bgTxs=[]; let DPR=1, bgW=0, bgH=0;
 
-const MIN_RECT_PX=1;            // allow very small tiles
-const BORDER_ALPHA=0.12;         // faint white borders
-const BORDER_SKIP_PX=4;          // skip borders on very tiny rects
-const WEIGHT_COMPRESS=0.06;      // << tiny values to fit thousands
-const SIZE_OFFSET=1;             // +1 to avoid zeros
-const DESKTOP_CAP=30000;         // allow many tx tiles
+const MIN_RECT_PX=1;
+const BORDER_ALPHA=0.12;
+const BORDER_SKIP_PX=4;
+const WEIGHT_COMPRESS=0.06;
+const SIZE_OFFSET=1;
+const DESKTOP_CAP=30000;
 const MOBILE_CAP=15000;
 
 function resizeBG(){
@@ -427,14 +484,12 @@ function renderTreemapBase(txs){
   const itemsAll=[];
   for(const tx of txs){
     const vsRaw=Math.max(1,tx.vsize||tx.size||1);
-    const vs = Math.pow(vsRaw+SIZE_OFFSET, WEIGHT_COMPRESS); // compress range heavily
+    const vs = Math.pow(vsRaw+SIZE_OFFSET, WEIGHT_COMPRESS);
     const fr=(tx.fee&&vsRaw)?(tx.fee/vsRaw):0;
     const col=feeToColor(fr);
-    // slight jitter to avoid large uniform blocks
     const j=((parseInt((tx.txid||"").slice(-2),16)||0)%6)-3;
     itemsAll.push({weight:Math.max(0.1,vs),color:[clamp(col[0]+j,0,255),clamp(col[1]+j,0,255),clamp(col[2]+j,0,255)],fr});
   }
-  // low→high fee left→right
   itemsAll.sort((a,b)=>a.fr-b.fr);
 
   const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -466,7 +521,7 @@ function drawBackgroundFrame(atom,t){
   bgCtx.drawImage(bgBaseCanvas,0,0,bgWcss,bgHcss);
   if(atom.style.halving && !atom.style.disco){
     const pulse=0.5+0.5*Math.sin(t*2.0);
-    bgCtx.fillStyle=`rgba(255,140,0,${0.10+0.10*pulse})`; // softer
+    bgCtx.fillStyle=`rgba(255,140,0,${0.08+0.08*pulse})`;
     bgCtx.fillRect(0,0,bgWcss,bgHcss);
   }
 }
@@ -531,45 +586,60 @@ function startSketch(blk, txsForBg){
           orbShader.setUniform('uAmp', atom.shader.amp||0.25);
           orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
           orbShader.setUniform('uObjSeed', seed||0.0);
-          p.sphere(r, 60, 40);
+          p.sphere(r, 84, 56); // more verts -> smoother spikes
           p.resetShader();
           return;
         }catch(e){ console.warn('Shader draw error — fallback:', e); orbShader=null; }
       }
-      p.resetShader(); p.noStroke(); p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.shininess(30); p.specularMaterial(80); p.sphere(r, 48, 36);
+      p.resetShader(); p.noStroke(); p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.shininess(30); p.specularMaterial(80); p.sphere(r, 64, 48);
     }
 
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
 
-    function drawRainbowRingsFull(t){
-      const steps=360;
+    function drawRings(t){
+      const variant = atom.setModes.ringVar;
+      const steps = 260;
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i];
-        p.push(); p.noFill(); p.strokeWeight(1.6);
-        p.beginShape();
-        for(let k=0;k<=steps;k++){
-          const ang=(k/steps)*Math.PI*2;
-          const hue = ( (k/steps)*360 + t*160 + i*15 ) % 360;
-          const c=hueToRgb(hue);
-          p.stroke(c[0],c[1],c[2],230);
-          p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
+        p.push(); p.noFill();
+        if(atom.style.disco || variant===1){
+          p.strokeWeight(1.4);
+          p.beginShape();
+          for(let k=0;k<=steps;k++){
+            const ang=(k/steps)*Math.PI*2;
+            const hue = ( (k/steps)*360 + t*160 + i*15 ) % 360;
+            const c=hueToRgb(hue);
+            p.stroke(c[0],c[1],c[2],230);
+            p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
+          }
+          p.endShape();
+        } else if (atom.height===1337 || variant===2){
+          p.stroke(0,255,120,230); if(i%2) p.stroke(255,255,0,230);
+          p.strokeWeight(1.8);
+          p.circle(0,0,r*2);
+        } else {
+          p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220); p.strokeWeight(1.1);
+          p.circle(0,0,r*2);
         }
-        p.endShape(); p.pop();
+        p.pop();
       }
     }
 
     function drawHalvingGlow(t){
-      // draw behind the nucleus; low alpha so it won't wash out
+      // Draw a soft, transparent additive glow that never occludes the nucleus
+      const gl=p._renderer.GL;
       p.push();
       p.blendMode(p.ADD);
+      gl.disable(gl.DEPTH_TEST); // ensure no occlusion
       p.noStroke();
       const layers=2;
       for(let i=0;i<layers;i++){
-        const k=1.25+i*0.28;
-        const a=36 - i*10;
+        const k=1.25+i*0.35;
+        const a=18 - i*8; // low alpha!
         p.fill(255,170,40,a);
-        p.sphere(NUCLEUS_R0*k, 32, 24);
+        p.sphere(NUCLEUS_R0*k, 28, 20);
       }
+      gl.enable(gl.DEPTH_TEST);
       p.pop();
     }
 
@@ -585,29 +655,13 @@ function startSketch(blk, txsForBg){
 
       const is1337 = atom.height===1337;
 
-      // Decide per-type effective material (consistent within type)
-      const autoMode = atom.shader.mode;
-      const effModeP = (atom.style.disco ? 5 : atom.style.halving ? 7 : (overrides.proton ?? autoMode));
-      const effModeN = (atom.style.disco ? 5 : atom.style.halving ? 7 : (overrides.neutron ?? autoMode));
-      const effModeE = (atom.style.disco ? 5 : atom.style.halving ? 7 : (overrides.electron ?? autoMode));
+      // Effective per-set modes (deterministic) with HUD overrides
+      const effModeP = overrides.proton  ?? (atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.protons);
+      const effModeN = overrides.neutron ?? (atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.neutrons);
+      const effModeE = overrides.electron ??(atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.electrons);
 
       // Rings
-      if(atom.style.disco){ drawRainbowRingsFull(t); }
-      else{
-        for(let i=0;i<atom.shells.length;i++){
-          const r=atom.radii[i];
-          p.push(); p.noFill();
-          if(is1337){
-            p.stroke(0,255,120,230); p.strokeWeight(1.8);
-          } else if(atom.style.halving){
-            p.stroke(255,170,0,200); p.strokeWeight(1.2+0.5*Math.sin(t*2.0+i));
-          } else {
-            p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220); p.strokeWeight(1.1);
-          }
-          p.beginShape(); const steps=220; for(let k=0;k<steps;k++){ const ang=(k/steps)*Math.PI*2; p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
-          p.endShape(p.CLOSE); p.pop();
-        }
-      }
+      drawRings(t);
 
       if(atom.style.halving && !atom.style.disco){ drawHalvingGlow(t); }
 
@@ -623,9 +677,9 @@ function startSketch(blk, txsForBg){
           drawOrbMat(col, col, NUCLEON_R*pulse, t, 1.0, 5, q.objSeed);
         } else if(is1337){
           if(q.isProton){
-            drawOrbMat([255,255,0],[255,255,0], NUCLEON_R, t, 1.0, 2, q.objSeed);
+            drawOrbMat([255,255,0],[255,255,0], NUCLEON_R, t, 1.0, 2, q.objSeed); // neon yellow wireframe
           } else {
-            drawOrbMat([255,165,0],[255,165,0], NUCLEON_R, t, 1.0, 2, q.objSeed);
+            drawOrbMat([255,165,0],[255,165,0], NUCLEON_R, t, 1.0, 2, q.objSeed); // neon orange wireframe
           }
         } else if(atom.style.halving){
           const goldA=[255,215,64], goldB=[255,170,32];
@@ -661,7 +715,7 @@ function startSketch(blk, txsForBg){
             const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
             drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 5, m.objSeed);
           } else if (is1337){
-            drawOrbMat([0,255,120],[0,255,120], ELECTRON_R*atom.style.eSizeScale, t, 1.0, 2, m.objSeed);
+            drawOrbMat([0,255,120],[0,255,120], ELECTRON_R*atom.style.eSizeScale, t, 1.0, 2, m.objSeed); // neon green wireframe
           } else if (atom.style.halving){
             const silverA=[220,228,235], silverB=[160,170,185];
             const pulse=1.0+0.28*Math.sin(t*3.2+i*0.7+j*0.21);
@@ -752,7 +806,7 @@ document.getElementById('latestBtn').onclick=async()=>{ try{ await loadLatest();
 
 resizeBG();
 // loadLatest(); // optional autoload
-// new5
+// new6
 </script>
 </body>
 </html>
