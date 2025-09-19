@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Multi-Skins + HUD (shader compile fix)</title>
+<title>Bitcoin Block Atom — Multi-Skins + HUD (paging + shader fixes)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -120,11 +120,11 @@ const MODE_LAVA       = 4;
 const MODE_SPIKES     = 5;
 const MODE_WIREFRAME  = 6;
 
-/* ---------- shaders (fixed: no nested funcs) ---------- */
+/* ---------- shaders (float uMode + mediump FRAG) ---------- */
 const VERT=`precision highp float;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix, uProjectionMatrix;
-uniform int uMode;
+uniform float uMode;
 uniform float uTime, uSpikeAmp, uAnimSpeed, uBlockPhase;
 varying vec3 vObjPos;
 varying vec3 vNormal;
@@ -145,7 +145,7 @@ float fbm(vec3 p){float a=0.5, s=0.0; vec3 pp=p;
 void main(){
   vec3 pos = aPosition;
   vec3 nrm = normalize(aPosition);
-  if (uMode==`+MODE_SPIKES+`) {
+  if (uMode>4.5 && uMode<5.5) { // spikes
     float f = fbm(nrm*3.0 + vec3(0.0,0.0,uTime*(0.8+uAnimSpeed)) + uBlockPhase);
     float spike = (f-0.5)*2.0;
     pos += nrm * uSpikeAmp * spike;
@@ -155,12 +155,12 @@ void main(){
   gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(pos,1.0));
 }`;
 
-const FRAG=`precision highp float;
+const FRAG=`precision mediump float;
 varying vec3 vObjPos;
 varying vec3 vNormal;
 uniform vec3 uColorA,uColorB;
 uniform float uMarbleInt,uMarbleScale,uTime,uAnimAmp,uAnimSpeed,uBlockPhase;
-uniform int uMode;
+uniform float uMode;
 uniform float uAlpha;
 float h(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
 float n3(vec3 p){vec3 i=floor(p),f=fract(p);
@@ -176,7 +176,7 @@ float n3(vec3 p){vec3 i=floor(p),f=fract(p);
 }
 float blinn(vec3 n,vec3 l,vec3 v,float sh){vec3 hh=normalize(l+v);return pow(max(dot(n,hh),0.0),sh);}
 
-/* helpers (global scope) */
+/* helpers */
 float stripe2(vec2 uv,float ph,float f,float time,float amp,float speed,float phase){
   float zm=1.0+amp*0.35*sin(time*(0.7+speed)+ph+phase);
   uv*=zm;
@@ -271,13 +271,13 @@ void main(){
   vec3 n = normalize(vNormal);
   vec3 V = normalize(vec3(0.0,0.0,1.0));
   vec3 col;
-  if(uMode==`+MODE_TOON+`)       col = style_toon(n,V);
-  else if(uMode==`+MODE_IRIDESCENT+`) col = style_iridescent(n,V);
-  else if(uMode==`+MODE_GLASS+`)      col = style_glass(n,V);
-  else if(uMode==`+MODE_LAVA+`)       col = style_lava(n,V);
-  else if(uMode==`+MODE_WIREFRAME+`)  col = style_wire(n,V);
-  else if(uMode==`+MODE_SPIKES+`)     col = style_spikes(n,V);
-  else                                col = style_marble(n,V);
+  if      (uMode < 0.5) col = style_marble(n,V);       // 0
+  else if (uMode < 1.5) col = style_toon(n,V);         // 1
+  else if (uMode < 2.5) col = style_iridescent(n,V);   // 2
+  else if (uMode < 3.5) col = style_glass(n,V);        // 3
+  else if (uMode < 4.5) col = style_lava(n,V);         // 4
+  else if (uMode < 5.5) col = style_spikes(n,V);       // 5
+  else                  col = style_wire(n,V);         // 6
   gl_FragColor = vec4(col, uAlpha);
 }`;
 
@@ -295,7 +295,12 @@ function paletteFromHeight(height){
   let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
   let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
   let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
-  return{ proton:hslToRgb(hP/360, sP, lP), neutron:hslToRgb(hN/360, sN, lN), electron:hslToRgb(hE/360, sE, lE), shell:hslToRgb(hS/360, sS, lS) };
+  return{
+    proton:  hslToRgb(hP/360, sP, lP),
+    neutron: hslToRgb(hN/360, sN, lN),
+    electron:hslToRgb(hE/360, sE, lE),
+    shell:   hslToRgb(hS/360, sS, lS),
+  };
 }
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
@@ -400,7 +405,6 @@ function chooseModeNeutron(atom,k){
 function modeName(m){ return MODE_NAMES[m] || 'Marble'; }
 
 /* ---------- build atom from block ---------- */
-const NUCLEUS_R0_CONST=NUCLEUS_R0;
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
   const bits=b.bits??0, nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
@@ -577,7 +581,7 @@ function startSketch(blk, txsForBg){
           orbShader.setUniform('uAnimAmp', amp);
           orbShader.setUniform('uAnimSpeed', spd);
           orbShader.setUniform('uBlockPhase', blockPhase||0.0);
-          orbShader.setUniform('uMode', mode|0);
+          orbShader.setUniform('uMode', Number(mode));       // float uniform
           orbShader.setUniform('uAlpha', alpha);
           orbShader.setUniform('uSpikeAmp', spikeAmp||0.0);
           p.sphere(r,48,32);
@@ -587,7 +591,7 @@ function startSketch(blk, txsForBg){
           SHADER_OK=false; document.getElementById('warn').style.display='block'; p.resetShader();
         }
       }
-      // Fallback: solid color (never black unless the color is black)
+      // Fallback: solid color
       p.fill(cA[0],cA[1],cA[2],255*alpha); p.sphere(r,24,16);
     }
 
@@ -721,18 +725,27 @@ function startSketch(blk, txsForBg){
 const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
-async function fetchAllBlockTxs(hash, maxPages=400){
-  const txs=[]; let page=0;
-  while(page<maxPages){
-    try{
-      const arr=await fetchJSON(`${API}/block/${hash}/txs/${page}`);
-      if(!arr || !arr.length) break;
-      for(const t of arr){ txs.push({txid:t.txid||t.hash, vsize:t.vsize||t.size, size:t.size, fee:t.fee}); }
-      page++;
-    }catch(e){ break; }
+
+// NEW: page precisely using tx_count to avoid /txs/1 400s
+async function fetchAllBlockTxs(hash){
+  const blkHead = await fetchJSON(`${API}/block/${hash}`);
+  const total = Number(blkHead.tx_count || 0);
+  if (!total) return [];
+  const pageSize = 25;
+  const pages = Math.ceil(total / pageSize);
+  const txs = [];
+  for (let page = 0; page < pages; page++) {
+    const arr = await fetchJSON(`${API}/block/${hash}/txs/${page}`);
+    if (!arr || !arr.length) break;
+    for (const t of arr) {
+      txs.push({ txid: t.txid || t.hash, vsize: t.vsize || t.size, size: t.size, fee: t.fee });
+    }
+    // Optional cap to keep treemap performant:
+    // if (txs.length > 12000) break;
   }
   return txs;
 }
+
 async function loadBlockByHeight(height){
   __CURRENT_HEIGHT=height;
   document.getElementById('progress').style.display='block'; document.getElementById('progress').textContent='Resolving block '+height+'…';
