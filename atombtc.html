@@ -547,7 +547,7 @@ async function loadLatest(){
 }
 
 /* ------------ HUD + guards ------------ */
-let uiPointerDown = false;
+
 const hud=$('#hud');
 ['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=false;}));
