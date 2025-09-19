@@ -179,7 +179,7 @@ float n3(vec3 p){vec3 i=floor(p),f=fract(p);
 }
 float blinn(vec3 n,vec3 l,vec3 v,float sh){vec3 hh=normalize(l+v);return pow(max(dot(n,hh),0.0),sh);}
 
-/* moved out of style_marble: GLSL ES 1.0 forbids nested function definitions */
+/* moved out of style_marble: GLSL ES 1.0 forbids nested functions */
 float stripe2(vec2 uv,float ph,float f,float time,float amp,float speed,float phase){
   float zm=1.0+amp*0.35*sin(time*(0.7+speed)+ph+phase);
   uv*=zm;
@@ -303,7 +303,7 @@ function paletteFromHeight(height){
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
-/* ---------- Treemap background (unchanged) ---------- */
+/* ---------- Treemap background ---------- */
 const BG_GREEN = [0x0B,0x4F,0x35];
 const BG_YELLOW= [0xFF,0xFF,0x00];
 const BG_ORANGE= [0xFF,0xA5,0x00];
@@ -467,7 +467,6 @@ function chooseModeNeutron(atom,k){
 function modeName(m){ return MODE_NAMES[m] || 'Marble'; }
 
 /* ---------- build atom from block ---------- */
-const NUCLEUS_R0_CONST=NUCLEUS_R0; // no-op, just to keep lints calm
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
   const bits=b.bits??0, nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
@@ -864,6 +863,7 @@ buildForceSelect(document.getElementById('forceP'));
 buildForceSelect(document.getElementById('forceN'));
 syncHUDFromForce();
 
+// actions
 document.getElementById('applyForceBtn').onclick=()=>{ readHUDIntoForce(); reloadCurrent(); };
 document.getElementById('resetForceBtn').onclick=()=>{ FORCE={electron:null,proton:null,neutron:null}; syncHUDFromForce(); reloadCurrent(); };
 
@@ -872,9 +872,7 @@ document.getElementById('loadBtn').onclick=async()=>{const h=Number(document.get
   try{ await loadBlockByHeight(h);}catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 document.getElementById('latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 
-/* background canvas boot */
-const bgCanvas = document.getElementById('bg2d'); // already declared above, reusing
-const bgCtx = bgCanvas.getContext('2d');          // reused
+// Initialize background once
 resizeBG();
 // loadLatest(); // optional
 </script>
