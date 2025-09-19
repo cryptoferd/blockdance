@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — centered BG + special treemaps + halving rings</title>
+<title>Bitcoin Block Atom — Sky style + stronger spikes</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -57,9 +57,7 @@
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* -------------------------------------------------------- */
 /* -------------------- helpers / mapping ----------------- */
-/* -------------------------------------------------------- */
 const $=s=>document.querySelector(s);
 const shortHash=h=>h?(String(h).slice(0,10)+'…'+String(h).slice(-8)):'n/a';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -79,10 +77,11 @@ const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[
 const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
-/* -------------------------------------------------------- */
-/* ---------------------------- shader -------------------- */
-/* Spikes are real vertex displacement; other styles in frag */
-/* -------------------------------------------------------- */
+/* --------------------------- shader --------------------- */
+/* Modes:
+   0 Marble, 1 Glass, 2 Wireframe, 3 Lava, 4 Toon, 5 Iridescent,
+   6 Spikes (10× stronger), 7 Metallic, 8 Sky (new), 9 Safe
+*/
 const VERT=`
 #ifdef GL_ES
 precision mediump float; precision mediump int;
@@ -109,19 +108,20 @@ float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.03
 
 void main(){
   vec3 pos=aPosition, nrm=normalize(aPosition);
-  int m=int(floor(clamp(uModeF,0.0,8.0)+0.5));
-  if(m==6){ // spikes
+  int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
+  if(m==6){ // spikes (≈10× previous amp)
     vec3 seed=vec3(uObjSeed, uObjSeed*1.9, uObjSeed*2.7);
     float t=uTime*(1.0+uSpeed);
     float s=fbm(normalize(pos)*6.5 + seed + vec3(0.0,t*1.1,0.0));
     float spike=smoothstep(0.55,0.93,s);
-    float amp=0.18*(0.65+0.35*uAmp);
+    float amp=1.8*(0.65+0.35*uAmp);   // <— was 0.18, now ~10×
     pos += nrm * (amp * spike * length(aPosition));
   }
   vPos=pos; vNormal=normalize(pos);
   gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
 }
 `;
+
 const FRAG=`
 #ifdef GL_ES
 precision mediump float; precision mediump int;
@@ -156,48 +156,72 @@ void main(){
 
   vec3 colA=uColorA, colB=uColorB, col;
   float t=uTime*(0.6+uSpeed);
-  int m=int(floor(clamp(uModeF,0.0,8.0)+0.5));
+  int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-  if(m==0){ vec3 seed=vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3);
+  if(m==0){ // Marble
+    vec3 seed=vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3);
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + seed);
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.35+0.65*ndl)+vec3(1.0)*rim*0.12;
-  } else if(m==1){
+
+  } else if(m==1){ // Glass
     float fres=pow(1.0-max(dot(n,V),0.0),3.0);
     col=mix(colA,colB,0.5)*(0.1+0.18*ndl)+vec3(1.0)*fres*0.85;
-  } else if(m==2){
+
+  } else if(m==2){ // Wireframe
     float k=9.0+2.0*fract(uObjSeed*7.0); vec3 q=normalize(vPos);
     float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
     float edge=smoothstep(0.92,0.985,g);
     vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
     col=base+vec3(0.2,1.0,0.2)*edge*0.95+vec3(1.0)*rim*0.12;
-  } else if(m==3){
+
+  } else if(m==3){ // Lava
     vec3 seed=vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3);
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + seed);
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
     col=mix(cool,hot,veins)*(0.35+0.65*ndl)+vec3(1.0)*rim*0.08;
-  } else if(m==4){
+
+  } else if(m==4){ // Toon
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
     col=base*(0.22+s)+vec3(1.0)*step(0.8,rim)*0.18;
-  } else if(m==5){
+
+  } else if(m==5){ // Iridescent
     float h=fract(0.5+0.35*dot(n,vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
     col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl)+vec3(1.0)*rim*0.18;
-  } else if(m==6){
+
+  } else if(m==6){ // Spikes shade
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + seed);
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
     vec3 highlight=base*1.7, shaded=base*0.45;
     col=mix(shaded,highlight,spike)*(0.28+0.72*ndl)+vec3(1.0)*rim*0.14;
-  } else if(m==7){
+
+  } else if(m==7){ // Metallic
     float spec=pow(max(dot(n, normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.20+0.55*ndl)+vec3(1.0)*spec*0.9+vec3(1.0)*rim*0.10;
-  } else {
+
+  } else if(m==8){ // Sky (light blue with swirling white clouds)
+    vec3 seed=vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7);
+    vec3 p = normalize(vPos);
+    // swirl the sampling direction slowly
+    float ang = t*0.35 + uPhase*0.3;
+    mat2 R = mat2(cos(ang),-sin(ang), sin(ang),cos(ang));
+    p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
+    float base = fbm(p*3.0 + seed);
+    float puff = fbm(p*6.0 + vec3(0.0,t*0.2,0.0) + seed*1.7);
+    float clouds = smoothstep(0.55,0.85, base*0.6 + puff*0.7);
+    vec3 sky = vec3(0.53,0.75,0.98);     // light sky blue
+    vec3 cloud = vec3(1.0);              // white
+    vec3 baseCol = mix(sky, cloud, clouds);
+    col = baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+
+  } else { // Safe
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl)+vec3(1.0)*rim*0.12;
   }
   gl_FragColor=vec4(clamp(col,0.0,1.0), uAlpha);
@@ -208,7 +232,6 @@ void main(){
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
 const FEERATE_MAX=50000;
 
-/* default mempool fee gradient */
 const C_GREEN=[0x0B,0x4F,0x35], C_YEL=[0xFF,0xFF,0x00], C_ORG=[0xFF,0xA5,0x00], C_RED=[0xFF,0x00,0x00], C_PURP=[0x81,0x08,0x4E];
 const lerp=(a,b,t)=>a+(b-a)*t; const lerpRGB=(a,b,t)=>[Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t))];
 function feeToColor(fr){const t=clamp(fr/FEERATE_MAX,0,1);
@@ -217,49 +240,30 @@ function feeToColor(fr){const t=clamp(fr/FEERATE_MAX,0,1);
   if(t<=0.75){return lerpRGB(C_ORG,C_RED,(t-0.50)/0.25);}
   return lerpRGB(C_RED,C_PURP,(t-0.75)/0.25);
 }
-
-/* palettes by size rank for specials */
 const NEON_GREEN=[0,255,120], WHITE=[255,255,255], BLACK=[0,0,0];
 const BROWN=[110,70,30], ORANGE=[255,140,0];
-function rankToROYGBIV(t){ // t in [0,1]
-  const hue=lerp(0, 300, t); // R→O→Y→G→B→V
-  const [r,g,b]=hslToRgb((hue%360)/360, 0.95, 0.55);
-  return [r,g,b];
-}
-function rankToBrownOrangeWhite(t){
-  if(t<0.5) return lerpRGB(BROWN, ORANGE, t/0.5);
-  return lerpRGB(ORANGE, WHITE, (t-0.5)/0.5);
-}
-function rankToBlackNeonWhite(t){
-  if(t<0.5) return lerpRGB(BLACK, NEON_GREEN, t/0.5);
-  return lerpRGB(NEON_GREEN, WHITE, (t-0.5)/0.5);
-}
+function rankToROYGBIV(t){ const hue=lerp(0, 300, t); const [r,g,b]=hslToRgb((hue%360)/360, 0.95, 0.55); return [r,g,b]; }
+function rankToBrownOrangeWhite(t){ if(t<0.5) return lerpRGB(BROWN, ORANGE, t/0.5); return lerpRGB(ORANGE, WHITE, (t-0.5)/0.5); }
+function rankToBlackNeonWhite(t){ if(t<0.5) return lerpRGB(BLACK, NEON_GREEN, t/0.5); return lerpRGB(NEON_GREEN, WHITE, (t-0.5)/0.5); }
 
 /* ---------------- palette & style mapping --------------- */
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
-  let hP = baseHue;
-  let hN = mod(hP + (90 + rng() * 120), 360);
-  let hE = mod(hP + (180 + rng() * 120), 360);
-  let hS = mod(hP + (30 + rng() * 120), 360);
+  let hP = baseHue; let hN = mod(hP + (90 + rng() * 120), 360); let hE = mod(hP + (180 + rng() * 120), 360); let hS = mod(hP + (30 + rng() * 120), 360);
   let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
   let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
   let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
   let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
-  return{
-    proton:  hslToRgb(hP/360, sP, lP),
-    neutron: hslToRgb(hN/360, sN, lN),
-    electron:hslToRgb(hE/360, sE, lE),
-    shell:   hslToRgb(hS/360, sS, lS)
-  };
+  return{ proton:hslToRgb(hP/360, sP, lP), neutron:hslToRgb(hN/360, sN, lN), electron:hslToRgb(hE/360, sE, lE), shell:hslToRgb(hS/360, sS, lS) };
 }
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 function chooseSetModesFromBlock(b){
-  const mE = (((b.nonce||0)>>>24)%9);
-  const mP = ((b.version||0)&0xff)%9;
-  const mN = (hexByteSum(b.merkle_root||'')%9);
+  // distribute across 10 modes (0..9)
+  const mE = (((b.nonce||0)>>>24)%10);
+  const mP = ((b.version||0)&0xff)%10;
+  const mN = (hexByteSum(b.merkle_root||'')%10);
   const ringVar = lastByte(b.id||b.hash||'') % 3;
   return { mE, mP, mN, ringVar };
 }
@@ -389,9 +393,7 @@ function injectPanels(atom){
   const infoSum=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<p>Halving blocks: pulsing orange/black background, <b>gold</b> nucleus with transparent glow, and <b>gold rings</b> that pulse with a soft halo.</p>\
-  <p>Block 170: full ROYGBIV rings and ROYGBIV treemap by <i>size rank</i>.</p>\
-  <p>Block 1337: neon wireframes; treemap fades <b>black → neon green → white</b> by size rank; “1337” pixel text centered.</p>';
+  infoBody.innerHTML = '<p>New style: <b>Sky</b> — light blue with animated white clouds.</p><p>“Spikes” intensity increased ~10× (true vertex displacement).</p>';
   info.appendChild(infoBody); document.body.appendChild(info);
 
   const guard=n=>{n.addEventListener('pointerdown',()=>uiPointerDown=true);n.addEventListener('pointerup',()=>uiPointerDown=false);
@@ -400,10 +402,7 @@ function injectPanels(atom){
   [legend,det,info].forEach(guard);
 }
 
-/* -------------------------------------------------------- */
 /* -------------------- background treemap ---------------- */
-/* fully screen-space, centered, devicePixelRatio aware     */
-/* -------------------------------------------------------- */
 const bgCanvas=document.getElementById('bg2d'); const bgCtx=bgCanvas.getContext('2d',{alpha:false});
 let DPR=1, bgW=0, bgH=0, bgBaseCanvas=document.createElement('canvas'), bgBaseCtx=bgBaseCanvas.getContext('2d',{alpha:false});
 let currentTxs=[], currentAtom=null;
@@ -411,10 +410,8 @@ let currentTxs=[], currentAtom=null;
 function resizeBG(){
   DPR = Math.max(1, Math.floor(window.devicePixelRatio||1));
   bgW = window.innerWidth; bgH = window.innerHeight;
-  // draw at CSS pixel resolution in base canvas
   bgBaseCanvas.width = Math.max(1,bgW);
   bgBaseCanvas.height = Math.max(1,bgH);
-  // final canvas is device pixels, no ctx scaling tricks
   bgCanvas.width = Math.max(1, Math.floor(bgW*DPR));
   bgCanvas.height= Math.max(1, Math.floor(bgH*DPR));
   bgCanvas.style.width = bgW+'px';
@@ -451,7 +448,6 @@ function renderTreemapBase(txs, atom){
   const ctx=bgBaseCtx; ctx.clearRect(0,0,W,H); ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
   if(!txs||!txs.length) return;
 
-  // Build weighted items and compute rank by size
   const itemsAll=[];
   for(const tx of txs){
     const vsRaw=Math.max(1,tx.vsize||tx.size||1);
@@ -459,28 +455,17 @@ function renderTreemapBase(txs, atom){
     const fr=(tx.fee&&vsRaw)?(tx.fee/vsRaw):0;
     itemsAll.push({vsRaw, vs, fr});
   }
-  // Sort ascending by size for rank color maps
   const bySize=[...itemsAll].sort((a,b)=>a.vsRaw-b.vsRaw);
-  const sizeRank=new Map();
-  for(let i=0;i<bySize.length;i++){ sizeRank.set(bySize[i], i/(bySize.length-1||1)); }
+  const sizeRank=new Map(); for(let i=0;i<bySize.length;i++){ sizeRank.set(bySize[i], i/(bySize.length-1||1)); }
 
-  // Color chooser per special
   let colorFunc;
-  if(atom?.style?.is1337){
-    colorFunc = item => rankToBlackNeonWhite(sizeRank.get(item));
-  }else if(atom?.height===170){
-    colorFunc = item => rankToROYGBIV(sizeRank.get(item));
-  }else if(atom?.style?.halving && !atom?.style?.disco){
-    colorFunc = item => rankToBrownOrangeWhite(sizeRank.get(item));
-  }else{
-    colorFunc = item => feeToColor(item.fr);
-  }
+  if(atom?.style?.is1337)      colorFunc = item => rankToBlackNeonWhite(sizeRank.get(item));
+  else if(atom?.height===170)  colorFunc = item => rankToROYGBIV(sizeRank.get(item));
+  else if(atom?.style?.halving && !atom?.style?.disco)
+                               colorFunc = item => rankToBrownOrangeWhite(sizeRank.get(item));
+  else                         colorFunc = item => feeToColor(item.fr);
 
-  const itemsCol = itemsAll.map(it=>{
-    const c=colorFunc(it); return {weight:Math.max(0.1,it.vs), color:c};
-  });
-
-  // Downsample for perf but keep plenty
+  const itemsCol = itemsAll.map(it=>({weight:Math.max(0.1,it.vs), color:colorFunc(it)}));
   const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const CAP=isMobile?MOBILE_CAP:DESKTOP_CAP;
   let items=itemsCol;
@@ -503,7 +488,6 @@ function renderTreemapBase(txs, atom){
   }
   ctx.restore();
 
-  // Block 1337: centered pixel text overlay on base canvas
   if(atom?.style?.is1337){
     ctx.save();
     ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -514,21 +498,8 @@ function renderTreemapBase(txs, atom){
     ctx.restore();
   }
 }
-
-function compositeBG(){
-  // Paint base (CSS pixels) into device-pixel canvas, centered & scaled 1:1
-  const W=bgCanvas.width, H=bgCanvas.height;
-  const ctx=bgCtx;
-  ctx.save();
-  ctx.globalCompositeOperation='source-over';
-  ctx.imageSmoothingEnabled=true;
-  ctx.clearRect(0,0,W,H);
-  ctx.drawImage(bgBaseCanvas, 0, 0, W, H);
-  ctx.restore();
-}
-
+function compositeBG(){ const W=bgCanvas.width, H=bgCanvas.height; const ctx=bgCtx; ctx.save(); ctx.globalCompositeOperation='source-over'; ctx.imageSmoothingEnabled=true; ctx.clearRect(0,0,W,H); ctx.drawImage(bgBaseCanvas, 0, 0, W, H); ctx.restore(); }
 function drawBackgroundFrame(atom,t){
-  // Additional pulsing wash for halving
   if(atom?.style?.halving && !atom?.style?.disco){
     const W=bgCanvas.width, H=bgCanvas.height;
     const ctx=bgCtx; ctx.save();
@@ -541,7 +512,7 @@ function drawBackgroundFrame(atom,t){
 }
 
 /* ---------------- overrides HUD ------------------------ */
-const MODE_NAMES=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Safe'];
+const MODE_NAMES=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
 function populateSelectors(){
   const opts = MODE_NAMES.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
   $('#selProton').innerHTML = `<option value="">Auto</option>${opts}`;
@@ -569,7 +540,6 @@ function startSketch(blk, txsForBg){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // Prepare background once per load
   const txs=(txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
   resizeBG(); renderTreemapBase(txs, atom); compositeBG();
 
@@ -586,7 +556,7 @@ function startSketch(blk, txsForBg){
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs, atom); compositeBG(); };
 
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
-      const m = Math.max(0, Math.min(8, (mode|0)));
+      const m = Math.max(0, Math.min(9, (mode|0)));
       if(orbShader){
         try{
           p.noStroke();
@@ -634,12 +604,9 @@ function startSketch(blk, txsForBg){
           p.circle(0,0,r*2);
 
         } else if(atom.style.halving){
-          // Gold rings + soft halo pulse
           const pulse = 0.5 + 0.5*Math.sin(t*2.0 + i*0.3);
           const gold=[255,210,50], gold2=[255,170,30];
-          // halo first (low alpha, larger)
           p.push(); p.stroke(gold2[0],gold2[1],gold2[2], 60+80*pulse); p.strokeWeight(4.0+2.0*pulse); p.circle(0,0,r*2); p.pop();
-          // core line
           p.stroke(gold[0],gold[1],gold[2], 220); p.strokeWeight(1.6);
           p.circle(0,0,r*2);
 
@@ -669,7 +636,7 @@ function startSketch(blk, txsForBg){
 
     p.draw=function(){
       const t=p.millis()*0.001;
-      compositeBG();             // draw treemap to device canvas
+      compositeBG();
       drawBackgroundFrame(atom,t);
 
       p.background(0);
@@ -810,8 +777,8 @@ document.getElementById('loadBtn').onclick=async()=>{const h=Number(document.get
 document.getElementById('latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 
 resizeBG();
-// loadLatest(); // optional
-// new7
+// loadLatest(); // optional auto-load
+// new8
 </script>
 </body>
 </html>
