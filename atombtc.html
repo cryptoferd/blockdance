@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — true spikes + transparent halving glow + per-set styles</title>
+<title>Bitcoin Block Atom — centered BG + special treemaps + halving rings</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -57,7 +57,9 @@
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* ---------- utils ---------- */
+/* -------------------------------------------------------- */
+/* -------------------- helpers / mapping ----------------- */
+/* -------------------------------------------------------- */
 const $=s=>document.querySelector(s);
 const shortHash=h=>h?(String(h).slice(0,10)+'…'+String(h).slice(-8)):'n/a';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -71,33 +73,24 @@ const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
 const isHalving=h=>h>0&&(h%210000)===0;
 
-/* vec helpers */
 const v3=(x,y,z)=>[x,y,z], vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
 const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
 const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
-/* ---------- shader ---------- */
-/* Vertex shader now supports real displacement for mode==spikes (6) */
+/* -------------------------------------------------------- */
+/* ---------------------------- shader -------------------- */
+/* Spikes are real vertex displacement; other styles in frag */
+/* -------------------------------------------------------- */
 const VERT=`
 #ifdef GL_ES
-precision mediump float;
-precision mediump int;
+precision mediump float; precision mediump int;
 #endif
-
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix, uProjectionMatrix;
-
-/* spike controls */
-uniform float uModeF;
-uniform float uTime;
-uniform float uAmp;     // global amp
-uniform float uSpeed;
-uniform float uObjSeed; // per-orb seed
-
-varying vec3 vPos;
-varying vec3 vNormal;
+uniform float uModeF, uTime, uAmp, uSpeed, uObjSeed;
+varying vec3 vPos, vNormal;
 
 float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
 float n3(vec3 p){
@@ -115,40 +108,27 @@ float n3(vec3 p){
 float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.03; a*=0.5; } return s; }
 
 void main(){
-  vec3 pos = aPosition;
-  vec3 nrm = normalize(aPosition);
-
-  int m = int(floor(clamp(uModeF,0.0,8.0)+0.5));
+  vec3 pos=aPosition, nrm=normalize(aPosition);
+  int m=int(floor(clamp(uModeF,0.0,8.0)+0.5));
   if(m==6){ // spikes
-    // Displace along normal using animated fbm
-    vec3 seed = vec3(uObjSeed, uObjSeed*1.9, uObjSeed*2.7);
-    float t = uTime * (1.0 + uSpeed);
-    float s = fbm(normalize(pos)*6.0 + seed + vec3(0.0, t*1.2, 0.0));
-    float spike = smoothstep(0.55, 0.95, s);     // sharper peaks
-    float amp   = 0.18 * (0.65 + 0.35*uAmp);     // physical amplitude
-    pos += nrm * (amp * spike * length(aPosition)); // scale with radius
+    vec3 seed=vec3(uObjSeed, uObjSeed*1.9, uObjSeed*2.7);
+    float t=uTime*(1.0+uSpeed);
+    float s=fbm(normalize(pos)*6.5 + seed + vec3(0.0,t*1.1,0.0));
+    float spike=smoothstep(0.55,0.93,s);
+    float amp=0.18*(0.65+0.35*uAmp);
+    pos += nrm * (amp * spike * length(aPosition));
   }
-
-  vPos = pos;
-  vNormal = normalize(pos);
-  gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(pos, 1.0));
+  vPos=pos; vNormal=normalize(pos);
+  gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
 }
 `;
-
-// Modes: 0 marble,1 glass,2 wireframe,3 lava,4 toon,5 iridescent,6 spikes,7 metallic,8 safe
 const FRAG=`
 #ifdef GL_ES
-precision mediump float;
-precision mediump int;
+precision mediump float; precision mediump int;
 #endif
-
-varying vec3 vPos;
-varying vec3 vNormal;
-
-uniform vec3 uColorA, uColorB;
-uniform float uTime, uAlpha, uPhase, uAmp, uSpeed;
-uniform float uModeF;
-uniform float uObjSeed;
+varying vec3 vPos, vNormal;
+uniform vec3 uColorA,uColorB;
+uniform float uTime,uAlpha,uPhase,uAmp,uSpeed,uModeF,uObjSeed;
 
 float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
 float n3(vec3 p){
@@ -167,83 +147,95 @@ float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.02
 vec3 hsv2rgb(vec3 c){ vec3 p=abs(fract(c.xxx+vec3(0.,2./3.,1./3.))*6.-3.); return c.z*mix(vec3(1.0), clamp(p-1.0,0.0,1.0), c.y); }
 
 void main(){
-  vec3 n = normalize(vNormal);
-  vec3 V = vec3(0.0,0.0,1.0);
+  vec3 n=normalize(vNormal);
+  vec3 V=vec3(0.0,0.0,1.0);
   vec3 L1=normalize(vec3(0.6,0.7,0.5));
   vec3 L2=normalize(vec3(-0.4,0.65,-0.2));
-  float ndl = max(dot(n,L1),0.0)*0.65 + max(dot(n,L2),0.0)*0.35;
-  float rim = pow(1.0 - max(dot(n,V),0.0), 2.0);
+  float ndl=max(dot(n,L1),0.0)*0.65 + max(dot(n,L2),0.0)*0.35;
+  float rim=pow(1.0-max(dot(n,V),0.0),2.0);
 
-  vec3 colA=uColorA, colB=uColorB;
-  float t = uTime*(0.6+uSpeed);
-  int m = int(floor(clamp(uModeF,0.0,8.0)+0.5));
-  vec3 col;
+  vec3 colA=uColorA, colB=uColorB, col;
+  float t=uTime*(0.6+uSpeed);
+  int m=int(floor(clamp(uModeF,0.0,8.0)+0.5));
 
-  if(m==0){ // marble
-    vec3 seed = vec3(uObjSeed, uObjSeed*1.7, uObjSeed*2.3);
-    float s = fbm(normalize(vPos)*3.2 + vec3(0.0, t*0.25+uPhase, 0.0) + seed);
-    float veins = sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
-    float mm = smoothstep(-0.2,0.7,veins);
-    vec3 base = mix(colA,colB,mm);
-    col = base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-
-  } else if(m==1){ // glass
-    float fres = pow(1.0 - max(dot(n,V),0.0), 3.0);
-    col = mix(colA, colB, 0.5) * (0.10 + 0.18*ndl) + vec3(1.0)*fres*0.85;
-
-  } else if(m==2){ // wireframe (green tint)
-    float k = 9.0 + 2.0*fract(uObjSeed*7.0);
-    vec3 q = normalize(vPos);
-    float gx = abs(sin(q.x*k));
-    float gy = abs(sin(q.y*k));
-    float gz = abs(sin(q.z*k));
-    float g = max(max(gx,gy),gz);
-    float edge = smoothstep(0.92, 0.985, g);
-    vec3 base = mix(colA,colB,0.5)*(0.15+0.45*ndl);
-    col = base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
-
-  } else if(m==3){ // lava (per-orb seeded)
-    vec3 seed = vec3(uObjSeed, uObjSeed*2.1, uObjSeed*3.3);
-    float f = fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + seed);
-    float veins = smoothstep(0.55,0.8,f);
-    vec3 hot = vec3(1.0,0.35,0.0);
-    vec3 cool = vec3(0.05,0.02,0.02);
-    col = mix(cool, hot, veins)* (0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
-
-  } else if(m==4){ // toon
-    float s = step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
-    vec3 base = mix(colA,colB,0.5);
-    col = base * (0.22 + s) + vec3(1.0)*step(0.8,rim)*0.18;
-
-  } else if(m==5){ // iridescent
-    float h = fract(0.5 + 0.35*dot(n,vec3(0.3,0.8,0.5)) + 0.15*sin(t + uPhase + uObjSeed));
-    vec3 iri = hsv2rgb(vec3(h, 0.9, 1.0));
-    col = mix(iri, mix(colA,colB,0.4), 0.3) * (0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
-
-  } else if(m==6){ // spikes surface shading
-    vec3 seed = vec3(uObjSeed, uObjSeed*1.9, uObjSeed*2.7);
-    float s = fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + seed);
-    float spike = smoothstep(0.62, 0.90, s);
-    vec3 base = mix(colA,colB,0.5);
-    vec3 highlight = base*1.7;
-    vec3 shaded = base*0.45;
-    vec3 surf = mix(shaded, highlight, spike);
-    col = surf*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
-
-  } else if(m==7){ // metallic
-    float spec = pow(max(dot(n, normalize(L1+L2)),0.0), 34.0);
-    col = mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
-
-  } else { // safe
-    col = mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+  if(m==0){ vec3 seed=vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3);
+    float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + seed);
+    float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
+    float mm=smoothstep(-0.2,0.7,veins);
+    vec3 base=mix(colA,colB,mm);
+    col=base*(0.35+0.65*ndl)+vec3(1.0)*rim*0.12;
+  } else if(m==1){
+    float fres=pow(1.0-max(dot(n,V),0.0),3.0);
+    col=mix(colA,colB,0.5)*(0.1+0.18*ndl)+vec3(1.0)*fres*0.85;
+  } else if(m==2){
+    float k=9.0+2.0*fract(uObjSeed*7.0); vec3 q=normalize(vPos);
+    float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
+    float edge=smoothstep(0.92,0.985,g);
+    vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
+    col=base+vec3(0.2,1.0,0.2)*edge*0.95+vec3(1.0)*rim*0.12;
+  } else if(m==3){
+    vec3 seed=vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3);
+    float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + seed);
+    float veins=smoothstep(0.55,0.8,f);
+    vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
+    col=mix(cool,hot,veins)*(0.35+0.65*ndl)+vec3(1.0)*rim*0.08;
+  } else if(m==4){
+    float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
+    vec3 base=mix(colA,colB,0.5);
+    col=base*(0.22+s)+vec3(1.0)*step(0.8,rim)*0.18;
+  } else if(m==5){
+    float h=fract(0.5+0.35*dot(n,vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
+    vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
+    col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl)+vec3(1.0)*rim*0.18;
+  } else if(m==6){
+    vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
+    float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + seed);
+    float spike=smoothstep(0.62,0.90,s);
+    vec3 base=mix(colA,colB,0.5);
+    vec3 highlight=base*1.7, shaded=base*0.45;
+    col=mix(shaded,highlight,spike)*(0.28+0.72*ndl)+vec3(1.0)*rim*0.14;
+  } else if(m==7){
+    float spec=pow(max(dot(n, normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
+    col=mix(colA,colB,0.5)*(0.20+0.55*ndl)+vec3(1.0)*spec*0.9+vec3(1.0)*rim*0.10;
+  } else {
+    col=mix(colA,colB,0.5)*(0.35+0.65*ndl)+vec3(1.0)*rim*0.12;
   }
-  gl_FragColor = vec4(clamp(col,0.0,1.0), uAlpha);
+  gl_FragColor=vec4(clamp(col,0.0,1.0), uAlpha);
 }
 `;
 
-/* ---------- mapping & atom ---------- */
+/* ---------------- constants & palettes --------------- */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
+const FEERATE_MAX=50000;
 
+/* default mempool fee gradient */
+const C_GREEN=[0x0B,0x4F,0x35], C_YEL=[0xFF,0xFF,0x00], C_ORG=[0xFF,0xA5,0x00], C_RED=[0xFF,0x00,0x00], C_PURP=[0x81,0x08,0x4E];
+const lerp=(a,b,t)=>a+(b-a)*t; const lerpRGB=(a,b,t)=>[Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t))];
+function feeToColor(fr){const t=clamp(fr/FEERATE_MAX,0,1);
+  if(t<=0.25){return lerpRGB(C_GREEN,C_YEL,t/0.25);}
+  if(t<=0.50){return lerpRGB(C_YEL,C_ORG,(t-0.25)/0.25);}
+  if(t<=0.75){return lerpRGB(C_ORG,C_RED,(t-0.50)/0.25);}
+  return lerpRGB(C_RED,C_PURP,(t-0.75)/0.25);
+}
+
+/* palettes by size rank for specials */
+const NEON_GREEN=[0,255,120], WHITE=[255,255,255], BLACK=[0,0,0];
+const BROWN=[110,70,30], ORANGE=[255,140,0];
+function rankToROYGBIV(t){ // t in [0,1]
+  const hue=lerp(0, 300, t); // R→O→Y→G→B→V
+  const [r,g,b]=hslToRgb((hue%360)/360, 0.95, 0.55);
+  return [r,g,b];
+}
+function rankToBrownOrangeWhite(t){
+  if(t<0.5) return lerpRGB(BROWN, ORANGE, t/0.5);
+  return lerpRGB(ORANGE, WHITE, (t-0.5)/0.5);
+}
+function rankToBlackNeonWhite(t){
+  if(t<0.5) return lerpRGB(BLACK, NEON_GREEN, t/0.5);
+  return lerpRGB(NEON_GREEN, WHITE, (t-0.5)/0.5);
+}
+
+/* ---------------- palette & style mapping --------------- */
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
@@ -264,22 +256,15 @@ function paletteFromHeight(height){
 }
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
-
-/* Deterministic per-set style selection from different block fields */
 function chooseSetModesFromBlock(b){
-  // Keep modes: 0 marble,1 glass,2 wire,3 lava,4 toon,5 irid,6 spikes,7 metallic,8 safe
-  // Distinct drivers per set:
-  // electrons -> top byte of nonce
-  // protons   -> low byte of version
-  // neutrons  -> sum of merkle root bytes
-  // rings     -> last byte of block hash
-  const mE = ( ( (b.nonce||0) >>> 24) % 9 );
-  const mP = ( (b.version||0) & 0xff) % 9;
-  const mN = ( hexByteSum(b.merkle_root||'') % 9 );
-  const ringVar = lastByte(b.id||b.hash||'') % 3; // 0 default, 1 rainbow, 2 neon
+  const mE = (((b.nonce||0)>>>24)%9);
+  const mP = ((b.version||0)&0xff)%9;
+  const mN = (hexByteSum(b.merkle_root||'')%9);
+  const ringVar = lastByte(b.id||b.hash||'') % 3;
   return { mE, mP, mN, ringVar };
 }
 
+/* ---------------- build atom from block ----------------- */
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
   const nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
@@ -345,8 +330,8 @@ function buildAtomFromBlock(b){
   const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
   const disco = height===170;
   const halving = !disco && isHalving(height);
+  const is1337 = height===1337;
 
-  // distinct set modes
   const {mE, mP, mN, ringVar} = chooseSetModesFromBlock(b);
 
   return {
@@ -355,17 +340,16 @@ function buildAtomFromBlock(b){
     setModes:{ electrons:mE, protons:mP, neutrons:mN, ringVar },
     style:{
       eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick, ringAlpha, ringColor, nucleusTight:tightness,
-      halving, disco
+      ringThick, ringAlpha, ringColor, nucleusTight:1.0,
+      halving, disco, is1337
     }
   };
 }
 
-/* ---------- panels ---------- */
+/* -------------------- UI panels ------------------------ */
 let uiPointerDown=false;
 function injectPanels(atom){
   ['legend','blockPanel','infoPanel'].forEach(id=>{const n=document.getElementById(id); if(n) n.remove();});
-
   const legend=document.createElement('div'); legend.id='legend'; legend.className='panel';
   legend.appendChild(document.createElement('div')).innerHTML='<b>Controls</b>';
   ['• Rotate/Tilt: drag','• Pan: right-drag / two-finger','• Zoom: wheel / pinch'].forEach(t=>{ const d=document.createElement('div'); d.textContent=t; legend.appendChild(d); });
@@ -382,8 +366,9 @@ function injectPanels(atom){
   const body=document.createElement('div'); body.id='blkBody';
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
   [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{ const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c); });
-  if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco 170'; chips.appendChild(c); }
+  if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 170 ROYGBIV'; chips.appendChild(c); }
   else if(atom.style.halving){ const c2=document.createElement('span'); c2.className='chip'; c2.textContent='Halving Mode'; chips.appendChild(c2); }
+  else if(atom.style.is1337){ const c3=document.createElement('span'); c3.className='chip'; c3.textContent='1337 Neon'; chips.appendChild(c3); }
   body.appendChild(chips);
 
   const tbl=document.createElement('table');
@@ -394,29 +379,19 @@ function injectPanels(atom){
     ['Version', blk.version??'n/a'],
     ['Nonce', blk.nonce??'n/a'],
     ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
-    ['Merkle root', shortHash(blk.merkle_root)],
-    ['Style drivers (sets)', `e=${atom.setModes.electrons} p=${atom.setModes.protons} n=${atom.setModes.neutrons} ringsVar=${atom.setModes.ringVar}`]
+    ['Merkle root', shortHash(blk.merkle_root)]
   ];
   rows.forEach(([k,v])=>{ const tr=document.createElement('tr'); const td1=document.createElement('td'); td1.textContent=k; const td2=document.createElement('td'); if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code);} else td2.textContent=String(v); tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr); });
   body.appendChild(tbl);
-
   det.appendChild(body); document.body.appendChild(det);
 
   const info=document.createElement('details'); info.id='infoPanel'; info.className='panel';
   const infoSum=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(infoSum);
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<h3>Visual Mapping</h3>\
-  <ul>\
-  <li><b>Per-set styles:</b> electrons ⇢ nonce[31..24], protons ⇢ version LSB, neutrons ⇢ Σ(merkle bytes), rings ⇢ last byte of block hash.</li>\
-  <li><b>Counts:</b> Electron/proton/neutron counts from height & merkle bytes.</li>\
-  <li><b>Speeds:</b> Orbit speed ∝ log₁₀(tx_count × size).</li>\
-  <li><b>Orbits:</b> Ellipticity & precession from version, nonce, merkle.</li>\
-  <li><b>Colors:</b> Height → golden-angle palette; rings hue-shifted by hash.</li>\
-  <li><b>Background:</b> Tiny treemap of tx colored by fee rate (0 → 50k sat/vB).</li>\
-  <li><b>Specials:</b> Halving = subtle additive nucleus glow + pulsing orange/black background. 170 = ROYGBIV + iridescence. 1337 = neon wireframes.</li>\
-  <li><b>Materials:</b> Marble/Glass/Wire/Lava/Toon/Iridescent/Spikes/Metallic (+ Safe fallback). Spikes are <i>true</i> geometry displacement.</li>\
-  </ul>';
+  infoBody.innerHTML = '<p>Halving blocks: pulsing orange/black background, <b>gold</b> nucleus with transparent glow, and <b>gold rings</b> that pulse with a soft halo.</p>\
+  <p>Block 170: full ROYGBIV rings and ROYGBIV treemap by <i>size rank</i>.</p>\
+  <p>Block 1337: neon wireframes; treemap fades <b>black → neon green → white</b> by size rank; “1337” pixel text centered.</p>';
   info.appendChild(infoBody); document.body.appendChild(info);
 
   const guard=n=>{n.addEventListener('pointerdown',()=>uiPointerDown=true);n.addEventListener('pointerup',()=>uiPointerDown=false);
@@ -425,38 +400,32 @@ function injectPanels(atom){
   [legend,det,info].forEach(guard);
 }
 
-/* ---------- treemap background (tiny tiles) ---------- */
-const BG_GREEN=[0x0B,0x4F,0x35], BG_YELLOW=[0xFF,0xFF,0x00], BG_ORANGE=[0xFF,0xA5,0x00], BG_RED=[0xFF,0x00,0x00], BG_PURPLE=[0x81,0x08,0x4E];
-const FEERATE_MAX=50000;
-const lerp=(a,b,t)=>a+(b-a)*t;
-function lerpRGB(a,b,t){return [Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t))];}
-function feeToColor(fr){const t=clamp(fr/FEERATE_MAX,0,1);
-  if(t<=0.25){const u=t/0.25;return lerpRGB(BG_GREEN,BG_YELLOW,u);}
-  else if(t<=0.50){const u=(t-0.25)/0.25;return lerpRGB(BG_YELLOW,BG_ORANGE,u);}
-  else if(t<=0.75){const u=(t-0.50)/0.25;return lerpRGB(BG_ORANGE,BG_RED,u);}
-  else{const u=(t-0.75)/0.25;return lerpRGB(BG_RED,BG_PURPLE,clamp(u,0,1));}
-}
-
-const bgCanvas=document.getElementById('bg2d'); const bgCtx=bgCanvas.getContext('2d');
-let bgBaseCanvas=document.createElement('canvas'), bgBaseCtx=bgBaseCanvas.getContext('2d');
-let bgTxs=[]; let DPR=1, bgW=0, bgH=0;
-
-const MIN_RECT_PX=1;
-const BORDER_ALPHA=0.12;
-const BORDER_SKIP_PX=4;
-const WEIGHT_COMPRESS=0.06;
-const SIZE_OFFSET=1;
-const DESKTOP_CAP=30000;
-const MOBILE_CAP=15000;
+/* -------------------------------------------------------- */
+/* -------------------- background treemap ---------------- */
+/* fully screen-space, centered, devicePixelRatio aware     */
+/* -------------------------------------------------------- */
+const bgCanvas=document.getElementById('bg2d'); const bgCtx=bgCanvas.getContext('2d',{alpha:false});
+let DPR=1, bgW=0, bgH=0, bgBaseCanvas=document.createElement('canvas'), bgBaseCtx=bgBaseCanvas.getContext('2d',{alpha:false});
+let currentTxs=[], currentAtom=null;
 
 function resizeBG(){
-  DPR=Math.min(2,window.devicePixelRatio||1);
-  bgW=Math.floor(window.innerWidth); bgH=Math.floor(window.innerHeight);
-  for(const c of [bgCanvas,bgBaseCanvas]){ c.width=Math.max(1,Math.floor(bgW*DPR)); c.height=Math.max(1,Math.floor(bgH*DPR)); c.style.width=bgW+'px'; c.style.height=bgH+'px'; }
-  for(const ctx of [bgCtx,bgBaseCtx]){ ctx.setTransform(1,0,0,1,0,0); ctx.scale(DPR,DPR); }
-  if(bgTxs.length){ renderTreemapBase(bgTxs); }
+  DPR = Math.max(1, Math.floor(window.devicePixelRatio||1));
+  bgW = window.innerWidth; bgH = window.innerHeight;
+  // draw at CSS pixel resolution in base canvas
+  bgBaseCanvas.width = Math.max(1,bgW);
+  bgBaseCanvas.height = Math.max(1,bgH);
+  // final canvas is device pixels, no ctx scaling tricks
+  bgCanvas.width = Math.max(1, Math.floor(bgW*DPR));
+  bgCanvas.height= Math.max(1, Math.floor(bgH*DPR));
+  bgCanvas.style.width = bgW+'px';
+  bgCanvas.style.height= bgH+'px';
+  if (currentTxs.length) renderTreemapBase(currentTxs, currentAtom);
+  compositeBG();
 }
 window.addEventListener('resize', resizeBG);
+
+const MIN_RECT_PX=1, BORDER_ALPHA=0.12, BORDER_SKIP_PX=4, WEIGHT_COMPRESS=0.06, SIZE_OFFSET=1;
+const DESKTOP_CAP=30000, MOBILE_CAP=15000;
 
 function layoutStrip(items,W,H){
   const rects=[]; let y=0,row=[],rowAreaSum=0; const width=W;
@@ -476,57 +445,102 @@ function layoutStrip(items,W,H){
   return rects;
 }
 
-function renderTreemapBase(txs){
-  bgTxs=txs||[]; const W=bgW,H=bgH;
-  bgBaseCtx.clearRect(0,0,W,H); bgBaseCtx.fillStyle="#000"; bgBaseCtx.fillRect(0,0,W,H);
+function renderTreemapBase(txs, atom){
+  currentTxs=txs||[]; currentAtom=atom||currentAtom;
+  const W=bgBaseCanvas.width, H=bgBaseCanvas.height;
+  const ctx=bgBaseCtx; ctx.clearRect(0,0,W,H); ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
   if(!txs||!txs.length) return;
 
+  // Build weighted items and compute rank by size
   const itemsAll=[];
   for(const tx of txs){
     const vsRaw=Math.max(1,tx.vsize||tx.size||1);
     const vs = Math.pow(vsRaw+SIZE_OFFSET, WEIGHT_COMPRESS);
     const fr=(tx.fee&&vsRaw)?(tx.fee/vsRaw):0;
-    const col=feeToColor(fr);
-    const j=((parseInt((tx.txid||"").slice(-2),16)||0)%6)-3;
-    itemsAll.push({weight:Math.max(0.1,vs),color:[clamp(col[0]+j,0,255),clamp(col[1]+j,0,255),clamp(col[2]+j,0,255)],fr});
+    itemsAll.push({vsRaw, vs, fr});
   }
-  itemsAll.sort((a,b)=>a.fr-b.fr);
+  // Sort ascending by size for rank color maps
+  const bySize=[...itemsAll].sort((a,b)=>a.vsRaw-b.vsRaw);
+  const sizeRank=new Map();
+  for(let i=0;i<bySize.length;i++){ sizeRank.set(bySize[i], i/(bySize.length-1||1)); }
 
+  // Color chooser per special
+  let colorFunc;
+  if(atom?.style?.is1337){
+    colorFunc = item => rankToBlackNeonWhite(sizeRank.get(item));
+  }else if(atom?.height===170){
+    colorFunc = item => rankToROYGBIV(sizeRank.get(item));
+  }else if(atom?.style?.halving && !atom?.style?.disco){
+    colorFunc = item => rankToBrownOrangeWhite(sizeRank.get(item));
+  }else{
+    colorFunc = item => feeToColor(item.fr);
+  }
+
+  const itemsCol = itemsAll.map(it=>{
+    const c=colorFunc(it); return {weight:Math.max(0.1,it.vs), color:c};
+  });
+
+  // Downsample for perf but keep plenty
   const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const CAP=isMobile?MOBILE_CAP:DESKTOP_CAP;
-  let items=itemsAll;
-  if(itemsAll.length>CAP){ const stride=Math.max(1,Math.floor(itemsAll.length/CAP)); items=[]; for(let i=0;i<itemsAll.length;i+=stride) items.push(itemsAll[i]); }
+  let items=itemsCol;
+  if(items.length>CAP){ const stride=Math.max(1,Math.floor(items.length/CAP)); const t=[]; for(let i=0;i<items.length;i+=stride) t.push(items[i]); items=t; }
 
   const totalW=items.reduce((s,it)=>s+it.weight,0)||1;
   const unitArea=(W*H)/totalW;
   const itemsWithArea=items.map(it=>({area:Math.max(MIN_RECT_PX*MIN_RECT_PX, it.weight*unitArea), color:it.color}));
   const rects=layoutStrip(itemsWithArea,W,H);
 
-  bgBaseCtx.save();
+  ctx.save();
   for(const r of rects){
-    bgBaseCtx.fillStyle=`rgb(${r.color[0]},${r.color[1]},${r.color[2]})`;
-    bgBaseCtx.fillRect(r.x,r.y,r.w,r.h);
+    ctx.fillStyle=`rgb(${r.color[0]},${r.color[1]},${r.color[2]})`;
+    ctx.fillRect(r.x,r.y,r.w,r.h);
     if(r.w>=BORDER_SKIP_PX && r.h>=BORDER_SKIP_PX){
-      bgBaseCtx.strokeStyle=`rgba(255,255,255,${BORDER_ALPHA})`;
-      bgBaseCtx.lineWidth=0.5;
-      bgBaseCtx.strokeRect(r.x+0.25,r.y+0.25,Math.max(0,r.w-0.5),Math.max(0,r.h-0.5));
+      ctx.strokeStyle=`rgba(255,255,255,${BORDER_ALPHA})`;
+      ctx.lineWidth=0.5;
+      ctx.strokeRect(r.x+0.25,r.y+0.25,Math.max(0,r.w-0.5),Math.max(0,r.h-0.5));
     }
   }
-  bgBaseCtx.restore();
+  ctx.restore();
+
+  // Block 1337: centered pixel text overlay on base canvas
+  if(atom?.style?.is1337){
+    ctx.save();
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font=`${Math.floor(Math.min(W,H)*0.12)}px monospace`;
+    ctx.fillStyle='rgba(0,255,120,0.9)';
+    ctx.shadowColor='rgba(0,255,120,0.7)'; ctx.shadowBlur=18;
+    ctx.fillText('1337', W/2, H/2);
+    ctx.restore();
+  }
+}
+
+function compositeBG(){
+  // Paint base (CSS pixels) into device-pixel canvas, centered & scaled 1:1
+  const W=bgCanvas.width, H=bgCanvas.height;
+  const ctx=bgCtx;
+  ctx.save();
+  ctx.globalCompositeOperation='source-over';
+  ctx.imageSmoothingEnabled=true;
+  ctx.clearRect(0,0,W,H);
+  ctx.drawImage(bgBaseCanvas, 0, 0, W, H);
+  ctx.restore();
 }
 
 function drawBackgroundFrame(atom,t){
-  const bgWcss=bgCanvas.clientWidth, bgHcss=bgCanvas.clientHeight;
-  bgCtx.clearRect(0,0,bgWcss,bgHcss);
-  bgCtx.drawImage(bgBaseCanvas,0,0,bgWcss,bgHcss);
-  if(atom.style.halving && !atom.style.disco){
+  // Additional pulsing wash for halving
+  if(atom?.style?.halving && !atom?.style?.disco){
+    const W=bgCanvas.width, H=bgCanvas.height;
+    const ctx=bgCtx; ctx.save();
     const pulse=0.5+0.5*Math.sin(t*2.0);
-    bgCtx.fillStyle=`rgba(255,140,0,${0.08+0.08*pulse})`;
-    bgCtx.fillRect(0,0,bgWcss,bgHcss);
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle=`rgba(255,140,0,${0.05+0.05*pulse})`;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
   }
 }
 
-/* ---------- override UI ---------- */
+/* ---------------- overrides HUD ------------------------ */
 const MODE_NAMES=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Safe'];
 function populateSelectors(){
   const opts = MODE_NAMES.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
@@ -535,7 +549,6 @@ function populateSelectors(){
   $('#selElectron').innerHTML = `<option value="">Auto</option>${opts}`;
 }
 populateSelectors();
-
 let overrides = { proton:null, neutron:null, electron:null };
 ['selProton','selNeutron','selElectron'].forEach(id=>{
   $('#'+id).addEventListener('change', e=>{
@@ -546,7 +559,7 @@ let overrides = { proton:null, neutron:null, electron:null };
   });
 });
 
-/* ---------- p5 sketch ---------- */
+/* ---------------- p5 sketch ---------------------------- */
 let p5Instance=null, orbShader=null;
 
 function startSketch(blk, txsForBg){
@@ -556,8 +569,9 @@ function startSketch(blk, txsForBg){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
+  // Prepare background once per load
   const txs=(txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
-  resizeBG(); renderTreemapBase(txs);
+  resizeBG(); renderTreemapBase(txs, atom); compositeBG();
 
   const sketch=(p)=>{
     p.setup=function(){
@@ -569,7 +583,7 @@ function startSketch(blk, txsForBg){
       p.ambientLight(120);
       p.directionalLight(255,255,255, 0.5,0.6,0.4);
     };
-    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs); };
+    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs, atom); compositeBG(); };
 
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       const m = Math.max(0, Math.min(8, (mode|0)));
@@ -586,7 +600,7 @@ function startSketch(blk, txsForBg){
           orbShader.setUniform('uAmp', atom.shader.amp||0.25);
           orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
           orbShader.setUniform('uObjSeed', seed||0.0);
-          p.sphere(r, 84, 56); // more verts -> smoother spikes
+          p.sphere(r, 84, 56);
           p.resetShader();
           return;
         }catch(e){ console.warn('Shader draw error — fallback:', e); orbShader=null; }
@@ -597,26 +611,38 @@ function startSketch(blk, txsForBg){
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
 
     function drawRings(t){
-      const variant = atom.setModes.ringVar;
       const steps = 260;
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i];
         p.push(); p.noFill();
-        if(atom.style.disco || variant===1){
+
+        if(atom.style.disco){ // 170: rainbow
           p.strokeWeight(1.4);
           p.beginShape();
           for(let k=0;k<=steps;k++){
             const ang=(k/steps)*Math.PI*2;
-            const hue = ( (k/steps)*360 + t*160 + i*15 ) % 360;
+            const hue = ((k/steps)*360 + t*160 + i*15) % 360;
             const c=hueToRgb(hue);
             p.stroke(c[0],c[1],c[2],230);
             p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
           }
           p.endShape();
-        } else if (atom.height===1337 || variant===2){
+
+        } else if(atom.style.is1337){
           p.stroke(0,255,120,230); if(i%2) p.stroke(255,255,0,230);
           p.strokeWeight(1.8);
           p.circle(0,0,r*2);
+
+        } else if(atom.style.halving){
+          // Gold rings + soft halo pulse
+          const pulse = 0.5 + 0.5*Math.sin(t*2.0 + i*0.3);
+          const gold=[255,210,50], gold2=[255,170,30];
+          // halo first (low alpha, larger)
+          p.push(); p.stroke(gold2[0],gold2[1],gold2[2], 60+80*pulse); p.strokeWeight(4.0+2.0*pulse); p.circle(0,0,r*2); p.pop();
+          // core line
+          p.stroke(gold[0],gold[1],gold[2], 220); p.strokeWeight(1.6);
+          p.circle(0,0,r*2);
+
         } else {
           p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220); p.strokeWeight(1.1);
           p.circle(0,0,r*2);
@@ -626,16 +652,14 @@ function startSketch(blk, txsForBg){
     }
 
     function drawHalvingGlow(t){
-      // Draw a soft, transparent additive glow that never occludes the nucleus
       const gl=p._renderer.GL;
       p.push();
       p.blendMode(p.ADD);
-      gl.disable(gl.DEPTH_TEST); // ensure no occlusion
+      gl.disable(gl.DEPTH_TEST);
       p.noStroke();
-      const layers=2;
-      for(let i=0;i<layers;i++){
+      for(let i=0;i<2;i++){
         const k=1.25+i*0.35;
-        const a=18 - i*8; // low alpha!
+        const a=18 - i*8;
         p.fill(255,170,40,a);
         p.sphere(NUCLEUS_R0*k, 28, 20);
       }
@@ -645,7 +669,8 @@ function startSketch(blk, txsForBg){
 
     p.draw=function(){
       const t=p.millis()*0.001;
-      drawBackgroundFrame(atom, t);
+      compositeBG();             // draw treemap to device canvas
+      drawBackgroundFrame(atom,t);
 
       p.background(0);
       const gl=p._renderer.GL; gl.clearDepth(1.0); gl.clear(gl.DEPTH_BUFFER_BIT);
@@ -653,49 +678,38 @@ function startSketch(blk, txsForBg){
       const s=uiPointerDown?0:1; p.orbitControl(s,s,1.5);
       p.rotateY(t*0.06); p.rotateX(Math.sin(t*0.23)*0.05);
 
-      const is1337 = atom.height===1337;
-
-      // Effective per-set modes (deterministic) with HUD overrides
       const effModeP = overrides.proton  ?? (atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.protons);
       const effModeN = overrides.neutron ?? (atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.neutrons);
       const effModeE = overrides.electron ??(atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.electrons);
 
-      // Rings
+      // RINGS
       drawRings(t);
-
       if(atom.style.halving && !atom.style.disco){ drawHalvingGlow(t); }
 
-      // Nucleus
+      // NUCLEUS
       p.push();
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
-
         if (atom.style.disco){
           const hue = (t*240 + q.hueOffset) % 360;
           const col = hueToRgb(hue);
           const pulse = 1.0 + 0.35*Math.sin(t*9.0 + q.hueOffset*0.05);
           drawOrbMat(col, col, NUCLEON_R*pulse, t, 1.0, 5, q.objSeed);
-        } else if(is1337){
-          if(q.isProton){
-            drawOrbMat([255,255,0],[255,255,0], NUCLEON_R, t, 1.0, 2, q.objSeed); // neon yellow wireframe
-          } else {
-            drawOrbMat([255,165,0],[255,165,0], NUCLEON_R, t, 1.0, 2, q.objSeed); // neon orange wireframe
-          }
+        } else if(atom.style.is1337){
+          if(q.isProton) drawOrbMat([255,255,0],[255,255,0], NUCLEON_R, t, 1.0, 2, q.objSeed);
+          else           drawOrbMat([255,165,0],[255,165,0], NUCLEON_R, t, 1.0, 2, q.objSeed);
         } else if(atom.style.halving){
           const goldA=[255,215,64], goldB=[255,170,32];
           drawOrbMat(goldA, goldB, NUCLEON_R, t, 1.0, 7, q.objSeed);
         } else {
-          if(q.isProton){
-            drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 1.0, effModeP, q.objSeed);
-          } else {
-            drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 1.0, effModeN, q.objSeed);
-          }
+          if(q.isProton) drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 1.0, effModeP, q.objSeed);
+          else           drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 1.0, effModeN, q.objSeed);
         }
         p.pop();
       }
       p.pop();
 
-      // Electrons
+      // ELECTRONS
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -711,11 +725,11 @@ function startSketch(blk, txsForBg){
 
           if (atom.style.disco){
             const hue = (t*240 + m.hueOffset) % 360;
-            const col = hueToRgb(hue);
+            const col = hslToRgb((hue%360)/360,0.95,0.55);
             const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
             drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 5, m.objSeed);
-          } else if (is1337){
-            drawOrbMat([0,255,120],[0,255,120], ELECTRON_R*atom.style.eSizeScale, t, 1.0, 2, m.objSeed); // neon green wireframe
+          } else if (atom.style.is1337){
+            drawOrbMat([0,255,120],[0,255,120], ELECTRON_R*atom.style.eSizeScale, t, 1.0, 2, m.objSeed);
           } else if (atom.style.halving){
             const silverA=[220,228,235], silverB=[160,170,185];
             const pulse=1.0+0.28*Math.sin(t*3.2+i*0.7+j*0.21);
@@ -727,7 +741,7 @@ function startSketch(blk, txsForBg){
               Math.round(atom.colors.electron[1]*(1-mixT)+atom.style.ringColor[1]*mixT),
               Math.round(atom.colors.electron[2]*(1-mixT)+atom.style.ringColor[2]*mixT),
             ];
-            drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, 1.0, effModeE, m.objSeed);
+            drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, 1.0, (overrides.electron??atom.setModes.electrons), m.objSeed);
           }
           p.pop();
 
@@ -742,7 +756,7 @@ function startSketch(blk, txsForBg){
   p5Instance=new p5(sketch, container);
 }
 
-/* ---------- networking ---------- */
+/* ---------------- net & boot --------------------------- */
 const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
@@ -754,10 +768,7 @@ async function fetchAllBlockTxs(hash){
     if (Array.isArray(first)) {
       for (const t of first) txs.push({ txid:t.txid||t.hash, vsize:t.vsize||t.size, size:t.size, fee:t.fee });
     }
-  }catch(err){
-    console.warn('first page /txs failed:', err?.message||err);
-    return txs;
-  }
+  }catch(err){ console.warn('first page /txs failed:', err?.message||err); return txs; }
   let page = 1;
   while (true) {
     try {
@@ -765,10 +776,7 @@ async function fetchAllBlockTxs(hash){
       if (!arr || !arr.length) break;
       for (const t of arr) txs.push({ txid:t.txid||t.hash, vsize:t.vsize||t.size, size:t.size, fee:t.fee });
       page += 1;
-    } catch (err) {
-      console.warn(`stop paging at /txs/${page}:`, err?.message || err);
-      break;
-    }
+    } catch (err) { console.warn(`stop paging at /txs/${page}:`, err?.message || err); break; }
   }
   return txs;
 }
@@ -783,9 +791,7 @@ async function loadBlockByHeight(height){
   $('#progress').style.display='none';
 
   // reset selectors to Auto on new load
-  $('#selProton').value='';
-  $('#selNeutron').value='';
-  $('#selElectron').value='';
+  $('#selProton').value=''; $('#selNeutron').value=''; $('#selElectron').value='';
   overrides={proton:null, neutron:null, electron:null};
 
   startSketch(blk, txs);
@@ -796,17 +802,16 @@ async function loadLatest(){
   await loadBlockByHeight(h);
 }
 
-/* ---------- HUD wiring ---------- */
+/* HUD wiring */
 ['pointerdown','wheel'].forEach(ev=>$('#hud').addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>$('#hud').addEventListener(ev,()=>{uiPointerDown=false;}));
-
 document.getElementById('loadBtn').onclick=async()=>{const h=Number(document.getElementById('heightInput').value); if(!h){alert('Enter a block height'); return;}
   try{ await loadBlockByHeight(h);}catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 document.getElementById('latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 
 resizeBG();
-// loadLatest(); // optional autoload
-// new6
+// loadLatest(); // optional
+// new7
 </script>
 </body>
 </html>
