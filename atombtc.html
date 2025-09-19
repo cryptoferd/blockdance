@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Multi-Skins + HUD Overrides</title>
+<title>Bitcoin Block Atom — Multi-Skins + HUD (shader fix)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -64,7 +64,7 @@
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* ---------- FORCE OVERRIDES (controlled by HUD) ---------- */
+/* ---------- FORCE OVERRIDES ---------- */
 let FORCE = { electron: null, proton: null, neutron: null };
 let __CURRENT_HEIGHT = null;
 function reloadCurrent(){
@@ -123,8 +123,8 @@ const MODE_LAVA       = 4;
 const MODE_SPIKES     = 5;
 const MODE_WIREFRAME  = 6;
 
-/* ---------- shader ---------- */
-const VERT=`precision mediump float;
+/* ---------- shaders (precision + no nested funcs) ---------- */
+const VERT=`precision highp float;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix, uProjectionMatrix;
 uniform int uMode;
@@ -157,7 +157,8 @@ void main(){
   vNormal = normalize(nrm);
   gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(pos,1.0));
 }`;
-const FRAG=`precision mediump float;
+
+const FRAG=`precision highp float;
 varying vec3 vObjPos;
 varying vec3 vNormal;
 uniform vec3 uColorA,uColorB;
@@ -177,26 +178,33 @@ float n3(vec3 p){vec3 i=floor(p),f=fract(p);
  return mix(n0,n1,u.z);
 }
 float blinn(vec3 n,vec3 l,vec3 v,float sh){vec3 hh=normalize(l+v);return pow(max(dot(n,hh),0.0),sh);}
+
+/* moved out of style_marble: GLSL ES 1.0 forbids nested function definitions */
+float stripe2(vec2 uv,float ph,float f,float time,float amp,float speed,float phase){
+  float zm=1.0+amp*0.35*sin(time*(0.7+speed)+ph+phase);
+  uv*=zm;
+  vec2 w1=vec2(n3(vec3(uv*0.8*f,time*0.35+ph+phase)),n3(vec3(uv*1.1*f+3.17,time*0.28+ph+1.7+phase)));
+  uv+=(w1-0.5)*(0.35+0.45*amp);
+  float s=sin((uv.x*6.2831*f*0.85)+(uv.y*6.2831*f*0.45)+3.2*w1.x+(time*(0.55+0.6*speed))+ph+phase);
+  return 0.5+0.5*s;
+}
+
 vec3 style_marble(vec3 n, vec3 V){
   vec3 p=vObjPos; float r=length(p.xy);
   float sw=uAnimAmp*(0.5+0.5*sin(uTime*(0.6+uAnimSpeed)+uBlockPhase));
   float a=sw*r*1.8; float ca=cos(a),sa=sin(a); p.xz=mat2(ca,-sa,sa,ca)*p.xz;
   vec3 w=pow(abs(n),vec3(6.0)); w/=max(w.x+w.y+w.z,1e-4);
   float f=uMarbleScale;
-  float stripe(vec2 uv,float ph,float f){
-    float zm=1.0+uAnimAmp*0.35*sin(uTime*(0.7+uAnimSpeed)+ph+uBlockPhase);
-    uv*=zm;
-    vec2 w1=vec2(n3(vec3(uv*0.8*f,uTime*0.35+ph+uBlockPhase)),n3(vec3(uv*1.1*f+3.17,uTime*0.28+ph+1.7+uBlockPhase)));
-    uv+=(w1-0.5)*(0.35+0.45*uAnimAmp);
-    float s=sin((uv.x*6.2831*f*0.85)+(uv.y*6.2831*f*0.45)+3.2*w1.x+(uTime*(0.55+0.6*uAnimSpeed))+ph+uBlockPhase);
-    return 0.5+0.5*s;
-  }
-  float sx=stripe(p.yz,0.0,f), sy=stripe(p.zx,2.1,f), sz=stripe(p.xy,4.2,f);
+  float sx=stripe2(p.yz,0.0,f,uTime,uAnimAmp,uAnimSpeed,uBlockPhase);
+  float sy=stripe2(p.zx,2.1,f,uTime,uAnimAmp,uAnimSpeed,uBlockPhase);
+  float sz=stripe2(p.xy,4.2,f,uTime,uAnimAmp,uAnimSpeed,uBlockPhase);
   float t=pow(smoothstep(0.10,0.90,sx*w.x+sy*w.y+sz*w.z),0.85);
   vec3 tint=mix(uColorA,uColorB,t);
   float roughK=clamp((uMarbleScale-0.8)/5.2,0.0,1.0);
   float freq=mix(40.0,140.0,roughK);
-  float gx=stripe(p.yz,1.7,freq), gy=stripe(p.zx,3.8,freq), gz=stripe(p.xy,5.9,freq);
+  float gx=stripe2(p.yz,1.7,freq,uTime,uAnimAmp,uAnimSpeed,uBlockPhase);
+  float gy=stripe2(p.zx,3.8,freq,uTime,uAnimAmp,uAnimSpeed,uBlockPhase);
+  float gz=stripe2(p.xy,5.9,freq,uTime,uAnimAmp,uAnimSpeed,uBlockPhase);
   vec3 base=tint*(0.83+0.17*(gx*w.x+gy*w.y+gz*w.z));
   vec3 L1=normalize(vec3(0.6,0.7,0.5)), L2=normalize(vec3(-0.4,0.65,-0.2));
   float rough=mix(0.55,0.12,roughK), shin=mix(36.0,200.0,1.0-rough);
@@ -273,6 +281,7 @@ void main(){
 
 /* ---------- mapping / constants ---------- */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
+
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
@@ -294,7 +303,7 @@ function paletteFromHeight(height){
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
 
-/* ---------- Treemap background ---------- */
+/* ---------- Treemap background (unchanged) ---------- */
 const BG_GREEN = [0x0B,0x4F,0x35];
 const BG_YELLOW= [0xFF,0xFF,0x00];
 const BG_ORANGE= [0xFF,0xA5,0x00];
@@ -437,7 +446,7 @@ function drawBackgroundFrame({halving}, t){
   }
 }
 
-/* ---------- style choice per group (with FORCE) ---------- */
+/* ---------- style choice (FORCE aware) ---------- */
 function chooseModeElectron(atom,i,j){
   if (FORCE && FORCE.electron!=null) return FORCE.electron|0;
   const hb = lastByte(atom.block.id||atom.block.hash||'00');
@@ -458,6 +467,7 @@ function chooseModeNeutron(atom,k){
 function modeName(m){ return MODE_NAMES[m] || 'Marble'; }
 
 /* ---------- build atom from block ---------- */
+const NUCLEUS_R0_CONST=NUCLEUS_R0; // no-op, just to keep lints calm
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
   const bits=b.bits??0, nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
@@ -522,7 +532,7 @@ function buildAtomFromBlock(b){
     shader:{MARBLE_INT,MARBLE_SCALE,animAmp,animSpeed,blockPhase},
     style:{
       eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick, ringAlpha, ringColor, nucleusTight:clamp((b.weight/Math.max(1,b.size*4))*0.75+(1.15-0.55*feeSpread()),0.6,1.4),
+      ringThick, ringAlpha, ringColor, nucleusTight:tightness,
       halving, disco:isDisco
     }
   };
@@ -584,7 +594,7 @@ function injectPanels(atom, skinSummary){
       <tr><td>Electrons</td><td>${skinSummary.electrons}</td></tr>
       <tr><td>Protons</td><td>${skinSummary.protons}</td></tr>
       <tr><td>Neutrons</td><td>${skinSummary.neutrons}</td></tr>
-      <tr><td>Notes</td><td>Skins are chosen deterministically from block data (height, hash bytes, merkle root). HUD overrides take precedence for quick demos.</td></tr>
+      <tr><td>Notes</td><td>Skins are chosen from block data. HUD overrides take precedence for demos.</td></tr>
     </table>
   `;
   body.appendChild(sec);
@@ -600,8 +610,8 @@ function injectPanels(atom, skinSummary){
   const infoBody=document.createElement('div'); infoBody.id='infoBody';
   infoBody.innerHTML = `
     <h3>Skins</h3>
-    <p>Available: Marble, Toon (cel), Iridescent, Glass (alpha), Lava (FBM), Spikes (ferrofluid displacement), Wireframe (neon grid).</p>
-    <p>Halving blocks keep gold nucleus + silver pulsing electrons. Block 170 is Rainbow Disco.</p>
+    <p>Marble, Toon, Iridescent, Glass, Lava (FBM), Spikes (ferrofluid displacement), Wireframe.</p>
+    <p>Halving blocks: gold nucleus + silver pulsing electrons. Block 170: rainbow disco.</p>
   `;
   info.appendChild(infoBody);
   document.body.appendChild(info);
@@ -622,11 +632,11 @@ function startSketch(blk, txsForBg){
 
   const atom=buildAtomFromBlock(blk);
 
-  // background treemap source
+  // BG
   const txs = (txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
   resizeBG(); renderTreemapBase(txs);
 
-  // build skin summary
+  // skin summary
   const eSet=new Set(), pSet=new Set(), nSet=new Set();
   atom.shells.forEach((cnt,i)=>{ for(let j=0;j<cnt;j++){ eSet.add(modeName(chooseModeElectron(atom,i,j))); }});
   for(let k=0;k<Math.min(24,atom.Z);k++) pSet.add(modeName(chooseModeProton(atom,k)));
@@ -639,13 +649,18 @@ function startSketch(blk, txsForBg){
       const cnv = p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
       p.setAttributes('alpha', true, 'antialias', true, 'premultipliedAlpha', false);
-      orbShader=p.createShader(VERT,FRAG);
+      try{
+        orbShader=p.createShader(VERT,FRAG);
+      }catch(err){
+        console.error('Shader creation error:', err);
+        SHADER_OK=false; document.getElementById('warn').style.display='block';
+      }
     };
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs); };
 
     function drawOrbMat(cA,cB,r,t,mode,alpha,spikeAmp,amp,spd,blockPhase){
       p.noStroke();
-      if(SHADER_OK){
+      if(SHADER_OK && orbShader){
         try{
           p.shader(orbShader);
           orbShader.setUniform('uColorA', cA.map(v=>v/255));
@@ -661,10 +676,16 @@ function startSketch(blk, txsForBg){
           orbShader.setUniform('uSpikeAmp', spikeAmp||0.0);
           p.sphere(r, 48, 32);
           p.resetShader(); return;
-        }catch(e){ SHADER_OK=false; $('#warn').style.display='block'; p.resetShader(); }
+        }catch(e){
+          console.error('Shader draw error:', e);
+          SHADER_OK=false; document.getElementById('warn').style.display='block'; p.resetShader();
+        }
       }
-      p.ambientMaterial(cA[0],cA[1],cA[2]); p.sphere(r);
+      // SAFE COLOR FALLBACK (no lights needed)
+      p.fill(cA[0], cA[1], cA[2], 255*alpha);
+      p.sphere(r, 24, 16);
     }
+
     const hueToRgb=h=>hslToRgb((h%360)/360, 0.95, 0.55);
     function drawRainbowRings(t){
       const steps = 180, baseHue = (t*160) % 360;
@@ -817,18 +838,18 @@ async function fetchAllBlockTxs(hash, maxPages=400){
 }
 async function loadBlockByHeight(height){
   __CURRENT_HEIGHT = height;
-  $('#progress').style.display='block'; $('#progress').textContent='Resolving block '+height+'…';
+  document.getElementById('progress').style.display='block'; document.getElementById('progress').textContent='Resolving block '+height+'…';
   const hash=await fetchText(API+'/block-height/'+height);
-  $('#progress').textContent='Fetching header…';
+  document.getElementById('progress').textContent='Fetching header…';
   const blk=await fetchJSON(API+'/block/'+hash);
-  $('#progress').textContent='Fetching transactions…';
+  document.getElementById('progress').textContent='Fetching transactions…';
   const txs=await fetchAllBlockTxs(hash);
-  $('#progress').style.display='none';
+  document.getElementById('progress').style.display='none';
   startSketch(blk, txs);
 }
 async function loadLatest(){
-  $('#progress').style.display='block'; $('#progress').textContent='Getting tip height…';
-  const h=await fetchText(API+'/blocks/tip/height'); $('#heightInput').value=h;
+  document.getElementById('progress').style.display='block'; document.getElementById('progress').textContent='Getting tip height…';
+  const h=await fetchText(API+'/blocks/tip/height'); document.getElementById('heightInput').value=h;
   await loadBlockByHeight(h);
 }
 
@@ -847,12 +868,15 @@ document.getElementById('applyForceBtn').onclick=()=>{ readHUDIntoForce(); reloa
 document.getElementById('resetForceBtn').onclick=()=>{ FORCE={electron:null,proton:null,neutron:null}; syncHUDFromForce(); reloadCurrent(); };
 
 // Height buttons
-$('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
-  try{ await loadBlockByHeight(h);}catch(e){ $('#progress').textContent='Error: '+e.message; }};
-$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ $('#progress').textContent='Error: '+e.message; }};
+document.getElementById('loadBtn').onclick=async()=>{const h=Number(document.getElementById('heightInput').value); if(!h){alert('Enter a block height'); return;}
+  try{ await loadBlockByHeight(h);}catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
+document.getElementById('latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
 
+/* background canvas boot */
+const bgCanvas = document.getElementById('bg2d'); // already declared above, reusing
+const bgCtx = bgCanvas.getContext('2d');          // reused
 resizeBG();
-// loadLatest(); // optional auto-load
+// loadLatest(); // optional
 </script>
 </body>
 </html>
