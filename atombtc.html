@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — effects + treemap + specials</title>
+<title>Bitcoin Block Atom — effects + treemap + specials (shader-fixed)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -69,34 +69,37 @@ const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; re
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
 /* ---------- shader (multi-effect) ---------- */
+/* IMPORTANT: include aNormal + uNormalMatrix so the program links on all drivers */
 const VERT = `
 precision mediump float;
 attribute vec3 aPosition;
+attribute vec3 aNormal;
 uniform mat4 uModelViewMatrix, uProjectionMatrix;
+uniform mat3 uNormalMatrix;
 varying vec3 vPos;
+varying vec3 vNormal;
 void main(){
   vPos = aPosition;
+  vNormal = normalize(uNormalMatrix * aNormal);
   gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(aPosition, 1.0));
 }
 `;
 
-// uMode:
-// 0=marble, 1=glass, 2=wireframe, 3=lava, 4=toon, 5=iridescent, 6=spikes(ferrofluid), 7=metallic, 8=safe
+// uMode: 0=marble,1=glass,2=wireframe,3=lava,4=toon,5=iridescent,6=spikes,7=metallic,8=safe
 const FRAG = `
 precision mediump float;
 varying vec3 vPos;
+varying vec3 vNormal;
 
 uniform vec3 uColorA, uColorB;
 uniform float uTime;
 uniform float uAlpha;
 uniform int uMode;
-uniform float uPhase;  // block phase
-uniform float uAmp;    // anim amp
-uniform float uSpeed;  // anim speed
+uniform float uPhase;
+uniform float uAmp;
+uniform float uSpeed;
 
-// hash noise
 float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
-// smooth noise
 float n3(vec3 p){
   vec3 i=floor(p), f=fract(p);
   float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
@@ -109,18 +112,11 @@ float n3(vec3 p){
   float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
   return mix(n0,n1,u.z);
 }
-float fbm(vec3 p){
-  float s=0.0, a=0.5;
-  for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.02; a*=0.5; }
-  return s;
-}
-vec3 hsv2rgb(vec3 c){ // for iridescent / disco hues
-  vec3 p=abs(fract(c.xxx+vec3(0.,2./3.,1./3.))*6.-3.);
-  return c.z*mix(vec3(1.0), clamp(p-1.0,0.0,1.0), c.y);
-}
+float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.02; a*=0.5; } return s; }
+vec3 hsv2rgb(vec3 c){ vec3 p=abs(fract(c.xxx+vec3(0.,2./3.,1./3.))*6.-3.); return c.z*mix(vec3(1.0), clamp(p-1.0,0.0,1.0), c.y); }
 
 void main(){
-  vec3 n = normalize(vPos);
+  vec3 n = normalize(vNormal);
   vec3 V = vec3(0.0,0.0,1.0);
   vec3 L1=normalize(vec3(0.6,0.7,0.5));
   vec3 L2=normalize(vec3(-0.4,0.65,-0.2));
@@ -129,25 +125,24 @@ void main(){
 
   vec3 colA=uColorA, colB=uColorB;
   float t = uTime*(0.6+uSpeed);
-
   vec3 col;
+
   if(uMode==0){ // marble
-    float s = fbm(n*3.2 + vec3(0.0, t*0.25+uPhase, 0.0));
-    float veins = sin((n.x+n.y+n.z)*8.0 + s*6.0 + uPhase);
+    float s = fbm(normalize(vPos)*3.2 + vec3(0.0, t*0.25+uPhase, 0.0));
+    float veins = sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase);
     float m = smoothstep(-0.2,0.7,veins);
     vec3 base = mix(colA,colB,m);
     col = base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   } else if(uMode==1){ // glass
-    float w = pow(abs(dot(n,V)), 8.0);
     float fres = pow(1.0 - max(dot(n,V),0.0), 3.0);
-    col = mix(colA, colB, 0.5) * (0.08 + 0.15*ndl) + vec3(1.0)*(fres*0.85 + w*0.15);
+    col = mix(colA, colB, 0.5) * (0.08 + 0.15*ndl) + vec3(1.0)*fres*0.85;
   } else if(uMode==2){ // wireframe
-    vec3 g=abs(fract(n*6.0+0.5)-0.5)/(fwidth(n*6.0)+1e-3);
+    vec3 g=abs(fract(normalize(vPos)*6.0+0.5)-0.5)/(fwidth(normalize(vPos)*6.0)+1e-3);
     float edge = clamp(1.0 - min(min(g.x,g.y),g.z), 0.0, 1.0);
     vec3 base = mix(colA,colB,0.5+0.5*sin(t*0.5));
-    col = base*0.2 + vec3(0.2,1.0,0.2)*edge; // green wires
+    col = base*0.2 + vec3(0.2,1.0,0.2)*edge;
   } else if(uMode==3){ // lava
-    float f = fbm(n*4.0 + vec3(0.0,t*0.7,0.0));
+    float f = fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0));
     float veins = smoothstep(0.55,0.8,f);
     vec3 hot = vec3(1.0,0.35,0.0);
     vec3 cool = vec3(0.05,0.02,0.02);
@@ -160,14 +155,14 @@ void main(){
     float h = fract(0.5 + 0.35*dot(n,vec3(0.3,0.8,0.5)) + 0.15*sin(t + uPhase));
     vec3 iri = hsv2rgb(vec3(h, 0.9, 1.0));
     col = mix(iri, mix(colA,colB,0.4), 0.3) * (0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
-  } else if(uMode==6){ // spikes / ferrofluid
-    float s = fbm(n*6.0 + vec3(0.0,t*1.1,0.0));
+  } else if(uMode==6){ // spikes
+    float s = fbm(normalize(vPos)*6.0 + vec3(0.0,t*1.1,0.0));
     float spikes = pow(s, 6.0);
     col = mix(colA,colB, spikes) * (0.25+0.75*ndl) + vec3(1.0)*rim*0.12;
   } else if(uMode==7){ // metallic
     float w = pow(abs(dot(n, normalize(L1+L2))), 32.0);
-    col = mix(colA,colB,0.5)*(0.18+0.4*ndl) + vec3(1.0)*w*0.8 + vec3(1.0)*rim*0.1;
-  } else { // 8: safe
+    col = mix(colA,colB,0.5)*(0.18+0.5*ndl) + vec3(1.0)*w*0.8 + vec3(1.0)*rim*0.1;
+  } else {
     col = mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
 
@@ -198,12 +193,7 @@ function paletteFromHeight(height){
 }
 function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
-
-function styleModeFromHeight(h){
-  // 0 marble,1 glass,2 wireframe,3 lava,4 toon,5 iridescent,6 spikes,7 metallic
-  const cycle=[0,3,7,4,2,5,1,6];
-  return cycle[h % cycle.length];
-}
+function styleModeFromHeight(h){ const cycle=[0,3,7,4,2,5,1,6]; return cycle[h % cycle.length]; }
 
 function buildAtomFromBlock(b){
   const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
@@ -269,12 +259,9 @@ function buildAtomFromBlock(b){
   const disco = height===170;
   const halving = !disco && isHalving(height);
 
-  // Choose default material mode
   let mode = styleModeFromHeight(height);
-
-  // Special overrides
-  if (disco) mode = 5; // iridescent base, but we’ll rainbow everything explicitly in draw
-  if (halving) mode = 7; // metallic base (gold nucleus, silver electrons)
+  if (disco) mode = 5;
+  if (halving) mode = 7;
 
   return {
     block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
@@ -345,8 +332,8 @@ function injectPanels(atom){
   <li><b>Modes:</b> Material effect chosen from height; Halvings & block 170 override.</li>\
   </ul>\
   <h3>Specials</h3>\
-  <p><b>Halving blocks:</b> Pulsing orange backdrop, gold nucleus (glow-like rim), silver electrons pulsing size.</p>\
-  <p><b>Block 170:</b> Full ROYGBIV rainbow rings & iridescent, independently pulsing, smoothly cycling orbs.</p>';
+  <p><b>Halving blocks:</b> Pulsing orange backdrop, gold nucleus (rim glow), silver electrons pulsing size.</p>\
+  <p><b>Block 170:</b> ROYGBIV rainbow rings & iridescent, independently pulsing, smoothly cycling orbs.</p>';
   info.appendChild(infoBody); document.body.appendChild(info);
 
   const warn=document.createElement('div'); warn.id='warn'; warn.textContent='Shader fallback active (simplified lighting).'; document.body.appendChild(warn);
@@ -436,7 +423,6 @@ function renderTreemapBase(txs){
 function drawBackgroundFrame(atom,t){
   bgCtx.clearRect(0,0,bgW,bgH);
   bgCtx.drawImage(bgBaseCanvas,0,0);
-  // Halving pulsing orange/black overlay
   if(atom.style.halving && !atom.style.disco){
     const pulse=0.5+0.5*Math.sin(t*2.2);
     bgCtx.fillStyle=`rgba(255,140,0,${0.18+0.22*pulse})`;
@@ -454,7 +440,6 @@ function startSketch(blk, txsForBg){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // build treemap
   const txs=(txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
   resizeBG(); renderTreemapBase(txs);
 
@@ -462,17 +447,22 @@ function startSketch(blk, txsForBg){
     p.setup=function(){
       const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
-      p.setAttributes('alpha', false); // opaque 3D over 2D bg
+      p.setAttributes('alpha', false);
       p.setAttributes('antialias', true, 'premultipliedAlpha', false);
 
       try{ orbShader=p.createShader(VERT,FRAG); }
       catch(err){ console.error('Shader creation error:', err); SHADER_OK=false; $('#warn').style.display='block'; }
+
+      // ensure fallback materials are visible if shader fails
+      p.ambientLight(120);
+      p.directionalLight(255,255,255, 0.5,0.6,0.4);
     };
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs); };
 
     function drawOrbMat(cA,cB,r,t,alpha,mode){
       if(!SHADER_OK || !orbShader){
-        p.noStroke(); p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.sphere(r,40,28);
+        p.noStroke(); p.fill(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.shininess(20); p.specularMaterial(60);
+        p.sphere(r,48,36);
         return;
       }
       try{
@@ -491,15 +481,13 @@ function startSketch(blk, txsForBg){
         console.warn('Shader draw error — switching to fallback:', e);
         SHADER_OK=false; $('#warn').style.display='block';
         p.resetShader();
-        p.noStroke(); p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.sphere(r,40,28);
+        p.noStroke(); p.fill(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.sphere(r,48,36);
       }finally{
         if (SHADER_OK) p.resetShader();
       }
     }
 
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
-
-    // Full ROYGBIV rainbow for block 170 rings
     function drawRainbowRingsFull(t){
       const steps=360;
       for(let i=0;i<atom.shells.length;i++){
@@ -545,21 +533,18 @@ function startSketch(blk, txsForBg){
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
         if (atom.style.disco){
-          // iridescent + pulsing color per nucleon
           const hue = (t*240 + q.hueOffset) % 360;
           const col = hueToRgb(hue);
           const pulse = 1.0 + 0.35*Math.sin(t*9.0 + q.hueOffset*0.05);
-          drawOrbMat(col, col, NUCLEON_R*pulse, t, 1.0, 5); // iridescent
+          drawOrbMat(col, col, NUCLEON_R*pulse, t, 1.0, 5);
         } else if(atom.style.halving){
-          // gold metallic (with bright rim from shader)
           const goldA=[255,215,64], goldB=[255,170,32];
           drawOrbMat(goldA, goldB, NUCLEON_R, t, 1.0, 7);
         } else {
-          // normal: protons marble-ish, neutrons subtle metal
           if(q.isProton){
-            drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 1.0, 0); // marble
+            drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 1.0, 0);
           } else {
-            drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 1.0, 7); // metallic
+            drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 1.0, 7);
           }
         }
         p.pop();
@@ -579,22 +564,18 @@ function startSketch(blk, txsForBg){
           const pt=vmul(basePt, wob);
 
           p.push(); p.translate(pt[0],pt[1],pt[2]);
-
           if (atom.style.disco){
             const hue = (t*240 + m.hueOffset) % 360;
             const col = hueToRgb(hue);
             const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
-            drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 5); // iridescent
+            drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 5);
           } else if (atom.style.halving){
-            // silver metallic, pulsing size
             const silverA=[220,228,235], silverB=[160,170,185];
             const pulse=1.0+0.30*Math.sin(t*3.2+i*0.7+j*0.21);
             drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 7);
           } else {
-            // map shells to different effects for variety
-            const modeCycle=[0,3,2,1,6,4,7,5]; // marble,lava,wire,glass,spikes,toon,metal,iridescent
+            const modeCycle=[0,3,2,1,6,4,7,5];
             const mode=modeCycle[(i+j+atom.shader.mode)%modeCycle.length];
-            // color: blend electron color toward ring hue slightly
             const mixT=((j%7)/7)*0.35;
             const eCol=[
               Math.round(atom.colors.electron[0]*(1-mixT)+atom.style.ringColor[0]*mixT),
@@ -621,7 +602,6 @@ const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
 
-// Defensive paging; stop cleanly if /txs/N returns 400 or an empty page.
 async function fetchAllBlockTxs(hash){
   const txs = [];
   const pageSize = 25;
