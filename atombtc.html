@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bitcoin Block Atom — Multi-Skins + HUD (paging + shader fixes)</title>
+<title>Bitcoin Block Atom — stable shaders + safe paging</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -120,14 +120,13 @@ const MODE_LAVA       = 4;
 const MODE_SPIKES     = 5;
 const MODE_WIREFRAME  = 6;
 
-/* ---------- shaders (float uMode + mediump FRAG) ---------- */
+/* ---------- shaders (robust link: no vNormal varying, vertex doesn’t use uMode) ---------- */
 const VERT=`precision highp float;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix, uProjectionMatrix;
-uniform float uMode;
 uniform float uTime, uSpikeAmp, uAnimSpeed, uBlockPhase;
 varying vec3 vObjPos;
-varying vec3 vNormal;
+
 float h(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
 float n3(vec3 p){vec3 i=floor(p),f=fract(p);
  float n000=h(i+vec3(0,0,0)),n100=h(i+vec3(1,0,0));
@@ -142,26 +141,24 @@ float n3(vec3 p){vec3 i=floor(p),f=fract(p);
 }
 float fbm(vec3 p){float a=0.5, s=0.0; vec3 pp=p;
  for(int i=0;i<4;i++){ s+=a*n3(pp); pp*=2.1; a*=0.5; } return s; }
+
 void main(){
   vec3 pos = aPosition;
-  vec3 nrm = normalize(aPosition);
-  if (uMode>4.5 && uMode<5.5) { // spikes
-    float f = fbm(nrm*3.0 + vec3(0.0,0.0,uTime*(0.8+uAnimSpeed)) + uBlockPhase);
-    float spike = (f-0.5)*2.0;
-    pos += nrm * uSpikeAmp * spike;
-  }
+  // spikes displacement always available; amount is controlled by uniform
+  float f = fbm(normalize(aPosition)*3.0 + vec3(0.0,0.0,uTime*(0.8+uAnimSpeed)) + uBlockPhase);
+  pos += normalize(aPosition) * uSpikeAmp * (f-0.5)*2.0;
+
   vObjPos = pos;
-  vNormal = normalize(nrm);
   gl_Position = uProjectionMatrix * (uModelViewMatrix * vec4(pos,1.0));
 }`;
 
 const FRAG=`precision mediump float;
 varying vec3 vObjPos;
-varying vec3 vNormal;
 uniform vec3 uColorA,uColorB;
 uniform float uMarbleInt,uMarbleScale,uTime,uAnimAmp,uAnimSpeed,uBlockPhase;
-uniform float uMode;
+uniform float uMode;   // float selector
 uniform float uAlpha;
+
 float h(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
 float n3(vec3 p){vec3 i=floor(p),f=fract(p);
  float n000=h(i+vec3(0,0,0)),n100=h(i+vec3(1,0,0));
@@ -176,7 +173,6 @@ float n3(vec3 p){vec3 i=floor(p),f=fract(p);
 }
 float blinn(vec3 n,vec3 l,vec3 v,float sh){vec3 hh=normalize(l+v);return pow(max(dot(n,hh),0.0),sh);}
 
-/* helpers */
 float stripe2(vec2 uv,float ph,float f,float time,float amp,float speed,float phase){
   float zm=1.0+amp*0.35*sin(time*(0.7+speed)+ph+phase);
   uv*=zm;
@@ -191,9 +187,11 @@ float gridLine(vec2 uv, float s){
   return smoothstep(0.02,0.005,d);
 }
 
-/* styles */
-vec3 style_marble(vec3 n, vec3 V){
-  vec3 p=vObjPos; float r=length(p.xy);
+/* styles (compute normal from position) */
+vec3 style_marble(vec3 pos){
+  vec3 n = normalize(pos);
+  vec3 V = vec3(0.0,0.0,1.0);
+  vec3 p=pos; float r=length(p.xy);
   float sw=uAnimAmp*(0.5+0.5*sin(uTime*(0.6+uAnimSpeed)+uBlockPhase));
   float a=sw*r*1.8; float ca=cos(a),sa=sin(a); p.xz=mat2(ca,-sa,sa,ca)*p.xz;
   vec3 w=pow(abs(n),vec3(6.0)); w/=max(w.x+w.y+w.z,1e-4);
@@ -216,7 +214,9 @@ vec3 style_marble(vec3 n, vec3 V){
   vec3 col=pow(base + spec + tint*rim, vec3(0.96));
   return clamp(col,0.0,1.0);
 }
-vec3 style_toon(vec3 n, vec3 V){
+vec3 style_toon(vec3 pos){
+  vec3 n = normalize(pos);
+  vec3 V = vec3(0.0,0.0,1.0);
   vec3 L=normalize(vec3(0.6,0.7,0.5));
   float NdL=max(dot(n,L),0.0);
   float bands=5.0;
@@ -225,7 +225,9 @@ vec3 style_toon(vec3 n, vec3 V){
   vec3 base=mix(uColorA,uColorB,stepped);
   return clamp(base + vec3(rim)*0.12, 0.0,1.0);
 }
-vec3 style_iridescent(vec3 n, vec3 V){
+vec3 style_iridescent(vec3 pos){
+  vec3 n = normalize(pos);
+  vec3 V = vec3(0.0,0.0,1.0);
   float fres = pow(1.0 - max(dot(n,V),0.0), 1.2);
   vec3 tint = mix(uColorA,uColorB,0.5+0.5*sin(uTime*0.7+uBlockPhase));
   vec3 twist = vec3(fres*0.3, -fres*0.1, fres*0.15);
@@ -233,16 +235,18 @@ vec3 style_iridescent(vec3 n, vec3 V){
   float spec=pow(max(dot(n,normalize(L+V)),0.0), 80.0)*(0.3+0.7*fres);
   return clamp(tint + twist + spec, 0.0,1.0);
 }
-vec3 style_glass(vec3 n, vec3 V){
+vec3 style_glass(vec3 pos){
+  vec3 n = normalize(pos);
+  vec3 V = vec3(0.0,0.0,1.0);
   float fres = pow(1.0 - max(dot(n,V),0.0), 3.0);
   vec3 edge = mix(vec3(0.8), vec3(1.0), fres);
   vec3 tint = mix(uColorA,uColorB,0.5);
   vec3 col  = mix(tint*0.25, edge, 0.85);
   return clamp(col, 0.0,1.0);
 }
-vec3 style_lava(vec3 n, vec3 V){
-  float f=0.0; vec3 p=vObjPos*2.5 + vec3(0,0,uTime*0.4);
-  float a=0.5; vec3 pp=p;
+vec3 style_lava(vec3 pos){
+  vec3 p=pos*2.5 + vec3(0,0,uTime*0.4);
+  float a=0.5; float f=0.0; vec3 pp=p;
   for(int i=0;i<4;i++){ f+=a*n3(pp); pp*=2.1; a*=0.5; }
   vec3 hot=vec3(1.0,0.32,0.07), cool=vec3(0.05,0.06,0.12);
   float m=smoothstep(0.55,0.9,f);
@@ -250,8 +254,8 @@ vec3 style_lava(vec3 n, vec3 V){
   float glow=pow(m,6.0)*0.65;
   return clamp(base + glow, 0.0, 1.0);
 }
-vec3 style_wire(vec3 n, vec3 V){
-  vec3 p = normalize(vObjPos);
+vec3 style_wire(vec3 pos){
+  vec3 p = normalize(pos);
   float s = 14.0;
   float gx=gridLine(p.yz, s), gy=gridLine(p.zx, s), gz=gridLine(p.xy, s);
   float g = clamp((gx+gy+gz)*0.5,0.0,1.0);
@@ -259,7 +263,9 @@ vec3 style_wire(vec3 n, vec3 V){
   vec3 base = mix(uColorA,uColorB,0.15);
   return clamp(base*0.25 + neon*g, 0.0,1.0);
 }
-vec3 style_spikes(vec3 n, vec3 V){
+vec3 style_spikes(vec3 pos){
+  vec3 n = normalize(pos);
+  vec3 V = vec3(0.0,0.0,1.0);
   float f = n3(n*4.0 + vec3(0.0,0.0,uTime*0.7) + uBlockPhase);
   float edge = pow(1.0-max(dot(n,V),0.0),1.8)*0.25;
   vec3 tint = mix(uColorA,uColorB, f);
@@ -268,16 +274,14 @@ vec3 style_spikes(vec3 n, vec3 V){
   return clamp(tint + spec + edge, 0.0,1.0);
 }
 void main(){
-  vec3 n = normalize(vNormal);
-  vec3 V = normalize(vec3(0.0,0.0,1.0));
   vec3 col;
-  if      (uMode < 0.5) col = style_marble(n,V);       // 0
-  else if (uMode < 1.5) col = style_toon(n,V);         // 1
-  else if (uMode < 2.5) col = style_iridescent(n,V);   // 2
-  else if (uMode < 3.5) col = style_glass(n,V);        // 3
-  else if (uMode < 4.5) col = style_lava(n,V);         // 4
-  else if (uMode < 5.5) col = style_spikes(n,V);       // 5
-  else                  col = style_wire(n,V);         // 6
+  if      (uMode < 0.5) col = style_marble(vObjPos);       // 0
+  else if (uMode < 1.5) col = style_toon(vObjPos);         // 1
+  else if (uMode < 2.5) col = style_iridescent(vObjPos);   // 2
+  else if (uMode < 3.5) col = style_glass(vObjPos);        // 3
+  else if (uMode < 4.5) col = style_lava(vObjPos);         // 4
+  else if (uMode < 5.5) col = style_spikes(vObjPos);       // 5
+  else                  col = style_wire(vObjPos);         // 6
   gl_FragColor = vec4(col, uAlpha);
 }`;
 
@@ -319,7 +323,7 @@ function feeToColor(fr){const t=clamp(fr/FEERATE_MAX,0,1);
 const bgCanvas=document.getElementById('bg2d'); const bgCtx=bgCanvas.getContext('2d');
 let bgBaseCanvas=document.createElement('canvas'), bgBaseCtx=bgBaseCanvas.getContext('2d');
 let bgTxs=[]; let DPR=1, bgW=0, bgH=0;
-const TREEMAP_GAMMA=0.55, TREEMAP_BASE=120, MIN_RECT_PX=2, BORDER_ALPHA=0.06, BORDER_SKIP_PX=6;
+const TREEMAP_GAMMA=0.42, TREEMAP_BASE=120, MIN_RECT_PX=2, BORDER_ALPHA=0.06, BORDER_SKIP_PX=6;
 function resizeBG(){
   DPR=Math.min(2,window.devicePixelRatio||1);
   bgW=Math.floor(window.innerWidth); bgH=Math.floor(window.innerHeight);
@@ -569,30 +573,32 @@ function startSketch(blk, txsForBg){
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs); };
 
     function drawOrbMat(cA,cB,r,t,mode,alpha,spikeAmp,amp,spd,blockPhase){
-      p.noStroke();
-      if(SHADER_OK && orbShader){
-        try{
-          p.shader(orbShader);
-          orbShader.setUniform('uColorA', cA.map(v=>v/255));
-          orbShader.setUniform('uColorB', cB.map(v=>v/255));
-          orbShader.setUniform('uMarbleInt', atom.shader.MARBLE_INT);
-          orbShader.setUniform('uMarbleScale', atom.shader.MARBLE_SCALE);
-          orbShader.setUniform('uTime', t);
-          orbShader.setUniform('uAnimAmp', amp);
-          orbShader.setUniform('uAnimSpeed', spd);
-          orbShader.setUniform('uBlockPhase', blockPhase||0.0);
-          orbShader.setUniform('uMode', Number(mode));       // float uniform
-          orbShader.setUniform('uAlpha', alpha);
-          orbShader.setUniform('uSpikeAmp', spikeAmp||0.0);
-          p.sphere(r,48,32);
-          p.resetShader(); return;
-        }catch(e){
-          console.error('Shader draw error:', e);
-          SHADER_OK=false; document.getElementById('warn').style.display='block'; p.resetShader();
-        }
+      if(!SHADER_OK || !orbShader){ // fallback
+        p.noStroke(); p.fill(cA[0],cA[1],cA[2],255*alpha); p.sphere(r,24,16); return;
       }
-      // Fallback: solid color
-      p.fill(cA[0],cA[1],cA[2],255*alpha); p.sphere(r,24,16);
+      try{
+        p.noStroke();
+        p.shader(orbShader);
+        orbShader.setUniform('uColorA', cA.map(v=>v/255));
+        orbShader.setUniform('uColorB', cB.map(v=>v/255));
+        orbShader.setUniform('uMarbleInt', atom.shader.MARBLE_INT);
+        orbShader.setUniform('uMarbleScale', atom.shader.MARBLE_SCALE);
+        orbShader.setUniform('uTime', t);
+        orbShader.setUniform('uAnimAmp', amp);
+        orbShader.setUniform('uAnimSpeed', spd);
+        orbShader.setUniform('uBlockPhase', blockPhase||0.0);
+        orbShader.setUniform('uMode', Number(mode));
+        orbShader.setUniform('uAlpha', alpha);
+        orbShader.setUniform('uSpikeAmp', spikeAmp||0.0);
+        p.sphere(r,48,32);
+      }catch(e){
+        console.warn('Shader draw error — switching to fallback:', e);
+        SHADER_OK=false; document.getElementById('warn').style.display='block';
+        p.resetShader();
+        p.noStroke(); p.fill(cA[0],cA[1],cA[2],255*alpha); p.sphere(r,24,16);
+      }finally{
+        if (SHADER_OK) p.resetShader();
+      }
     }
 
     const hueToRgb=h=>hslToRgb((h%360)/360,0.95,0.55);
@@ -708,12 +714,6 @@ function startSketch(blk, txsForBg){
           atom.electronAngles[i][j]+=baseSpeed*m.spMul;
         }
       }
-
-      if(halving){
-        const Rmax=atom.radii.length?atom.radii[atom.radii.length-1]:120;
-        const haloR=Rmax+26+6*Math.sin(t*2.0);
-        drawSoftHalo(haloR,42,28);
-      }
     };
   };
   const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1';
@@ -726,45 +726,28 @@ const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
 
-// NEW: page precisely using tx_count to avoid /txs/1 400s
+// Progressive paging — stops on short page or any error (prevents 400 spam)
 async function fetchAllBlockTxs(hash){
   const txs = [];
   const pageSize = 25;
   let page = 0;
-
-  // keep going until a page returns < 25 (last page) or throws (no more pages yet)
   while (true) {
     try {
       const arr = await fetchJSON(`${API}/block/${hash}/txs/${page}`);
       if (!arr || !arr.length) break;
-
       for (const t of arr) {
-        txs.push({
-          txid: t.txid || t.hash,
-          vsize: t.vsize || t.size,
-          size:  t.size,
-          fee:   t.fee
-        });
+        txs.push({ txid: t.txid || t.hash, vsize: t.vsize || t.size, size: t.size, fee: t.fee });
       }
-
-      // last page has < pageSize items — stop before requesting the next index
-      if (arr.length < pageSize) break;
-
+      if (arr.length < pageSize) break; // last page
       page += 1;
-
-      // optional safety cap for very large blocks (keeps the treemap snappy)
-      // if (txs.length > 12000) break;
-
+      // if (txs.length > 12000) break; // optional perf cap
     } catch (err) {
-      // If page N isn’t available (400) or not indexed yet, stop cleanly.
       console.warn(`stop paging at /txs/${page}:`, err?.message || err);
       break;
     }
   }
-
   return txs;
 }
-
 
 async function loadBlockByHeight(height){
   __CURRENT_HEIGHT=height;
@@ -788,10 +771,13 @@ const hud=$('#hud');
 ['pointerdown','wheel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>hud.addEventListener(ev,()=>{uiPointerDown=false;}));
 
-buildForceSelect(document.getElementById('forceE'));
-buildForceSelect(document.getElementById('forceP'));
-buildForceSelect(document.getElementById('forceN'));
-syncHUDFromForce();
+function buildForceSelectAll(){
+  buildForceSelect(document.getElementById('forceE'));
+  buildForceSelect(document.getElementById('forceP'));
+  buildForceSelect(document.getElementById('forceN'));
+  syncHUDFromForce();
+}
+buildForceSelectAll();
 
 document.getElementById('applyForceBtn').onclick=()=>{ readHUDIntoForce(); reloadCurrent(); };
 document.getElementById('resetForceBtn').onclick=()=>{ FORCE={electron:null,proton:null,neutron:null}; syncHUDFromForce(); reloadCurrent(); };
