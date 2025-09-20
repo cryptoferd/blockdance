@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — mobile pinch fix + closer zoom</title>
+<title>Bitcoin Block Atom — full render (nucleus + electrons)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -11,8 +11,7 @@
             font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
   canvas.p5canvas{position:fixed;inset:0;z-index:1;display:block;touch-action:none}
 
-  .uiRoot{position:fixed;inset:0;z-index:30;opacity:0;visibility:hidden;
-          transition:opacity .22s ease, visibility .22s ease;pointer-events:none}
+  .uiRoot{position:fixed;inset:0;z-index:30;opacity:1;visibility:visible;pointer-events:none}
   .uiRoot.show{opacity:1;visibility:visible}
   .uiRoot.show *{pointer-events:auto}
 
@@ -99,7 +98,7 @@
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* === utilities (same as before) === */
+/* ---------- utils ---------- */
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const mod=(a,n)=>((a%n)+n)%n;
@@ -111,9 +110,9 @@ const shiftHue=(rgb,deg)=>{const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);let hh=(h
 const lastByte = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; return parseInt(c.slice(-2),16)||0; };
 const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<c.length;i+=2){ const b=parseInt(c.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; };
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
-const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)*1 + b[2]*t)];
+const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
 
-/* === shaders: unchanged from your last working version === */
+/* ---------- shaders ---------- */
 const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix,uProjectionMatrix;
@@ -136,6 +135,7 @@ void main(){
   vec3 nrm=normalize(aPosition);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
+  // Spikes (m==6)
   if(m==6){
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float t=uTime*(1.0+uSpeed);
@@ -145,6 +145,7 @@ void main(){
     pos += nrm*(amp*spike*length(aPosition));
   }
 
+  // Glass ripple (m==1) – displaced in vertex
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -186,6 +187,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
+  // Glass (bubble) – rainbow thin-film + stronger Fresnel, more shine
   if(m==1){
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.16 + 0.06*sin(t*0.45 + uObjSeed*5.3);
@@ -195,47 +197,47 @@ void main(){
     float hue = fract(phase*0.15);
     vec3 swirl = hsv2rgb(vec3(hue, 0.55, 1.0));
     float fres = pow(1.0 - NoV, 2.0);
-    vec3 reflectCol = mix(vec3(0.97), swirl, 0.65);
+    vec3 reflectCol = mix(vec3(0.98), swirl, 0.65);
     vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
-    float spec = pow(max(dot(n,H1),0.0), 80.0)*0.9 + pow(max(dot(n,H2),0.0), 80.0)*0.7;
+    float spec = pow(max(dot(n,H1),0.0), 100.0)*0.95 + pow(max(dot(n,H2),0.0), 100.0)*0.85;
     vec3 shellTint = mix(vec3(1.0), swirl, 0.18);
-    col = shellTint*0.05 + reflectCol * (0.08 + 0.22*ndl + 0.75*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.10;
-  } else if(m==0){
+    col = shellTint*0.05 + reflectCol * (0.08 + 0.22*ndl + 0.85*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.10;
+  } else if(m==0){ // Marble
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==2){
+  } else if(m==2){ // Wireframe-ish
     float k=9.0+2.0*fract(uObjSeed*7.0);
     vec3 q=normalize(vPos);
     float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
     float edge=smoothstep(0.92,0.985,g);
     vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
     col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
-  } else if(m==3){
+  } else if(m==3){ // Lava
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3));
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
     col=mix(cool,hot,veins)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
-  } else if(m==4){
+  } else if(m==4){ // Toon
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
     col=base*(0.22+s) + vec3(1.0)*step(0.8,rim)*0.18;
-  } else if(m==5){
+  } else if(m==5){ // Iridescent
     float h=fract(0.5+0.35*dot(normalize(vPos),vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
     col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
-  } else if(m==6){
+  } else if(m==6){ // Spikes (lit)
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7));
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
     vec3 hi=base*1.7, lo=base*0.45;
     col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
-  } else if(m==7){
+  } else if(m==7){ // Metallic
     float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
-  } else if(m==8){
+  } else if(m==8){ // Sky / Clouds
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
     p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
@@ -251,7 +253,7 @@ void main(){
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
 }`;
 
-/* === math & camera === */
+/* ---------- math / camera ---------- */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
 const v3=(x,y,z)=>[x,y,z], vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
 const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -279,7 +281,7 @@ function camBasis(yaw, pitch){
   return {forward,right,up};
 }
 
-/* === palette/build (same logic) === */
+/* ---------- palette / atom build ---------- */
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
@@ -320,6 +322,7 @@ function buildAtomFromBlock(b){
   const eccGlobal=clamp(0.3 + ((version&0xf)/16)*0.5 + ((nonce&0x3f)/63)*0.2, 0.08,0.88);
   const hashLast=lastByte(hash); const ringThick=0.9, ringAlpha=220; const ringColor=shiftHue(colors.shell, (hashLast/255-0.5)*36);
   const orbitSpread=1.0+((version&0xf)-7.5)*0.01; const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
+
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){ electronAngles[i]=[]; eMeta[i]=[];
     for(let j=0;j<shells[i];j++){
@@ -333,21 +336,25 @@ function buildAtomFromBlock(b){
     } }
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
   const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
+
   const totalNuc=Math.min(900,Z+N), nucleusPoints=[]; for(let i=0;i<totalNuc;i++){
     const rNorm=Math.pow(Math.random(), tightness);
     const r=NUCLEUS_R0*(0.35+0.65*rNorm), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
     const isProton = i<Z; const hueOffset = (i*23 + (isProton?177:311)) % 360; const objSeed = ((i*101 + (isProton?37:73)) % 997)/997;
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset,objSeed});
   }
+
   const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
   const isDisco = height===170; const is1337  = height===1337; const halving = !isDisco && (height>0 && height%210000===0);
+
   return { block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
-    shader:{amp:animAmp,speed:animSpeed,blockPhase}, setModes: chooseSetModesFromBlock(b),
+    shader:{amp:animAmp,speed:animSpeed,blockPhase},
+    setModes: chooseSetModesFromBlock(b),
     style:{ eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
       ringThick, ringAlpha, ringColor, halving, disco:isDisco, is1337, nucleusTight: tightness } };
 }
 
-/* === panels === */
+/* ---------- panels ---------- */
 function injectPanels(atom){
   const det=document.getElementById('blockPanel'); det.innerHTML='';
   const sum=document.createElement('summary');
@@ -389,10 +396,10 @@ function injectPanels(atom){
   det.open=false; info.open=false;
 }
 
-/* === p5 + inputs === */
+/* ---------- p5 + inputs + draw ---------- */
 let p5Instance=null, orbShader=null, shaderLinked=false;
 let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
-let minCamDist=140, maxCamDist=20000;     // CHANGED: allow closer zoom
+let minCamDist=140, maxCamDist=20000;
 let isDragging=false, lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
 let modelSpin = 0;
@@ -419,9 +426,8 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // Allow much closer zoom but still safe
   const largestRadius = atom.radii.length ? atom.radii[atom.radii.length-1] : 140;
-  minCamDist = Math.max( largestRadius * 1.2, 90 );   // CHANGED: 1.8x -> 1.2x (closer)
+  minCamDist = Math.max( largestRadius * 1.2, 90 );
   maxCamDist = 30000;
 
   const sketch=(p)=>{
@@ -443,7 +449,7 @@ function startSketch(blk){
             isDragging=true; lastX=t.clientX; lastY=t.clientY; dragButton=p.LEFT;
           } else if(e.touches.length===2){
             const t0=e.touches[0], t1=e.touches[1];
-            pinchPrev=Math.max(1, Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY)); // >=1px
+            pinchPrev=Math.max(1, Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY));
             twoPrevMid=[(t0.clientX+t1.clientX)/2, (t0.clientY+t1.clientY)/2];
           }
           e.preventDefault();
@@ -456,13 +462,11 @@ function startSketch(blk){
           } else if(e.touches.length===2){
             const t0=e.touches[0], t1=e.touches[1];
             let d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
-            d = Math.max(1, d);                                // avoid 0
-            if(pinchPrev==null) pinchPrev=d;                    // initialize safely
+            d = Math.max(1, d);
+            if(pinchPrev==null) pinchPrev=d;
             const rawScale = d / pinchPrev;
-            // Guard against bogus values (sometimes browsers deliver huge spikes)
             const saneScale = isFinite(rawScale) ? clamp(rawScale, 0.2, 5.0) : 1.0;
-            const next = camDist / Math.pow(saneScale, 0.85);   // soften
-            // Limit per-frame zoom delta to prevent popping through
+            const next = camDist / Math.pow(saneScale, 0.85);
             const limited = clamp(next, camDist*0.6, camDist*1.6);
             camDist = clamp(limited, minCamDist, maxCamDist);
             pinchPrev = d;
@@ -503,7 +507,7 @@ function startSketch(blk){
       }
     };
     p.mouseWheel=(e)=>{
-      const s = Math.exp(e.deltaY * 0.0012); // wheel-up -> deltaY<0 -> s<1 -> zoom in
+      const s = Math.exp(e.deltaY * 0.0012); // wheel-up => deltaY<0 => s<1 => zoom in
       camDist = clamp(camDist * s, minCamDist, maxCamDist);
       e.preventDefault();
     };
@@ -511,7 +515,7 @@ function startSketch(blk){
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       const m=Math.max(0,Math.min(9,(mode|0)));
-      const a = (m===1) ? (alpha * 0.25) : alpha;
+      const a = (m===1) ? (alpha * 0.25) : alpha; // glass more see-through
       if(orbShader && shaderLinked){
         try{
           p.noStroke(); p.shader(orbShader);
@@ -522,16 +526,63 @@ function startSketch(blk){
           p.sphere(r,84,56); p.resetShader(); return;
         }catch(e){ console.warn('Shader draw error — fallback:',e); shaderLinked=false; orbShader=null; }
       }
+      // Fallback lighting
       p.resetShader(); p.noStroke();
       if(m===1){ p.ambientMaterial(240,245,250, Math.round(255*a)); p.specularMaterial(255); p.shininess(70); }
       else     { p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*a)); p.shininess(30); p.specularMaterial(80); }
       p.sphere(r,64,48);
     }
+
     function drawRings(t){
+      p.push();
       for(let i=0;i<atom.shells.length;i++){
-        const r=atom.radii[i]; p.push(); p.noFill();
-        p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220); p.strokeWeight(1.1); p.circle(0,0,r*2);
+        const r=atom.radii[i];
+        p.noFill();
+        p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220);
+        p.strokeWeight(1.1);
+        p.circle(0,0,r*2);
+      }
+      p.pop();
+    }
+
+    function drawNucleus(t){
+      const protonMode  = (overrides.proton  ?? atom.setModes.protons);
+      const neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
+      for(const q of atom.nucleusPoints){
+        p.push();
+        p.translate(q.x,q.y,q.z);
+        if(q.isProton){
+          const cA=atom.colors.proton, cB=shiftHue(atom.colors.proton,18);
+          drawOrbMat(cA,cB,NUCLEON_R,t,1.0,protonMode,q.objSeed);
+        }else{
+          const cA=shiftHue(atom.colors.neutron,-22), cB=atom.colors.neutron;
+          drawOrbMat(cA,cB,NUCLEON_R,t,1.0,neutronMode,q.objSeed);
+        }
         p.pop();
+      }
+    }
+
+    function drawElectrons(t){
+      const eMode = (overrides.electron ?? atom.setModes.electrons);
+      for(let i=0;i<atom.shells.length;i++){
+        const r=atom.radii[i], baseSpeed=atom.speeds[i];
+        for(let j=0;j<atom.shells[i];j++){
+          const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
+          const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
+          const pre=t*m.pre + m.phase;
+          const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
+          const basePt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
+          const wob=1.0 + m.rosAmp*Math.sin(th*m.rosK + m.phase*0.7);
+          const pt=vmul(basePt, wob);
+
+          p.push(); p.translate(pt[0],pt[1],pt[2]);
+          const mixT=((j%7)/7)*0.35;
+          const eCol=mixRGB(atom.colors.electron, atom.style.ringColor, mixT);
+          drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, 1.0, eMode, m.objSeed);
+          p.pop();
+
+          atom.electronAngles[i][j]+=baseSpeed*m.spMul;
+        }
       }
     }
 
@@ -539,29 +590,31 @@ function startSketch(blk){
       const t=p.millis()*0.001;
       p.background(0);
 
-      const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000; // near plane smaller for close zoom
+      const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
       p.perspective(fovy,aspect,near,far);
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
       const cy=camTarget[1]+camDist*Math.sin(camPitch);
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      modelSpin += 0.08 * (p.deltaTime/1000);
+      // constant slow spin like a coin
+      modelSpin += 0.16 * (p.deltaTime/1000);
       p.push();
       p.rotateY(modelSpin);
 
       drawRings(t);
+      drawNucleus(t);
+      drawElectrons(t);
 
-      // (Rendering of nucleus and electrons omitted here for brevity in this snippet;
-      //  keep your previous drawing loops exactly as they were.)
       p.pop();
     };
   };
+
   const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1'; document.body.appendChild(container);
   p5Instance=new p5(sketch, container);
 }
 
-/* === networking / buttons / boot === */
+/* ---------- networking / buttons / boot ---------- */
 const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
@@ -586,7 +639,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new24
+// new25
 loadLatest();
 </script>
 </body>
