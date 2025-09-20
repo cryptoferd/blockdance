@@ -2,350 +2,645 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>Bitcoin Block Atom — mobile-friendly controls</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Bitcoin Block Atom — full render (nucleus + electrons)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
-  :root{--panel:rgba(10,14,18,0.92);--border:#1e2a33;--text:#d9ecff;--muted:#9cc6eb}
-  html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
-  canvas{display:block;touch-action:none}
-  /* HUD */
-  .hud{position:fixed;z-index:20;left:12px;right:12px;top:12px;background:var(--panel);border:1px solid var(--border);
-       border-radius:14px;padding:10px;backdrop-filter:blur(6px);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  .hud input,.hud button,.hud select{font:inherit;border-radius:10px;border:1px solid var(--border);background:#121820;color:var(--text);padding:8px 10px}
-  .hud label{opacity:.9}
-  .btn{cursor:pointer}
-  .panel{position:fixed;z-index:12;background:var(--panel);border:1px solid var(--border);border-radius:14px;color:#cfe4ff;
-         padding:10px 12px;max-width:min(480px,calc(100vw-24px));backdrop-filter:blur(6px);font-size:14px}
-  #legend{left:12px;top:86px}
-  details#infoPanel{left:12px;bottom:12px}
-  details summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
-  details summary::-webkit-details-marker{display:none}
-  .badge{width:24px;height:24px;display:grid;place-items:center;border-radius:999px;background:#1e2a33;border:1px solid #2b3a44}
-  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;padding:8px 12px;background:#0009;color:#dfefff;border:1px solid #2b3a44;border-radius:10px;z-index:25;opacity:.85;transition:opacity .7s ease}
-  .hide{display:none !important}
-  @media (max-width: 720px){
-    .hud{gap:8px}
-    .hud input,.hud button,.hud select{padding:7px 9px}
+  :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
+  html,body{margin:0;height:100%;background:#000;color:var(--text);
+            font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
+  canvas.p5canvas{position:fixed;inset:0;z-index:1;display:block;touch-action:none}
+
+  .uiRoot{position:fixed;inset:0;z-index:30;opacity:1;visibility:visible;pointer-events:none}
+  .uiRoot.show{opacity:1;visibility:visible}
+  .uiRoot.show *{pointer-events:auto}
+
+  .hud{position:fixed;left:12px;top:12px;display:flex;gap:8px;align-items:center;background:var(--panel);
+       border:1px solid var(--border);border-radius:12px;padding:8px 10px;backdrop-filter:blur(6px);font-size:12px;z-index:31}
+  .hud input, .hud button, .hud select{font:inherit;border-radius:8px;border:1px solid var(--border);
+       background:#121820;color:var(--text);padding:6px 8px}
+  .hud button{cursor:pointer}
+  .hud .sep{width:1px;height:24px;background:#283543;margin:0 6px}
+
+  .panel{position:fixed;font-size:12px;color:var(--muted);padding:8px 10px;background:var(--panel);
+         border:1px solid var(--border);border-radius:12px;max-width:min(580px,calc(100vw - 24px));backdrop-filter:blur(6px)}
+  #legend{left:12px;top:78px;z-index:31}
+  #legend div{white-space:nowrap}
+
+  details#blockPanel{right:12px;bottom:12px;max-height:min(80vh,900px);overflow:auto;z-index:31}
+  details#blockPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;
+                             display:flex;justify-content:space-between;gap:8px}
+  details#blockPanel[open]>summary{border-bottom:1px solid var(--border)}
+  details#blockPanel summary::-webkit-details-marker{display:none}
+  #blkBody{padding:10px 12px;color:#b7d2ea}
+  #blkBody table{border-collapse:collapse;width:100%}
+  #blkBody td{padding:4px 0;vertical-align:top}
+  #blkBody td:first-child{color:#9cc9ee;width:42%;padding-right:10px}
+  .chip{display:inline-block;padding:2px 6px;border:1px solid #2b3a44;border-radius:8px;margin:2px;
+        color:#d7ecff;font-size:11px}
+
+  #infoPanel{left:12px;bottom:12px;z-index:31}
+  #infoPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;
+                     display:flex;gap:8px;align-items:center}
+  #infoPanel[open]>summary{border-bottom:1px solid var(--border)}
+  #infoPanel summary .badge{width:22px;height:22px;display:inline-grid;place-items:center;border-radius:999px;
+                            background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
+
+  #progress{position:fixed;left:12px;top:12px;transform:translateY(52px);z-index:40;color:#d7ecff;font-size:12px;
+            background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none}
+  #hint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:35;color:#b6c9de;opacity:0.35;font-size:12px;
+        background:rgba(7,10,14,0.6);border:1px solid #24313b;border-radius:10px;padding:7px 10px;pointer-events:none;transition:opacity .4s ease}
+  #hint.hide{opacity:0}
+
+  @media (max-width: 800px){
+    .hud{
+      left:8px; right:8px; top:8px;
+      display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px;
+      font-size:13px
+    }
+    .hud .sep{display:none}
+    #legend{left:8px; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
+    details#blockPanel, #infoPanel{left:8px; right:8px; max-width:none}
   }
 </style>
 </head>
 <body>
 
-<!-- HUD -->
-<div class="hud" id="hud">
-  <div class="row">
-    <label for="heightInput">Height:</label>
-    <input id="heightInput" type="number" min="1" style="width:140px"/>
-    <button id="loadBtn" class="btn">Load</button>
-    <button id="latestBtn" class="btn">Latest</button>
-    <button id="resetBtn" class="btn">Reset View</button>
+<div class="uiRoot show" id="uiRoot">
+  <div class="hud" id="hud">
+    <label>Height:</label>
+    <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000"/>
+    <button id="loadBtn">Load</button>
+    <button id="latestBtn">Latest</button>
+    <button id="resetBtn" title="Reset view to original">Reset View</button>
+    <span class="sep"></span>
+    <span>Protons</span>
+    <select id="selProton"></select>
+    <span>Neutrons</span>
+    <select id="selNeutron"></select>
+    <span>Electrons</span>
+    <select id="selElectron"></select>
   </div>
+
+  <div class="panel" id="legend">
+    <div><b>Controls</b></div>
+    <div>• Rotate/Tilt: drag / 1-finger</div>
+    <div>• Pan: right-drag / 2-finger drag</div>
+    <div>• Zoom: wheel / pinch</div>
+  </div>
+
+  <details id="blockPanel" class="panel"></details>
+  <details id="infoPanel"  class="panel"></details>
 </div>
 
-<!-- Controls legend -->
-<div class="panel" id="legend">
-  <b>Controls</b>
-  <div>• Rotate/Tilt: drag / 1-finger</div>
-  <div>• Pan: right-drag / 2-finger drag</div>
-  <div>• Zoom: wheel / pinch</div>
-</div>
-
-<!-- Info -->
-<details id="infoPanel" class="panel" open>
-  <summary><span class="badge">?</span> Info / How it works</summary>
-  <div style="margin-top:6px;opacity:.9">
-    <p>This build focuses on mobile/desktop controls. Press <b>E</b> (desktop) or <b>double-tap</b> (mobile) to toggle the UI.</p>
-    <p>Use <i>Reset View</i> to restore the original camera.</p>
-  </div>
-</details>
-
-<!-- Quick hint that fades after 15s -->
-<div id="hint" class="toast">Press <b>E</b> or <b>double-tap</b> to toggle UI</div>
+<div id="progress">…</div>
+<div id="hint">Press <b>E</b> (desktop) or <b>double-tap</b> the scene (mobile) to show / hide the UI</div>
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* ============================================================
-   Minimal “atom” scene so we can focus on the camera & input
-   ============================================================ */
-const TWO_PI = Math.PI*2;
-const NUCLEON_R = 5, ELECTRON_R = 4;
-const SHELL_STEP = 85, NUCLEUS_R0 = 60;
+/* ---------- utils ---------- */
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const mod=(a,n)=>((a%n)+n)%n;
+const shortHash=h=>h?(String(h).slice(0,10)+'…'+String(h).slice(-8)):'n/a';
+function XS32(seed){let x=seed>>>0||1;return()=>{x^=x<<13;x^=x>>>17;x^=x<<5;return (x>>>0)/0xFFFFFFFF;};}
+function hslToRgb(h,s,l){let r,g,b;if(s===0){r=g=b=l;}else{const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;r=hue2rgb(p,q,h+1/3);g=hue2rgb(p,q);b=hue2rgb(p,q,h-1/3);}return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];}
+function rgbToHsl(r,g,b){r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b);let h,s,l=(max+min)/2;if(max===min){h=s=0;}else{const d=max-min;s=l>0.5?d/(2-max-min):d/(max+min);switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4;break;}h/=6;}return[h,s,l];}
+const shiftHue=(rgb,deg)=>{const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);let hh=(h+(deg/360))%1; if(hh<0)hh+=1; return hslToRgb(hh,s,l);};
+const lastByte = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; return parseInt(c.slice(-2),16)||0; };
+const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<c.length;i+=2){ const b=parseInt(c.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; };
+const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
+const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
 
-const $ = s => document.querySelector(s);
+/* ---------- shaders ---------- */
+const VERT=`precision mediump float; precision mediump int;
+attribute vec3 aPosition;
+uniform mat4 uModelViewMatrix,uProjectionMatrix;
+uniform float uModeF,uTime,uAmp,uSpeed,uObjSeed;
+varying vec3 vPos,vNormal;
+float hash(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
+float n3(vec3 p){vec3 i=floor(p),f=fract(p);
+float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
+float n010=hash(i+vec3(0,1,0)), n110=hash(i+vec3(1,1,0));
+float n001=hash(i+vec3(0,0,1)), n101=hash(i+vec3(1,0,1));
+float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
+vec3 u=f*f*(3.0-2.0*f);
+float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
+float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
+float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
+return mix(n0,n1,u.z);}
+float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0.5;}return s;}
+void main(){
+  vec3 pos=aPosition;
+  vec3 nrm=normalize(aPosition);
+  int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-/* ---------- Camera state ---------- */
-const cam = {
-  theta: 0,         // yaw (left/right)
-  phi:   0.25,      // pitch (up/down)
-  dist:  780,       // distance from target
-  tx:    0, ty: 0, tz: 0, // target
-  spin:  0.35 * Math.PI/180, // coin-like idle spin (radians / frame)
-  minDist: 50,
-  maxDist: 5000
-};
-const defaults = JSON.parse(JSON.stringify(cam));
-
-let isPointerDown = false;
-let isPanning = false;
-let isPinching = false;
-let lastX = 0, lastY = 0;
-let baseDist = cam.dist;
-let pinchBase = 1;
-let idle = true;      // no interaction → slow spin
-let uiVisible = true; // toggled by E or double-tap
-let multiTouch = new Map();
-
-/* ---------- Simple deterministic atom ---------- */
-function makeAtom(seed=840000){
-  const rand = (s=>()=> (s^=s<<13, s^=s>>>17, s^=s<<5, (s>>>0)/0xFFFFFFFF))(seed>>>0);
-  const electrons = 36 + Math.floor(rand()*30);
-  const shells = [];
-  let remaining = electrons, n=1;
-  while(remaining>0 && shells.length<7){ const cap=2*n*n; const take=Math.min(remaining,cap); shells.push(take); remaining-=take; n++; }
-  const radii = shells.map((_,i)=>NUCLEUS_R0+SHELL_STEP*(i+1));
-  const nucleus = [];
-  const totalN = 80 + Math.floor(rand()*60);
-  for(let i=0;i<totalN;i++){
-    const r = NUCLEUS_R0*0.45 * Math.pow(rand(), 0.55);
-    const th = rand()*TWO_PI, ph = Math.acos(2*rand()-1);
-    nucleus.push([r*Math.sin(ph)*Math.cos(th), r*Math.sin(ph)*Math.sin(th), r*Math.cos(ph)]);
+  // Spikes (m==6)
+  if(m==6){
+    vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
+    float t=uTime*(1.0+uSpeed);
+    float s=fbm(normalize(pos)*6.5 + seed + vec3(0.0,t*1.1,0.0));
+    float spike=smoothstep(0.55,0.93,s);
+    float amp=6.5*(0.65+0.35*uAmp);
+    pos += nrm*(amp*spike*length(aPosition));
   }
-  return {shells,radii,nucleus};
+
+  // Glass ripple (m==1) – displaced in vertex
+  if(m==1){
+    float t=uTime*(0.5*(1.0+0.6*uSpeed));
+    float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
+    float w2 = sin( dot(nrm, vec3(-0.3,0.9,0.1))*17.0 + t*1.6 + uObjSeed*7.3 );
+    float j  = fbm(nrm*5.0 + vec3(0.0,t*0.4,0.0) + vec3(uObjSeed));
+    float ripple = (w1*0.6 + w2*0.4) * (0.012 + 0.008*j) * (0.7+0.3*uAmp) * 10.0;
+    pos += nrm * ripple * length(aPosition);
+  }
+
+  vPos=pos; vNormal=normalize(pos);
+  gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
+}`;
+
+const FRAG=`precision mediump float; precision mediump int;
+varying vec3 vPos,vNormal;
+uniform vec3 uColorA,uColorB;
+uniform float uTime,uAlpha,uPhase,uAmp,uSpeed,uModeF,uObjSeed;
+float hash(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
+float n3(vec3 p){vec3 i=floor(p),f=fract(p);
+float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
+float n010=hash(i+vec3(0,1,0)), n110=hash(i+vec3(1,1,0));
+float n001=hash(i+vec3(0,0,1)), n101=hash(i+vec3(1,0,1));
+float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
+vec3 u=f*f*(3.0-2.0*f);
+float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
+float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
+float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
+return mix(n0,n1,u.z);}
+float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.02;a*=0.5;}return s;}
+vec3 hsv2rgb(vec3 c){vec3 p=abs(fract(c.xxx+vec3(0.,0.6666667,0.3333333))*6.-3.);return c.z*mix(vec3(1.0),clamp(p-1.0,0.0,1.0),c.y);}
+void main(){
+  vec3 n=normalize(vNormal);
+  vec3 V=vec3(0,0,1);
+  vec3 L1=normalize(vec3(0.6,0.7,0.5)), L2=normalize(vec3(-0.4,0.65,-0.2));
+  float ndl=max(dot(n,L1),0.0)*0.65 + max(dot(n,L2),0.0)*0.35;
+  float rim=pow(1.0-max(dot(n,V),0.0),2.0);
+
+  vec3 colA=uColorA, colB=uColorB, col;
+  float t=uTime*(0.6+uSpeed);
+  int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
+
+  // Glass (bubble) – rainbow thin-film + stronger Fresnel, more shine
+  if(m==1){
+    float NoV = max(dot(n,V), 0.0);
+    float baseThick = 0.16 + 0.06*sin(t*0.45 + uObjSeed*5.3);
+    float micro = fbm(normalize(vPos)*5.5 + vec3(0.0,t*0.175,0.0) + vec3(uObjSeed*1.7));
+    float thick = baseThick + 0.07*(micro - 0.5);
+    float phase = thick * (1.8 + 1.2*NoV) * 6.28318530718;
+    float hue = fract(phase*0.15);
+    vec3 swirl = hsv2rgb(vec3(hue, 0.55, 1.0));
+    float fres = pow(1.0 - NoV, 2.0);
+    vec3 reflectCol = mix(vec3(0.98), swirl, 0.65);
+    vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
+    float spec = pow(max(dot(n,H1),0.0), 100.0)*0.95 + pow(max(dot(n,H2),0.0), 100.0)*0.85;
+    vec3 shellTint = mix(vec3(1.0), swirl, 0.18);
+    col = shellTint*0.05 + reflectCol * (0.08 + 0.22*ndl + 0.85*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.10;
+  } else if(m==0){ // Marble
+    float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
+    float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
+    float mm=smoothstep(-0.2,0.7,veins);
+    vec3 base=mix(colA,colB,mm);
+    col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+  } else if(m==2){ // Wireframe-ish
+    float k=9.0+2.0*fract(uObjSeed*7.0);
+    vec3 q=normalize(vPos);
+    float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
+    float edge=smoothstep(0.92,0.985,g);
+    vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
+    col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
+  } else if(m==3){ // Lava
+    float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3));
+    float veins=smoothstep(0.55,0.8,f);
+    vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
+    col=mix(cool,hot,veins)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
+  } else if(m==4){ // Toon
+    float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
+    vec3 base=mix(colA,colB,0.5);
+    col=base*(0.22+s) + vec3(1.0)*step(0.8,rim)*0.18;
+  } else if(m==5){ // Iridescent
+    float h=fract(0.5+0.35*dot(normalize(vPos),vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
+    vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
+    col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
+  } else if(m==6){ // Spikes (lit)
+    float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7));
+    float spike=smoothstep(0.62,0.90,s);
+    vec3 base=mix(colA,colB,0.5);
+    vec3 hi=base*1.7, lo=base*0.45;
+    col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
+  } else if(m==7){ // Metallic
+    float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
+    col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
+  } else if(m==8){ // Sky / Clouds
+    vec3 p=normalize(vPos);
+    float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
+    p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
+    float base=fbm(p*3.0+vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7));
+    float puff=fbm(p*6.0+vec3(0.0,t*0.2,0.0)+vec3(uObjSeed*3.9));
+    float clouds=smoothstep(0.55,0.85,base*0.6+puff*0.7);
+    vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
+    vec3 baseCol=mix(sky,cloud,clouds);
+    col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+  } else {
+    col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+  }
+  gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
+}`;
+
+/* ---------- math / camera ---------- */
+const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
+const v3=(x,y,z)=>[x,y,z], vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
+function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
+function camBasis(yaw, pitch){
+  const cy=Math.cos(yaw), sy=Math.sin(yaw);
+  const cp=Math.cos(pitch), sp=Math.sin(pitch);
+  const forward=[ sy*cp, sp, cy*cp ];
+  const upW=[0,1,0];
+  let right=[
+    forward[1]*upW[2] - forward[2]*upW[1],
+    forward[2]*upW[0] - forward[0]*upW[2],
+    forward[0]*upW[1] - forward[1]*upW[0]
+  ];
+  const rl=Math.hypot(right[0],right[1],right[2])||1;
+  right=[ right[0]/rl, right[1]/rl, right[2]/rl ];
+  let up=[
+    right[1]*forward[2] - right[2]*forward[1],
+    right[2]*forward[0] - right[0]*forward[2]
+  ];
+  const ul=Math.hypot(up[0],up[1],up[2])||1;
+  up=[ up[0]/ul, up[1]/ul, up[2]/ul ];
+  return {forward,right,up};
 }
-const atom = makeAtom();
 
-/* ---------- Helpers ---------- */
-function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-function toCam(p){ // returns eye, center, up from cam state
-  const c = Math.cos(cam.theta), s = Math.sin(cam.theta);
-  const cp = Math.cos(cam.phi), sp = Math.sin(cam.phi);
-  // forward (from target toward camera)
-  const fx = c*cp, fy = sp, fz = s*cp;
-  const eye = [cam.tx + fx*cam.dist, cam.ty + fy*cam.dist, cam.tz + fz*cam.dist];
-  // camera right & up if needed
-  const up = [ -c*sp, cp, -s*sp ];
-  return {eye, center:[cam.tx,cam.ty,cam.tz], up};
+/* ---------- palette / atom build ---------- */
+function paletteFromHeight(height){
+  const rng = XS32(height), golden = 137.50776405003785;
+  let baseHue = mod((height * golden) + rng() * 45, 360);
+  let hP = baseHue;
+  let hN = mod(baseHue + (90 + rng() * 120), 360);
+  let hE = mod(baseHue + (180 + rng() * 120), 360);
+  let hS = mod(baseHue + (30 + rng() * 120), 360);
+  let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
+  let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
+  let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
+  let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
+  return{
+    proton:  hslToRgb(hP/360, sP, lP),
+    neutron: hslToRgb(hN/360, sN, lN),
+    electron:hslToRgb(hE/360, sE, lE),
+    shell:   hslToRgb(hS/360, sS, lS)
+  };
 }
-function resetView(){ Object.assign(cam, defaults); }
-
-/* ---------- UI toggle (desktop & mobile) ---------- */
-function setUIVisible(v){
-  uiVisible = v;
-  const display = v ? '' : 'none';
-  ['hud','legend','infoPanel'].forEach(id => { const n=$( '#'+id ); if(n) n.style.display = display; });
+function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
+function chooseSetModesFromBlock(b){
+  const h=b.height|0; const mr=b.merkle_root||''; const nonce=b.nonce||0; const bits=b.bits||0;
+  const sA=byteAt(mr,3), sB=byteAt(mr,7), sC=byteAt(mr,11), sD=lastByte(b.id||b.hash||'');
+  const mlist=[0,1,2,3,4,5,6,7,8];
+  const pick=(seed)=>mlist[(seed + h + (nonce&255) + (bits&255))%mlist.length];
+  return { protons: pick(sA), neutrons: pick(sB), electrons: pick(sC), rings: pick(sD)%3 };
 }
-function toggleUI(){ setUIVisible(!uiVisible); }
+function buildAtomFromBlock(b){
+  const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
+  const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
+  const colors=paletteFromHeight(height);
+  const baseE=(height%118)+1, eJitter=(byteAt(hash,5)%64)-32; const electrons=clamp(baseE+eJitter, 6, 180);
+  const protonBias=(byteAt(merkleRoot,9)%31)-15; const Z=clamp(baseE+protonBias, 6, 160);
+  const neutronSkew=((byteAt(hash,2)%101)-50)/180; const N=clamp(Math.round(Z*(1.0+neutronSkew)) + (hexByteSum(merkleRoot)%17)-8, 6, 220);
+  const shells=fillShells(electrons);
+  const prod=Math.max(1, txCount*Math.max(1,size)); const lg=Math.log10(prod);
+  const speedScale=clamp((lg-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
+  const dens=clamp(weight/Math.max(1,size*4),0.6,1.4); const tightness=clamp((dens*0.75)+(1.15-0.55*0.25), 0.6,1.4);
+  const eccGlobal=clamp(0.3 + ((version&0xf)/16)*0.5 + ((nonce&0x3f)/63)*0.2, 0.08,0.88);
+  const hashLast=lastByte(hash); const ringThick=0.9, ringAlpha=220; const ringColor=shiftHue(colors.shell, (hashLast/255-0.5)*36);
+  const orbitSpread=1.0+((version&0xf)-7.5)*0.01; const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
 
-/* double-tap detector (mobile) */
-let lastTapTime = 0;
-function handleTapToggle(){
-  const now = performance.now();
-  if (now - lastTapTime < 320){ toggleUI(); lastTapTime = 0; }
-  else lastTapTime = now;
+  const electronAngles=[], eMeta=[];
+  for(let i=0;i<shells.length;i++){ electronAngles[i]=[]; eMeta[i]=[];
+    for(let j=0;j<shells[i];j++){
+      const b0=byteAt(merkleRoot,(i*31+j*11+1)), b1=byteAt(hash,(i*17+j*7+5)), b2=byteAt(merkleRoot,(i*53+j*13+9));
+      const seed=(b0<<16)^(b1<<8)^b2; let u=vnorm(v3((b0/255)-0.5,(b1/255)-0.5,(b2/255)-0.5)); if(vlen(u)<1e-6) u=[0,0,1];
+      const ref=Math.abs(u[2])<0.9?[0,0,1]:[1,0,0]; let v=vnorm(vcross(u,ref)), w=vcross(u,v);
+      const e=clamp(eccGlobal*(0.6+0.8*(b1/255)),0.05,0.93), pre=(0.05+0.45*(b2/255))*speedScale, phase=(b0/255)*Math.PI*2;
+      const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
+      const hueOffset=( (i*97 + j*131 + seed) % 360 ); const objSeed=(seed%1000)/1000;
+      electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset,objSeed};
+    } }
+  const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
+  const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
+
+  const totalNuc=Math.min(900,Z+N), nucleusPoints=[]; for(let i=0;i<totalNuc;i++){
+    const rNorm=Math.pow(Math.random(), tightness);
+    const r=NUCLEUS_R0*(0.35+0.65*rNorm), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+    const isProton = i<Z; const hueOffset = (i*23 + (isProton?177:311)) % 360; const objSeed = ((i*101 + (isProton?37:73)) % 997)/997;
+    nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset,objSeed});
+  }
+
+  const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
+  const isDisco = height===170; const is1337  = height===1337; const halving = !isDisco && (height>0 && height%210000===0);
+
+  return { block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
+    shader:{amp:animAmp,speed:animSpeed,blockPhase},
+    setModes: chooseSetModesFromBlock(b),
+    style:{ eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
+      ringThick, ringAlpha, ringColor, halving, disco:isDisco, is1337, nucleusTight: tightness } };
 }
 
-/* Fade the hint after 15s */
-setTimeout(()=>{ const h=$('#hint'); if(h) h.style.opacity=0; setTimeout(()=>h.remove(), 800); }, 15000);
+/* ---------- panels ---------- */
+function injectPanels(atom){
+  const det=document.getElementById('blockPanel'); det.innerHTML='';
+  const sum=document.createElement('summary');
+  const sLeft=document.createElement('span'); sLeft.textContent='▼ Block Details';
+  const sRight=document.createElement('span'); sRight.style.color='#d7dfff'; sRight.style.fontWeight='500';
+  const blk=atom.block; sRight.textContent = '#' + blk.height + ' — ' + shortHash(blk.id||blk.hash);
+  sum.appendChild(sLeft); sum.appendChild(sRight); det.appendChild(sum);
 
-/* ---------- p5 sketch ---------- */
-let p5i = null;
+  const body=document.createElement('div'); body.id='blkBody';
+  const chips=document.createElement('div'); chips.style.marginBottom='6px';
+  [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);});
+  if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco #170'; chips.appendChild(c); }
+  else if(atom.style.is1337){ const c=document.createElement('span'); c.className='chip'; c.textContent='🟩 1337 Neon'; chips.appendChild(c); }
+  else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
+  body.appendChild(chips);
 
-function startSketch(){
-  if(p5i){ p5i.remove(); p5i=null; }
-  p5i = new p5((p)=>{
+  const tbl=document.createElement('table');
+  const rows=[
+    ['Tx count', (blk.tx_count!=null?blk.tx_count:'n/a')],
+    ['Size (bytes)', (blk.size!=null?blk.size:'n/a')],
+    ['Weight (WU)', (blk.weight!=null?blk.weight:'n/a')],
+    ['Version', (blk.version!=null?blk.version:'n/a')],
+    ['Bits', (blk.bits!=null?blk.bits:'n/a')],
+    ['Nonce', (blk.nonce!=null?blk.nonce:'n/a')],
+    ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
+    ['Merkle root', shortHash(blk.merkle_root)]
+  ];
+  rows.forEach(([k,v])=>{ const tr=document.createElement('tr'); const td1=document.createElement('td'); td1.textContent=k; const td2=document.createElement('td');
+    if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code);} else td2.textContent=String(v);
+    tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr); });
+  body.appendChild(tbl); det.appendChild(body);
 
-    p.setup = function(){
-      p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
-      p.setAttributes('antialias', true);
-      // friendlier clip planes so zooming very close doesn’t “pop” away
-      p.perspective(p.PI/3, p.width/p.height, 0.1, 20000);
-      attachCanvasEvents(p);
+  const info=document.getElementById('infoPanel'); info.innerHTML='';
+  const s2=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
+  s2.appendChild(badge); s2.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(s2);
+  const ib=document.createElement('div'); ib.style.padding='10px 12px';
+  ib.innerHTML='<h3>Controls</h3><p>Rotate: drag / 1-finger • Zoom: wheel / pinch • Pan: right-drag / 2-finger • Toggle UI: <b>E</b> / <b>double-tap</b> the scene</p>';
+  info.appendChild(ib);
+  det.open=false; info.open=false;
+}
+
+/* ---------- p5 + inputs + draw ---------- */
+let p5Instance=null, orbShader=null, shaderLinked=false;
+let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
+let minCamDist=140, maxCamDist=20000;
+let isDragging=false, lastX=0, lastY=0, dragButton=0;
+let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
+let modelSpin = 0;
+
+const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
+let overrides = { proton:null, neutron:null, electron:null };
+function populateSelectors(){
+  const opts = MODE_LIST.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
+  selProton.innerHTML = `<option value="">Auto</option>${opts}`;
+  selNeutron.innerHTML = `<option value="">Auto</option>${opts}`;
+  selElectron.innerHTML = `<option value="">Auto</option>${opts}`;
+}
+populateSelectors();
+selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Number(e.target.value)); };
+selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); };
+selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); };
+
+function startSketch(blk){
+  if(p5Instance){ p5Instance.remove(); p5Instance=null; }
+
+  camDist=560; camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0];
+  modelSpin = 0;
+
+  const atom=buildAtomFromBlock(blk);
+  injectPanels(atom);
+
+  const largestRadius = atom.radii.length ? atom.radii[atom.radii.length-1] : 140;
+  minCamDist = Math.max( largestRadius * 1.2, 90 );
+  maxCamDist = 30000;
+
+  const sketch=(p)=>{
+    p.setup=()=>{
+      const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
+      cnv.canvas.classList.add('p5canvas');
+      p.setAttributes('alpha',false); p.setAttributes('antialias',true,'premultipliedAlpha',false);
+      try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
+      p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
+
+      const canvasEl = cnv.canvas;
+      if(canvasEl){
+        canvasEl.addEventListener('touchstart',(e)=>{
+          if(e.touches.length===1){
+            const t=e.touches[0]; const now=performance.now();
+            const dist=Math.hypot(t.clientX-lastTapXY[0], t.clientY-lastTapXY[1]);
+            if(now-lastTapTime<280 && dist<12){ document.getElementById('uiRoot').classList.toggle('show'); lastTapTime=0; }
+            else { lastTapTime=now; lastTapXY=[t.clientX,t.clientY]; }
+            isDragging=true; lastX=t.clientX; lastY=t.clientY; dragButton=p.LEFT;
+          } else if(e.touches.length===2){
+            const t0=e.touches[0], t1=e.touches[1];
+            pinchPrev=Math.max(1, Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY));
+            twoPrevMid=[(t0.clientX+t1.clientX)/2, (t0.clientY+t1.clientY)/2];
+          }
+          e.preventDefault();
+        }, {passive:false});
+
+        canvasEl.addEventListener('touchmove',(e)=>{
+          if(e.touches.length===1){
+            const t=e.touches[0], dx=t.clientX-lastX, dy=t.clientY-lastY; lastX=t.clientX; lastY=t.clientY;
+            camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
+          } else if(e.touches.length===2){
+            const t0=e.touches[0], t1=e.touches[1];
+            let d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
+            d = Math.max(1, d);
+            if(pinchPrev==null) pinchPrev=d;
+            const rawScale = d / pinchPrev;
+            const saneScale = isFinite(rawScale) ? clamp(rawScale, 0.2, 5.0) : 1.0;
+            const next = camDist / Math.pow(saneScale, 0.85);
+            const limited = clamp(next, camDist*0.6, camDist*1.6);
+            camDist = clamp(limited, minCamDist, maxCamDist);
+            pinchPrev = d;
+
+            const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientY+t1.clientY)/2;
+            if(twoPrevMid){
+              const dx = midX - twoPrevMid[0]; const dy = midY - twoPrevMid[1];
+              const {right, up} = camBasis(camYaw, camPitch);
+              const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 2 / p.height;
+              camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
+              camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
+              camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
+            }
+            twoPrevMid=[midX,midY];
+          }
+          e.preventDefault();
+        }, {passive:false});
+
+        canvasEl.addEventListener('touchend',()=>{ isDragging=false; pinchPrev=null; twoPrevMid=null; }, {passive:true});
+      }
     };
 
-    p.windowResized = function(){ p.resizeCanvas(p.windowWidth, p.windowHeight); };
+    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); };
 
-    p.draw = function(){
-      p.background(0);
-      const {eye,center,up} = toCam();
-      p.camera(eye[0],eye[1],eye[2], center[0],center[1],center[2], up[0],up[1],up[2]);
-
-      // idle coin-spin when not interacting
-      if (idle && !isPointerDown && !isPanning && !isPinching){
-        cam.theta += cam.spin;  // vertical axis spin
+    // Mouse
+    p.mousePressed=(e)=>{ isDragging=true; lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; };
+    p.mouseReleased=()=>{ isDragging=false; };
+    p.mouseDragged=()=>{
+      const dx=p.mouseX-lastX, dy=p.mouseY-lastY; lastX=p.mouseX; lastY=p.mouseY;
+      if(dragButton===p.LEFT){
+        camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
+      } else {
+        const {right, up} = camBasis(camYaw, camPitch);
+        const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 2 / p.height;
+        camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
+        camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
+        camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
       }
+    };
+    p.mouseWheel=(e)=>{
+      const s = Math.exp(e.deltaY * 0.0012); // wheel-up => deltaY<0 => s<1 => zoom in
+      camDist = clamp(camDist * s, minCamDist, maxCamDist);
+      e.preventDefault();
+    };
 
-      // lighting
-      p.ambientLight(24);
-      p.directionalLight(200,200,200, 0.7,0.8,0.6);
-      p.directionalLight(160,160,200, -0.6,0.5,-0.3);
+    function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
+    function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
+      const m=Math.max(0,Math.min(9,(mode|0)));
+      const a = (m===1) ? (alpha * 0.25) : alpha; // glass more see-through
+      if(orbShader && shaderLinked){
+        try{
+          p.noStroke(); p.shader(orbShader);
+          orbShader.setUniform('uColorA', cA.map(v=>v/255)); orbShader.setUniform('uColorB', cB.map(v=>v/255));
+          orbShader.setUniform('uTime', t); orbShader.setUniform('uAlpha', a); orbShader.setUniform('uModeF', m*1.0);
+          orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0); orbShader.setUniform('uAmp', atom.shader.amp||0.25);
+          orbShader.setUniform('uSpeed', atom.shader.speed||0.9); orbShader.setUniform('uObjSeed', seed||0.0);
+          p.sphere(r,84,56); p.resetShader(); return;
+        }catch(e){ console.warn('Shader draw error — fallback:',e); shaderLinked=false; orbShader=null; }
+      }
+      // Fallback lighting
+      p.resetShader(); p.noStroke();
+      if(m===1){ p.ambientMaterial(240,245,250, Math.round(255*a)); p.specularMaterial(255); p.shininess(70); }
+      else     { p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*a)); p.shininess(30); p.specularMaterial(80); }
+      p.sphere(r,64,48);
+    }
 
-      // rings
+    function drawRings(t){
       p.push();
-      p.noFill();
-      p.stroke(255,140,140,190); p.strokeWeight(2);
       for(let i=0;i<atom.shells.length;i++){
-        const r = atom.radii[i];
-        p.beginShape();
-        for(let a=0;a<=180;a++){ const ang=a/180*TWO_PI; p.vertex(Math.cos(ang)*r, Math.sin(ang)*r, 0); }
-        p.endShape();
+        const r=atom.radii[i];
+        p.noFill();
+        p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220);
+        p.strokeWeight(1.1);
+        p.circle(0,0,r*2);
       }
       p.pop();
+    }
 
-      // nucleus (plain for control testing)
-      p.push();
-      p.noStroke(); p.ambientMaterial(240,190,255,230);
-      for(const q of atom.nucleus){ p.push(); p.translate(q[0],q[1],q[2]); p.sphere(NUCLEON_R); p.pop(); }
-      p.pop();
+    function drawNucleus(t){
+      const protonMode  = (overrides.proton  ?? atom.setModes.protons);
+      const neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
+      for(const q of atom.nucleusPoints){
+        p.push();
+        p.translate(q.x,q.y,q.z);
+        if(q.isProton){
+          const cA=atom.colors.proton, cB=shiftHue(atom.colors.proton,18);
+          drawOrbMat(cA,cB,NUCLEON_R,t,1.0,protonMode,q.objSeed);
+        }else{
+          const cA=shiftHue(atom.colors.neutron,-22), cB=atom.colors.neutron;
+          drawOrbMat(cA,cB,NUCLEON_R,t,1.0,neutronMode,q.objSeed);
+        }
+        p.pop();
+      }
+    }
 
-      // electrons (plain)
-      p.push();
-      p.noStroke(); p.specularMaterial(180,210,255,200); p.shininess(40);
-      let idx=0;
+    function drawElectrons(t){
+      const eMode = (overrides.electron ?? atom.setModes.electrons);
       for(let i=0;i<atom.shells.length;i++){
-        const r = atom.radii[i];
-        const k = atom.shells[i];
-        for(let j=0;j<k;j++){
-          const a = (j/k)*TWO_PI + (p.frameCount*0.01 + i*0.2);
-          const x = Math.cos(a)*r, y=Math.sin(a)*r;
-          const z = Math.sin(a*1.3 + i*0.7)*40;
-          p.push(); p.translate(x,y,z); p.sphere(ELECTRON_R); p.pop();
-          idx++;
+        const r=atom.radii[i], baseSpeed=atom.speeds[i];
+        for(let j=0;j<atom.shells[i];j++){
+          const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
+          const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
+          const pre=t*m.pre + m.phase;
+          const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
+          const basePt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
+          const wob=1.0 + m.rosAmp*Math.sin(th*m.rosK + m.phase*0.7);
+          const pt=vmul(basePt, wob);
+
+          p.push(); p.translate(pt[0],pt[1],pt[2]);
+          const mixT=((j%7)/7)*0.35;
+          const eCol=mixRGB(atom.colors.electron, atom.style.ringColor, mixT);
+          drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, 1.0, eMode, m.objSeed);
+          p.pop();
+
+          atom.electronAngles[i][j]+=baseSpeed*m.spMul;
         }
       }
+    }
+
+    p.draw=()=>{
+      const t=p.millis()*0.001;
+      p.background(0);
+
+      const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
+      p.perspective(fovy,aspect,near,far);
+      const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
+      const cy=camTarget[1]+camDist*Math.sin(camPitch);
+      const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
+      p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
+
+      // constant slow spin like a coin
+      modelSpin += 0.16 * (p.deltaTime/1000);
+      p.push();
+      p.rotateY(modelSpin);
+
+      drawRings(t);
+      drawNucleus(t);
+      drawElectrons(t);
+
       p.pop();
     };
-  });
+  };
+
+  const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1'; document.body.appendChild(container);
+  p5Instance=new p5(sketch, container);
 }
 
-/* ---------- Canvas interactions ---------- */
-function attachCanvasEvents(p){
-  const c = p._renderer?.canvas;
-  if(!c) return;
+/* ---------- networking / buttons / boot ---------- */
+const API='https://mempool.space/api';
+async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
+async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
 
-  // prevent default gestures on canvas
-  c.style.touchAction = 'none';
-
-  // Wheel zoom (natural: up = zoom in)
-  c.addEventListener('wheel',(e)=>{
-    e.preventDefault();
-    idle = false;
-    const factor = Math.exp(-e.deltaY * 0.0016);
-    cam.dist = clamp(cam.dist * factor, cam.minDist, cam.maxDist);
-  }, {passive:false});
-
-  // Pointer events (mouse & touch)
-  c.addEventListener('pointerdown',(e)=>{
-    c.setPointerCapture(e.pointerId);
-    multiTouch.set(e.pointerId, {x:e.clientX, y:e.clientY});
-    if(multiTouch.size===1){
-      isPointerDown = true; isPanning = (e.button===2); // right button pans
-      lastX = e.clientX; lastY = e.clientY;
-    } else if(multiTouch.size===2){
-      // begin pinch / pan with 2 fingers
-      isPinching = true; isPanning = true; isPointerDown = false;
-      const pts = [...multiTouch.values()];
-      pinchBase = dist2(pts[0], pts[1]);
-      baseDist = cam.dist;
-      lastX = (pts[0].x + pts[1].x)/2;
-      lastY = (pts[0].y + pts[1].y)/2;
-    }
-    idle = false;
-  });
-
-  c.addEventListener('pointermove',(e)=>{
-    if(!multiTouch.has(e.pointerId)) return;
-    multiTouch.set(e.pointerId, {x:e.clientX, y:e.clientY});
-
-    if(isPinching && multiTouch.size>=2){
-      const pts = [...multiTouch.values()];
-      const centerX = (pts[0].x + pts[1].x)/2;
-      const centerY = (pts[0].y + pts[1].y)/2;
-
-      // pinch zoom
-      const d = dist2(pts[0], pts[1]);
-      const scale = clamp(d / Math.max(1, pinchBase), 0.25, 4.0);
-      cam.dist = clamp(baseDist / scale, cam.minDist, cam.maxDist); // inward pinch => smaller dist
-
-      // two-finger pan (screen-space)
-      const dx = centerX - lastX;
-      const dy = centerY - lastY;
-      applyPan(dx, dy);
-
-      lastX = centerX; lastY = centerY;
-    } else if(isPointerDown){
-      // 1-finger / left-drag = rotate, 1-finger right-drag = pan
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      if(isPanning){
-        applyPan(dx, dy);
-      }else{
-        // natural mapping: up→up, left→left
-        cam.theta -= dx * 0.0050;
-        cam.phi   = clamp(cam.phi - dy * 0.0030, -Math.PI/2+0.05, Math.PI/2-0.05);
-      }
-      lastX = e.clientX; lastY = e.clientY;
-    }
-  });
-
-  c.addEventListener('pointerup',(e)=>{
-    multiTouch.delete(e.pointerId);
-    if(multiTouch.size===0){ isPointerDown=false; isPanning=false; isPinching=false; idle=true; }
-    if(multiTouch.size===1){ // revert to single-finger mode if one remains
-      const [only] = multiTouch.values();
-      lastX = only.x; lastY = only.y;
-      isPinching=false;
-    }
-  });
-  c.addEventListener('pointercancel',()=>{ multiTouch.clear(); isPointerDown=false; isPanning=false; isPinching=false; idle=true; });
-
-  // Context menu off so right-drag pans
-  c.addEventListener('contextmenu', e=>e.preventDefault());
-
-  // Double-tap to toggle UI (mobile)
-  c.addEventListener('pointerdown', (e)=>{
-    if(e.pointerType==='touch'){ handleTapToggle(); }
-  });
+async function loadBlockByHeight(height){
+  progress.style.display='block'; progress.textContent='Resolving block '+height+'…';
+  const hash=await fetchText(API+'/block-height/'+height);
+  progress.textContent='Fetching header…';
+  const blk=await fetchJSON(API+'/block/'+hash);
+  progress.style.display='none';
+  selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
+  startSketch(blk);
+}
+async function loadLatest(){
+  progress.style.display='block'; progress.textContent='Getting tip height…';
+  const h=await fetchText(API+'/blocks/tip/height'); heightInput.value=h; await loadBlockByHeight(h);
 }
 
-function dist2(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
+loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ progress.textContent='Error: '+e.message; }};
+latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textContent='Error: '+e.message; }};
+resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0]; modelSpin=0; };
 
-function applyPan(dx, dy){
-  // screen-space pan → world-space target move, invariant to rotation
-  const cosT = Math.cos(cam.theta), sinT = Math.sin(cam.theta);
-  const cosP = Math.cos(cam.phi),   sinP = Math.sin(cam.phi);
-
-  // camera right vector
-  const rx = -sinT, ry = 0, rz = cosT;
-  // camera up vector
-  const ux = -cosT*sinP, uy = cosP, uz = -sinT*sinP;
-
-  const panScale = cam.dist * 0.0015; // proportional to distance
-  cam.tx += (-dx*rx + dy*ux) * panScale; // signs chosen so drag feels natural
-  cam.ty += (-dx*ry + dy*uy) * panScale;
-  cam.tz += (-dx*rz + dy*uz) * panScale;
-}
-
-/* ---------- Buttons & keyboard ---------- */
-$('#resetBtn').onclick = ()=>{ resetView(); idle=true; };
-
-$('#loadBtn').onclick = async ()=>{
-  // stub — you can wire back to mempool as before
-  const h = Number($('#heightInput').value||840000); (void)h;
-  resetView(); idle=true;
-};
-$('#latestBtn').onclick = async ()=>{
-  resetView(); idle=true;
-};
-
-window.addEventListener('keydown',(e)=>{
-  if(e.key.toLowerCase()==='e'){ toggleUI(); }
-});
-
-/* ---------- Boot ---------- */
-startSketch();
-$('#heightInput').value = 840000;
+document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
+setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
+// new25
+loadLatest();
 </script>
 </body>
 </html>
