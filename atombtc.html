@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — mobile UI + gestures (fix)</title>
+<title>Bitcoin Block Atom — no treemap</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
-  html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
-
-  #bg2d{position:fixed;inset:0;z-index:0;display:block;pointer-events:none;background:#000}
-
+  html,body{margin:0;height:100%;background:#000;color:var(--text);
+            font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
   canvas.p5canvas{position:fixed;inset:0;z-index:1;display:block;touch-action:none}
 
-  .uiRoot{position:fixed;inset:0;z-index:30;opacity:0;visibility:hidden;transition:opacity .22s ease, visibility .22s ease;pointer-events:none}
+  .uiRoot{position:fixed;inset:0;z-index:30;opacity:0;visibility:hidden;
+          transition:opacity .22s ease, visibility .22s ease;pointer-events:none}
   .uiRoot.show{opacity:1;visibility:visible}
   .uiRoot.show *{pointer-events:auto}
 
-  .hud{position:fixed;left:12px;right:auto;top:12px;display:flex;gap:8px;align-items:center;background:var(--panel);
+  .hud{position:fixed;left:12px;top:12px;display:flex;gap:8px;align-items:center;background:var(--panel);
        border:1px solid var(--border);border-radius:12px;padding:8px 10px;backdrop-filter:blur(6px);font-size:12px;z-index:31}
-  .hud input, .hud button, .hud select{font:inherit;border-radius:8px;border:1px solid var(--border);background:#121820;color:var(--text);padding:6px 8px}
+  .hud input, .hud button, .hud select{font:inherit;border-radius:8px;border:1px solid var(--border);
+       background:#121820;color:var(--text);padding:6px 8px}
   .hud button{cursor:pointer}
   .hud .sep{width:1px;height:24px;background:#283543;margin:0 6px}
 
@@ -29,21 +29,26 @@
   #legend div{white-space:nowrap}
 
   details#blockPanel{right:12px;bottom:12px;max-height:min(80vh,900px);overflow:auto;z-index:31}
-  details#blockPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;justify-content:space-between;gap:8px}
+  details#blockPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;
+                             display:flex;justify-content:space-between;gap:8px}
   details#blockPanel[open]>summary{border-bottom:1px solid var(--border)}
   details#blockPanel summary::-webkit-details-marker{display:none}
   #blkBody{padding:10px 12px;color:#b7d2ea}
   #blkBody table{border-collapse:collapse;width:100%}
   #blkBody td{padding:4px 0;vertical-align:top}
   #blkBody td:first-child{color:#9cc9ee;width:42%;padding-right:10px}
-  .chip{display:inline-block;padding:2px 6px;border:1px solid #2b3a44;border-radius:8px;margin:2px;color:#d7ecff;font-size:11px}
+  .chip{display:inline-block;padding:2px 6px;border:1px solid #2b3a44;border-radius:8px;margin:2px;
+        color:#d7ecff;font-size:11px}
 
   #infoPanel{left:12px;bottom:12px;z-index:31}
-  #infoPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;gap:8px;align-items:center}
+  #infoPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;
+                     display:flex;gap:8px;align-items:center}
   #infoPanel[open]>summary{border-bottom:1px solid var(--border)}
-  #infoPanel summary .badge{width:22px;height:22px;display:inline-grid;place-items:center;border-radius:999px;background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
+  #infoPanel summary .badge{width:22px;height:22px;display:inline-grid;place-items:center;border-radius:999px;
+                            background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
 
-  #progress{position:fixed;left:12px;top:12px;transform:translateY(52px);z-index:40;color:#d7ecff;font-size:12px;background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none}
+  #progress{position:fixed;left:12px;top:12px;transform:translateY(52px);z-index:40;color:#d7ecff;font-size:12px;
+            background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none}
   #hint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:35;color:#b6c9de;opacity:0.35;font-size:12px;
         background:rgba(7,10,14,0.6);border:1px solid #24313b;border-radius:10px;padding:7px 10px;pointer-events:none;transition:opacity .4s ease}
   #hint.hide{opacity:0}
@@ -64,9 +69,7 @@
 </head>
 <body>
 
-<canvas id="bg2d"></canvas>
-
-<div class="uiRoot" id="uiRoot">
+<div class="uiRoot show" id="uiRoot">
   <div class="hud" id="hud">
     <label>Height:</label>
     <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000"/>
@@ -97,7 +100,7 @@
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* ---------- helpers (unchanged from last version) ---------- */
+/* ---------- small utilities ---------- */
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const mod=(a,n)=>((a%n)+n)%n;
@@ -110,29 +113,10 @@ const lastByte = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g
 const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<c.length;i+=2){ const b=parseInt(c.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; };
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
-const lerp=(a,b,t)=>a+(b-a)*t; const lerpRGB=(a,b,t)=>[Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t))];
+const lerp=(a,b,t)=>a+(b-a)*t;
 const isHalving=h=>h>0&&(h%210000)===0;
 
-/* ---------- treemap colors ---------- */
-const FEERATE_MAX=50000;
-const C_GREEN=[0x0B,0x4F,0x35], C_YEL=[0xFF,0xFF,0x00], C_ORG=[0xFF,0xA5,0x00], C_RED=[0xFF,0x00,0x00], C_PURP=[0x81,0x08,0x4E];
-function feeToColor(fr){const t=clamp(fr/FEERATE_MAX,0,1);
-  if(t<=0.25){return lerpRGB(C_GREEN,C_YEL,t/0.25);} if(t<=0.50){return lerpRGB(C_YEL,C_ORG,(t-0.25)/0.25);}
-  if(t<=0.75){return lerpRGB(C_ORG,C_RED,(t-0.50)/0.25);} return lerpRGB(C_RED,C_PURP,(t-0.75)/0.25); }
-const NEON_GREEN=[0,255,120], WHITE=[255,255,255], BLACK=[0,0,0];
-const BROWN=[110,70,30], ORANGE=[255,140,0];
-function rankToROYGBIV(t){ const hue=lerp(0,300,t); const [r,g,b]=hslToRgb((hue%360)/360,0.95,0.55); return [r,g,b]; }
-function rankToBrownOrangeWhite(t){ if(t<0.5) return lerpRGB(BROWN, ORANGE, t/0.5); return lerpRGB(ORANGE, WHITE, (t-0.5)/0.5); }
-function rankToBlackNeonWhite(t){ if(t<0.5) return lerpRGB(BLACK, NEON_GREEN, t/0.5); return lerpRGB(NEON_GREEN, WHITE, (t-0.5)/0.5); }
-
-/* ---------- vecs ---------- */
-const v3=(x,y,z)=>[x,y,z], vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
-const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
-const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
-const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
-function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
-
-/* ---------- shader (same as last message) ---------- */
+/* ---------- WebGL shader (same as previous working build) ---------- */
 const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix,uProjectionMatrix;
@@ -191,48 +175,48 @@ void main(){
   vec3 colA=uColorA, colB=uColorB, col;
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
-  if(m==0){
+  if(m==0){ // Marble
     vec3 seed=vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3);
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + seed);
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==1){
+  } else if(m==1){ // Glass
     float fres=pow(1.0-max(dot(n,V),0.0),3.0);
     col=mix(colA,colB,0.5)*(0.1+0.18*ndl) + vec3(1.0)*fres*0.85;
-  } else if(m==2){
+  } else if(m==2){ // Wireframe (toonish grid)
     float k=9.0+2.0*fract(uObjSeed*7.0);
     vec3 q=normalize(vPos);
     float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
     float edge=smoothstep(0.92,0.985,g);
     vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
     col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
-  } else if(m==3){
+  } else if(m==3){ // Lava
     vec3 seed=vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3);
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + seed);
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
     col=mix(cool,hot,veins)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
-  } else if(m==4){
+  } else if(m==4){ // Toon
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
     col=base*(0.22+s) + vec3(1.0)*step(0.8,rim)*0.18;
-  } else if(m==5){
+  } else if(m==5){ // Iridescent
     float h=fract(0.5+0.35*dot(n,vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
     col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
-  } else if(m==6){
+  } else if(m==6){ // Spikes (vertex animated)
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + seed);
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
     vec3 hi=base*1.7, lo=base*0.45;
     col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
-  } else if(m==7){
+  } else if(m==7){ // Metallic
     float spec=pow(max(dot(n,normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
-  } else if(m==8){
+  } else if(m==8){ // Sky / Clouds
     vec3 seed=vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7);
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
@@ -243,7 +227,7 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else {
+  } else { // Safe
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
@@ -252,47 +236,14 @@ void main(){
 /* ---------- scene constants ---------- */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
 
-/* ---------- treemap canvas ---------- */
-const bgCanvas=document.getElementById('bg2d'); const bgCtx=bgCanvas.getContext('2d',{alpha:false});
-let DPR=1, bgW=0, bgH=0, bgBaseCanvas=document.createElement('canvas'), bgBaseCtx=bgBaseCanvas.getContext('2d',{alpha:false});
-let currentTxs=[], currentAtom=null;
-function resizeBG(){ DPR=Math.max(1,Math.floor(devicePixelRatio||1)); bgW=innerWidth; bgH=innerHeight;
-  bgBaseCanvas.width=bgW; bgBaseCanvas.height=bgH; bgCanvas.width=bgW*DPR; bgCanvas.height=bgH*DPR; bgCanvas.style.width=bgW+'px'; bgCanvas.style.height=bgH+'px';
-  if(currentTxs.length&&currentAtom) renderTreemapBase(currentTxs,currentAtom); compositeBG(); }
-function compositeBG(){ const W=bgCanvas.width,H=bgCanvas.height; const ctx=bgCtx; ctx.save(); ctx.imageSmoothingEnabled=true; ctx.clearRect(0,0,W,H); ctx.drawImage(bgBaseCanvas,0,0,W,H); ctx.restore(); }
-function renderTreemapBase(txs, atom){
-  const ctx=bgBaseCtx; const W=bgBaseCanvas.width, H=bgBaseCanvas.height;
-  ctx.save(); ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
-  let paletteFn=(rank)=>feeToColor(rank*FEERATE_MAX);
-  if(atom.style.disco) paletteFn=rankToROYGBIV;
-  else if(atom.style.is1337) paletteFn=rankToBlackNeonWhite;
-  else if(atom.style.halving) paletteFn=rankToBrownOrangeWhite;
+/* ---------- math helpers ---------- */
+const v3=(x,y,z)=>[x,y,z], vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
+function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
-  const items = txs.map(t=>({size:Math.max(1,t.vsize||t.size||1)})).sort((a,b)=>a.size-b.size);
-  const total = items.length;
-  const ROWS = Math.max(32, Math.ceil(Math.sqrt(total/8)));
-  const colsPerRow = Math.max(96, Math.ceil(total/ROWS));
-  const pad=1; let idx=0;
-  for(let r=0;r<ROWS;r++){
-    const y0=Math.floor((r/ROWS)*H), y1=Math.floor(((r+1)/ROWS)*H), rowH=Math.max(1,y1-y0);
-    for(let c=0;c<colsPerRow;c++){
-      if(idx>=total) break;
-      const x0=Math.floor((c/colsPerRow)*W), x1=Math.floor(((c+1)/colsPerRow)*W), w=Math.max(1,x1-x0);
-      const rank = total>1? (idx/(total-1)) : 0.0; const col = paletteFn(rank);
-      ctx.fillStyle=`rgb(${col[0]},${col[1]},${col[2]})`;
-      ctx.fillRect(x0+pad,y0+pad,Math.max(0,w-2*pad),Math.max(0,rowH-2*pad));
-      ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=1; ctx.strokeRect(x0+0.5,y0+0.5,w-1,rowH-1);
-      idx++;
-    }
-  }
-  if(atom.style.is1337){
-    ctx.fillStyle='rgba(0,255,120,0.13)'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    const sz=Math.min(W,H)*0.22; ctx.font=`bold ${Math.floor(sz)}px monospace`; ctx.fillText('1337', W/2, H/2);
-  }
-  ctx.restore();
-}
-
-/* ---------- palette + structure + build (unchanged from last msg) ---------- */
+/* ---------- palette / structure ---------- */
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
@@ -312,10 +263,13 @@ function paletteFromHeight(height){
   };
 }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
-function chooseSetModesFromBlock(b){ const h=b.height|0; const mr=b.merkle_root||b.merkleRoot||''; const nonce=b.nonce||0; const bits=b.bits||0;
+function chooseSetModesFromBlock(b){
+  const h=b.height|0; const mr=b.merkle_root||''; const nonce=b.nonce||0; const bits=b.bits||0;
   const sA=byteAt(mr,3), sB=byteAt(mr,7), sC=byteAt(mr,11), sD=lastByte(b.id||b.hash||'');
-  const mlist=[0,1,2,3,4,5,6,7,8]; const pick=(seed)=>mlist[(seed + h + (nonce&255) + (bits&255))%mlist.length];
-  return { protons: pick(sA), neutrons: pick(sB), electrons: pick(sC), rings: pick(sD)%3 }; }
+  const mlist=[0,1,2,3,4,5,6,7,8];
+  const pick=(seed)=>mlist[(seed + h + (nonce&255) + (bits&255))%mlist.length];
+  return { protons: pick(sA), neutrons: pick(sB), electrons: pick(sC), rings: pick(sD)%3 };
+}
 function buildAtomFromBlock(b){
   const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
   const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
@@ -399,7 +353,7 @@ function injectPanels(atom){
   det.open=false; info.open=false;
 }
 
-/* ---------- p5 + gestures (FIX: wire touch listeners in setup) ---------- */
+/* ---------- p5 + gestures ---------- */
 let p5Instance=null, orbShader=null, shaderLinked=false;
 let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
 let isDragging=false, lastX=0, lastY=0, dragButton=0;
@@ -408,13 +362,10 @@ let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
 function toggleUI(){ uiRoot.classList.toggle('show'); }
 ['pointerdown','touchstart','mousedown','wheel'].forEach(ev=>uiRoot.addEventListener(ev,e=>e.stopPropagation(),{passive:false}));
 
-function startSketch(blk, txs){
+function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
-  currentAtom=atom;
-  currentTxs = (txs||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
-  resizeBG(); renderTreemapBase(currentTxs, atom); compositeBG();
 
   const sketch=(p)=>{
     p.setup=()=>{
@@ -424,7 +375,7 @@ function startSketch(blk, txs){
       try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
-      // ✅ FIX: attach touch listeners AFTER canvas exists
+      // Touch listeners (after canvas exists)
       const canvasEl = cnv.canvas;
       if(canvasEl){
         canvasEl.addEventListener('touchstart',(e)=>{
@@ -462,7 +413,7 @@ function startSketch(blk, txs){
       }
     };
 
-    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(currentTxs, atom); compositeBG(); };
+    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); };
 
     // Mouse (desktop)
     p.mousePressed=(e)=>{ isDragging=true; lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; };
@@ -523,20 +474,33 @@ function startSketch(blk, txs){
 
     p.draw=()=>{
       const t=p.millis()*0.001;
-      compositeBG();
-      if(atom.style.halving){
+      // base background (and pulsing overlay for halving)
+      p.background(0);
+      if(atom.style.halving && !atom.style.disco){
+        p.push(); p.resetMatrix(); p.noStroke(); p.blendMode(p.ADD);
         const g = Math.floor(40 + 20*(0.5+0.5*Math.sin(t*1.8)));
-        bgCtx.save(); bgCtx.fillStyle=`rgba(${g*6},${g*3},0,0.06)`; bgCtx.fillRect(0,0,bgCanvas.width,bgCanvas.height); bgCtx.restore();
+        p.fill(6*g,3*g,0, 20); // subtle orange pulse
+        p.rectMode(p.CORNER); p.rect(-p.width/2,-p.height/2,p.width,p.height);
+        p.pop();
       }
 
-      p.background(0); setCamera();
+      // camera & scene
+      const fovy=p.radians(55), aspect=p.width/p.height, near=0.01, far=20000;
+      p.perspective(fovy,aspect,near,far);
+      const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
+      const cy=camTarget[1]+camDist*Math.sin(camPitch);
+      const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
+      p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
       const effModeP= overrides.proton  ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.protons);
       const effModeN= overrides.neutron ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.neutrons);
       const effModeE= overrides.electron?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.electrons);
 
-      drawRings(t); if(atom.style.halving&&!atom.style.disco) drawHalvingGlow(t);
+      // rings & nucleus glow
+      drawRings(t);
+      if(atom.style.halving&&!atom.style.disco) drawHalvingGlow(t);
 
+      // nucleus
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
         if(atom.style.disco){ const hue=(t*240+q.hueOffset)%360; const col=hslToRgb((hue%360)/360,0.95,0.55); const pulse=1.0+0.35*Math.sin(t*9.0+q.hueOffset*0.05);
@@ -548,6 +512,7 @@ function startSketch(blk, txs){
         p.pop();
       }
 
+      // electrons
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], base=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -595,33 +560,14 @@ const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
 
-async function fetchAllBlockTxs(hash){
-  const txs=[];
-  try{ const first=await fetchJSON(`${API}/block/${hash}/txs`);
-       if(Array.isArray(first)) for(const t of first) txs.push({txid:t.txid||t.hash,vsize:t.vsize||t.size,size:t.size,fee:t.fee}); }
-  catch(e){ console.warn('first page /txs failed:',e?.message||e); return txs; }
-  let page=1;
-  while(true){
-    try{
-      const arr=await fetchJSON(`${API}/block/${hash}/txs/${page}`);
-      if(!arr||!arr.length) break;
-      for(const t of arr) txs.push({txid:t.txid||t.hash,vsize:t.vsize||t.size,size:t.size,fee:t.fee});
-      page++;
-    }catch(e){ console.warn(`stop paging at /txs/${page}:`, e?.message||e); break; }
-  }
-  return txs;
-}
-
 async function loadBlockByHeight(height){
   progress.style.display='block'; progress.textContent='Resolving block '+height+'…';
   const hash=await fetchText(API+'/block-height/'+height);
   progress.textContent='Fetching header…';
   const blk=await fetchJSON(API+'/block/'+hash);
-  progress.textContent='Fetching transactions…';
-  const txs=await fetchAllBlockTxs(hash);
   progress.style.display='none';
   selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
-  startSketch(blk, txs);
+  startSketch(blk);
 }
 async function loadLatest(){
   progress.style.display='block'; progress.textContent='Getting tip height…';
@@ -633,11 +579,8 @@ loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter
 latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textContent='Error: '+e.message; }};
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') toggleUI(); });
 setTimeout(()=>hint.classList.add('hide'),15000);
-
-window.addEventListener('resize', resizeBG);
-resizeBG();
+// new13
 loadLatest();
-// new12
 </script>
 </body>
 </html>
