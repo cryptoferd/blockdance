@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — no treemap</title>
+<title>Bitcoin Block Atom — no treemap (screen-space pan)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -116,7 +116,7 @@ const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*
 const lerp=(a,b,t)=>a+(b-a)*t;
 const isHalving=h=>h>0&&(h%210000)===0;
 
-/* ---------- WebGL shader (same as previous working build) ---------- */
+/* ---------- WebGL shader (working build) ---------- */
 const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix,uProjectionMatrix;
@@ -175,48 +175,48 @@ void main(){
   vec3 colA=uColorA, colB=uColorB, col;
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
-  if(m==0){ // Marble
+  if(m==0){
     vec3 seed=vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3);
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + seed);
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==1){ // Glass
+  } else if(m==1){
     float fres=pow(1.0-max(dot(n,V),0.0),3.0);
     col=mix(colA,colB,0.5)*(0.1+0.18*ndl) + vec3(1.0)*fres*0.85;
-  } else if(m==2){ // Wireframe (toonish grid)
+  } else if(m==2){
     float k=9.0+2.0*fract(uObjSeed*7.0);
     vec3 q=normalize(vPos);
     float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
     float edge=smoothstep(0.92,0.985,g);
     vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
     col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
-  } else if(m==3){ // Lava
+  } else if(m==3){
     vec3 seed=vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3);
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + seed);
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
     col=mix(cool,hot,veins)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
-  } else if(m==4){ // Toon
+  } else if(m==4){
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
     col=base*(0.22+s) + vec3(1.0)*step(0.8,rim)*0.18;
-  } else if(m==5){ // Iridescent
+  } else if(m==5){
     float h=fract(0.5+0.35*dot(n,vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
     col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
-  } else if(m==6){ // Spikes (vertex animated)
+  } else if(m==6){
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + seed);
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
     vec3 hi=base*1.7, lo=base*0.45;
     col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
-  } else if(m==7){ // Metallic
+  } else if(m==7){
     float spec=pow(max(dot(n,normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
-  } else if(m==8){ // Sky / Clouds
+  } else if(m==8){
     vec3 seed=vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7);
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
@@ -227,7 +227,7 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else { // Safe
+  } else {
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
@@ -242,6 +242,29 @@ const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b
 const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
 const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
+
+/* NEW: camera basis for screen-space panning */
+function camBasis(yaw, pitch){
+  const cy=Math.cos(yaw), sy=Math.sin(yaw);
+  const cp=Math.cos(pitch), sp=Math.sin(pitch);
+  const forward=[ sy*cp, sp, cy*cp ];
+  const upW=[0,1,0];
+  let right=[
+    forward[1]*upW[2] - forward[2]*upW[1],
+    forward[2]*upW[0] - forward[0]*upW[2],
+    forward[0]*upW[1] - forward[1]*upW[0]
+  ];
+  const rl=Math.hypot(right[0],right[1],right[2])||1;
+  right=[ right[0]/rl, right[1]/rl, right[2]/rl ];
+  let up=[
+    right[1]*forward[2] - right[2]*forward[1],
+    right[2]*forward[0] - right[0]*forward[2],
+    right[0]*forward[1] - right[1]*forward[0]
+  ];
+  const ul=Math.hypot(up[0],up[1],up[2])||1;
+  up=[ up[0]/ul, up[1]/ul, up[2]/ul ];
+  return {forward,right,up};
+}
 
 /* ---------- palette / structure ---------- */
 function paletteFromHeight(height){
@@ -375,7 +398,7 @@ function startSketch(blk){
       try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
-      // Touch listeners (after canvas exists)
+      // Touch listeners
       const canvasEl = cnv.canvas;
       if(canvasEl){
         canvasEl.addEventListener('touchstart',(e)=>{
@@ -402,8 +425,18 @@ function startSketch(blk){
             const d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
             if(pinchPrev!=null){ const k=(pinchPrev>0)?(pinchPrev/d):1; camDist*=k; camDist=clamp(camDist,40,12000); }
             pinchPrev=d;
+
+            // NEW: screen-space pan for 2-finger drag
             const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientY+t1.clientY)/2;
-            if(twoPrevMid){ const dx=midX-twoPrevMid[0], dy=midY-twoPrevMid[1]; const panScale=camDist*0.002; camTarget[0]-=dx*panScale; camTarget[1]+=dy*panScale; }
+            if(twoPrevMid){
+              const dx = midX - twoPrevMid[0];
+              const dy = midY - twoPrevMid[1];
+              const {right, up} = camBasis(camYaw, camPitch);
+              const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 2 / p.height;
+              camTarget[0] += (-dx * panScale) * right[0] + ( dy * panScale) * up[0];
+              camTarget[1] += (-dx * panScale) * right[1] + ( dy * panScale) * up[1];
+              camTarget[2] += (-dx * panScale) * right[2] + ( dy * panScale) * up[2];
+            }
             twoPrevMid=[midX,midY];
           }
           e.preventDefault();
@@ -419,18 +452,18 @@ function startSketch(blk){
     p.mousePressed=(e)=>{ isDragging=true; lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; };
     p.mouseReleased=()=>{ isDragging=false; };
     p.mouseDragged=()=>{ const dx=p.mouseX-lastX, dy=p.mouseY-lastY; lastX=p.mouseX; lastY=p.mouseY;
-      if(dragButton===p.LEFT){ camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02); }
-      else{ const panScale=camDist*0.002; camTarget[0]-=dx*panScale; camTarget[1]+=dy*panScale; } };
+      if(dragButton===p.LEFT){
+        camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
+      } else {
+        // NEW: screen-space pan using camera basis (right-drag)
+        const {right, up} = camBasis(camYaw, camPitch);
+        const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 2 / p.height; // world units per pixel
+        camTarget[0] += (-dx * panScale) * right[0] + ( dy * panScale) * up[0];
+        camTarget[1] += (-dx * panScale) * right[1] + ( dy * panScale) * up[1];
+        camTarget[2] += (-dx * panScale) * right[2] + ( dy * panScale) * up[2];
+      } };
     p.mouseWheel=(e)=>{ camDist*= (1 + Math.sign(e.deltaY)*0.08); camDist=clamp(camDist,40,12000); };
 
-    function setCamera(){
-      const fovy=p.radians(55), aspect=p.width/p.height, near=0.01, far=20000;
-      p.perspective(fovy,aspect,near,far);
-      const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
-      const cy=camTarget[1]+camDist*Math.sin(camPitch);
-      const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
-      p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
-    }
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       const m=Math.max(0,Math.min(9,(mode|0)));
@@ -474,17 +507,17 @@ function startSketch(blk){
 
     p.draw=()=>{
       const t=p.millis()*0.001;
-      // base background (and pulsing overlay for halving)
+
+      // background and halving overlay
       p.background(0);
       if(atom.style.halving && !atom.style.disco){
         p.push(); p.resetMatrix(); p.noStroke(); p.blendMode(p.ADD);
         const g = Math.floor(40 + 20*(0.5+0.5*Math.sin(t*1.8)));
-        p.fill(6*g,3*g,0, 20); // subtle orange pulse
-        p.rectMode(p.CORNER); p.rect(-p.width/2,-p.height/2,p.width,p.height);
+        p.fill(6*g,3*g,0, 20); p.rectMode(p.CORNER); p.rect(-p.width/2,-p.height/2,p.width,p.height);
         p.pop();
       }
 
-      // camera & scene
+      // camera
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.01, far=20000;
       p.perspective(fovy,aspect,near,far);
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
@@ -579,7 +612,7 @@ loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter
 latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textContent='Error: '+e.message; }};
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') toggleUI(); });
 setTimeout(()=>hint.classList.add('hide'),15000);
-// new13
+// new14
 loadLatest();
 </script>
 </body>
