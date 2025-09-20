@@ -159,7 +159,7 @@ void main(){
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
     float w2 = sin( dot(nrm, vec3(-0.3,0.9,0.1))*17.0 + t*1.6 + uObjSeed*7.3 );
     float j  = fbm(nrm*5.0 + vec3(0.0,t*0.4,0.0) + vec3(uObjSeed));
-    float ripple = (w1*0.6 + w2*0.4) * (0.012 + 0.008*j) * (0.7+0.3*uAmp) * 2.5; // ⬅ 2.5x
+    float ripple = (w1*0.6 + w2*0.4) * (0.012 + 0.008*j) * (0.7+0.3*uAmp) * 5; // ⬅ 2.5x
     pos += nrm * ripple * length(aPosition);
   }
 
@@ -692,7 +692,7 @@ latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textCo
 resetBtn.onclick=()=>{ camDist=initialCam.dist; camYaw=initialCam.yaw; camPitch=initialCam.pitch; camTarget=[...initialCam.target]; modelSpin=0; markInteraction(); };
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') uiRoot.classList.toggle('show'); markInteraction(); });
 setTimeout(()=>hint.classList.add('hide'),15000);
-// new19
+// new20
 loadLatest();
 </script>
 </body>
