@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — mobile pinch fix</title>
+<title>Bitcoin Block Atom — mobile/desktop zoom fix</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -59,8 +59,6 @@
       display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px;
       font-size:13px
     }
-    .hud label{align-self:center}
-    .hud input{min-width:0;width:100%}
     .hud .sep{display:none}
     #legend{left:8px; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
     details#blockPanel, #infoPanel{left:8px; right:8px; max-width:none}
@@ -101,7 +99,7 @@
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* ---------- small helpers ---------- */
+/* ---------- helpers (unchanged) ---------- */
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const mod=(a,n)=>((a%n)+n)%n;
@@ -116,8 +114,7 @@ const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
 const isHalving=h=>h>0&&(h%210000)===0;
 
-/* ---------- shaders (same as your last working build with glass ripple updates) ---------- */
-/* Modes: 0 Marble, 1 Glass, 2 Wireframe, 3 Lava, 4 Toon, 5 Iridescent, 6 Spikes, 7 Metallic, 8 Sky, 9 Safe */
+/* ---------- shaders (same as your latest glassy ripple build) ---------- */
 const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix,uProjectionMatrix;
@@ -149,7 +146,6 @@ void main(){
     pos += nrm*(amp*spike*length(aPosition));
   }
 
-  /* Glass — 4× ripple amplitude, 1/2 speed */
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -191,7 +187,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-  if(m==1){ // Glass, slower swirls, clearer shell
+  if(m==1){
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.16 + 0.06*sin(t*0.45 + uObjSeed*5.3);
     float micro = fbm(normalize(vPos)*5.5 + vec3(0.0,t*0.175,0.0) + vec3(uObjSeed*1.7));
@@ -205,14 +201,12 @@ void main(){
     float spec = pow(max(dot(n,H1),0.0), 80.0)*0.9 + pow(max(dot(n,H2),0.0), 80.0)*0.7;
     vec3 shellTint = mix(vec3(1.0), swirl, 0.18);
     col = shellTint*0.05 + reflectCol * (0.08 + 0.22*ndl + 0.75*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.10;
-
   } else if(m==0){
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-
   } else if(m==2){
     float k=9.0+2.0*fract(uObjSeed*7.0);
     vec3 q=normalize(vPos);
@@ -220,34 +214,28 @@ void main(){
     float edge=smoothstep(0.92,0.985,g);
     vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
     col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
-
   } else if(m==3){
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3));
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
     col=mix(cool,hot,veins)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
-
   } else if(m==4){
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
     col=base*(0.22+s) + vec3(1.0)*step(0.8,rim)*0.18;
-
   } else if(m==5){
     float h=fract(0.5+0.35*dot(normalize(vPos),vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
     col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
-
   } else if(m==6){
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7));
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
     vec3 hi=base*1.7, lo=base*0.45;
     col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
-
   } else if(m==7){
     float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
-
   } else if(m==8){
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
@@ -258,14 +246,13 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-
   } else {
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
 }`;
 
-/* ---------- scene helpers ---------- */
+/* ---------- math & camera ---------- */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
 const v3=(x,y,z)=>[x,y,z], vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
 const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -293,7 +280,7 @@ function camBasis(yaw, pitch){
   return {forward,right,up};
 }
 
-/* ---------- mapping & atom build ---------- */
+/* ---------- palette / build (unchanged) ---------- */
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
@@ -398,7 +385,7 @@ function injectPanels(atom){
   const s2=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   s2.appendChild(badge); s2.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(s2);
   const ib=document.createElement('div'); ib.style.padding='10px 12px';
-  ib.innerHTML='<h3>Controls</h3><p>Rotate: drag / 1-finger • Zoom: wheel / pinch • Pan: right-drag / 2-finger • Toggle UI: <b>E</b> / <b>double-tap</b> the scene</p><h3>Glass style</h3><p>Soap-bubble thin-film swirls with stronger Fresnel reflection and <b>4× ripple amplitude</b> at <b>½ speed</b>.</p>';
+  ib.innerHTML='<h3>Controls</h3><p>Rotate: drag / 1-finger • Zoom: wheel / pinch • Pan: right-drag / 2-finger • Toggle UI: <b>E</b> / <b>double-tap</b> the scene</p>';
   info.appendChild(ib);
   det.open=false; info.open=false;
 }
@@ -406,16 +393,13 @@ function injectPanels(atom){
 /* ---------- p5 + inputs ---------- */
 let p5Instance=null, orbShader=null, shaderLinked=false;
 let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
-let minCamDist=120, maxCamDist=20000;   // <— NEW: dynamic min updated per block
+let minCamDist=200, maxCamDist=20000;   // dynamic per block; initial defaults
 let isDragging=false, lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
-const COIN_SPIN_SPEED = 0.08;
 let modelSpin = 0;
 
 const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
 let overrides = { proton:null, neutron:null, electron:null };
-
-/* selectors */
 function populateSelectors(){
   const opts = MODE_LIST.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
   selProton.innerHTML = `<option value="">Auto</option>${opts}`;
@@ -427,21 +411,19 @@ selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Numbe
 selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); };
 selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); };
 
-/* sketch */
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
 
-  // camera reset
   camDist=560; camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0];
   modelSpin = 0;
 
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // --- NEW: set a safe minimum distance based on atom size ---
+  // Tighter min distance to avoid clipping-through on mobile pinch
   const largestRadius = atom.radii.length ? atom.radii[atom.radii.length-1] : 140;
-  minCamDist = Math.max( largestRadius * 1.15, 120 );   // ~15% beyond outer ring
-  maxCamDist = 20000;
+  minCamDist = Math.max( largestRadius * 1.8, 180 );  // <- more conservative than before
+  maxCamDist = 25000;
 
   const sketch=(p)=>{
     p.setup=()=>{
@@ -476,9 +458,11 @@ function startSketch(blk){
             const t0=e.touches[0], t1=e.touches[1];
             const d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
             if(pinchPrev!=null && d>0){
-              // smoother pinch & strict clamp to avoid entering the atom
-              const scale = Math.pow(d/pinchPrev, 0.85);  // less aggressive
-              camDist = clamp(camDist/scale, minCamDist, maxCamDist);
+              const rawScale = d / pinchPrev;                  // pinch open => >1
+              const scale    = Math.pow(rawScale, 0.85);       // soften
+              const next     = clamp(camDist / scale, minCamDist, maxCamDist);
+              // limit jump per frame to avoid pop-through
+              camDist = clamp(next, camDist*0.5, camDist*2.0);
             }
             pinchPrev=d;
 
@@ -518,8 +502,9 @@ function startSketch(blk){
       }
     };
     p.mouseWheel=(e)=>{
-      const s = Math.exp(-e.deltaY * 0.0012);
-      camDist = clamp(camDist*s, minCamDist, maxCamDist);
+      // Standard: wheel up (deltaY < 0) => zoom in
+      const s = Math.exp(e.deltaY * 0.0012);     // (no leading minus)
+      camDist = clamp(camDist * s, minCamDist, maxCamDist);
       e.preventDefault();
     };
 
@@ -579,14 +564,13 @@ function startSketch(blk){
         p.pop();
       }
 
-      const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=20000; // near a bit larger for stability
+      const fovy=p.radians(55), aspect=p.width/p.height, near=0.5, far=30000;
       p.perspective(fovy,aspect,near,far);
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
       const cy=camTarget[1]+camDist*Math.sin(camPitch);
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // constant coin spin
       modelSpin += 0.08 * (p.deltaTime/1000);
       p.push();
       p.rotateY(modelSpin);
@@ -598,7 +582,6 @@ function startSketch(blk){
       const effModeN= overrides.neutron ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.neutrons);
       const effModeE= overrides.electron?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.electrons);
 
-      // nucleus
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
         if(atom.style.disco){ const hue=(t*240+q.hueOffset)%360; const col=hslToRgb((hue%360)/360,0.95,0.55); const pulse=1.0+0.35*Math.sin(t*9.0+q.hueOffset*0.05);
@@ -610,7 +593,6 @@ function startSketch(blk){
         p.pop();
       }
 
-      // electrons
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], base=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -667,7 +649,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new22
+// new23
 loadLatest();
 </script>
 </body>
