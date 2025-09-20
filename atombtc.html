@@ -3,28 +3,31 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — mobile UI + full treemap</title>
+<title>Bitcoin Block Atom — full UI + mobile + treemap</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.92); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
-  /* fixed 2D background canvas, below 3D */
+  /* Fixed 2D background canvas (treemap) */
   #bg2d{position:fixed;inset:0;z-index:0;display:block;pointer-events:none;background:#000}
-
-  /* p5 3D canvas on top */
+  /* p5 canvas */
   canvas.p5canvas{position:fixed;inset:0;z-index:1;display:block;touch-action:none}
 
-  /* HUD and panels — start hidden; toggled with E / triple-tap */
-  .uiRoot{position:fixed;inset:0;pointer-events:none;z-index:20}
+  /* ===== UI root — truly hidden by default; toggle adds .show ===== */
+  .uiRoot{position:fixed;inset:0;z-index:20;opacity:0;visibility:hidden;transition:opacity .22s ease, visibility .22s ease;pointer-events:none}
+  .uiRoot.show{opacity:1;visibility:visible}
   .uiRoot.show *{pointer-events:auto}
+
   .hud{position:fixed;left:10px;top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);
        border:1px solid var(--border);border-radius:12px;padding:8px 10px;backdrop-filter:blur(6px);font-size:12px}
   .hud input, .hud button, .hud select{font:inherit;border-radius:8px;border:1px solid var(--border);background:#121820;color:var(--text);padding:6px 8px}
   .hud .sep{width:1px;height:24px;background:#283543;margin:0 6px}
+
   .panel{position:fixed;font-size:12px;color:var(--muted);padding:8px 10px;background:var(--panel);
          border:1px solid var(--border);border-radius:12px;max-width:min(560px,calc(100vw - 20px));backdrop-filter:blur(6px)}
   #legend{left:10px;top:78px}
   #legend div{white-space:nowrap}
+
   details#blockPanel{right:10px;bottom:10px;max-height:min(80vh,900px);overflow:auto}
   details#blockPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;justify-content:space-between;gap:8px}
   details#blockPanel[open]>summary{border-bottom:1px solid var(--border)}
@@ -34,6 +37,7 @@
   #blkBody td{padding:4px 0;vertical-align:top}
   #blkBody td:first-child{color:#9cc9ee;width:42%;padding-right:10px}
   .chip{display:inline-block;padding:2px 6px;border:1px solid #2b3a44;border-radius:8px;margin:2px;color:#d7ecff;font-size:11px}
+
   #infoPanel{left:10px;bottom:10px}
   #infoPanel>summary{list-style:none;cursor:pointer;padding:10px 12px;color:#d7ecff;font-weight:700;display:flex;gap:8px;align-items:center}
   #infoPanel[open]>summary{border-bottom:1px solid var(--border)}
@@ -41,25 +45,25 @@
 
   #progress{position:fixed;left:10px;top:10px;transform:translateY(52px);z-index:22;color:#d7ecff;font-size:12px;background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none}
 
-  /* soft hint at bottom, fades after 15s */
   #hint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:25;color:#b6c9de;opacity:0.35;font-size:12px;
         background:rgba(7,10,14,0.6);border:1px solid #24313b;border-radius:10px;padding:7px 10px;pointer-events:none;transition:opacity .4s ease}
   #hint.hide{opacity:0}
+
   /* Mobile tweaks */
   @media (max-width: 800px){
-    .hud{left:8px;right:8px;top:8px;justify-content:flex-start}
+    .hud{left:8px;right:8px;top:8px;justify-content:flex-start;font-size:13px}
+    .hud input{flex:1;min-width:115px}
     .hud .sep{display:none}
-    .hud input{flex:1;min-width:110px}
     #legend{left:8px;top:70px}
+    details#blockPanel, #infoPanel{left:8px;right:8px;max-width:none}
   }
 </style>
 </head>
 <body>
 
-<!-- Full-bleed treemap background -->
 <canvas id="bg2d"></canvas>
 
-<!-- UI Root (hidden by default, toggled by E / triple tap) -->
+<!-- UI: hidden by default, toggle with E / double-tap -->
 <div class="uiRoot" id="uiRoot">
   <div class="hud" id="hud">
     <label>Height:</label>
@@ -77,25 +81,25 @@
 
   <div class="panel" id="legend">
     <div><b>Controls</b></div>
-    <div>• Rotate/Tilt: drag</div>
-    <div>• Pan: right-drag / two-finger</div>
+    <div>• Rotate/Tilt: drag / 1-finger</div>
+    <div>• Pan: right-drag / 2-finger drag</div>
     <div>• Zoom: wheel / pinch</div>
   </div>
 
   <details id="blockPanel" class="panel"></details>
-  <details id="infoPanel" class="panel"></details>
+  <details id="infoPanel"  class="panel"></details>
 </div>
 
 <div id="progress">…</div>
-<div id="hint">Press <b>E</b> (desktop) or <b>triple-tap</b> (mobile) to show / hide the UI</div>
+<div id="hint">Press <b>E</b> (desktop) or <b>double-tap</b> (mobile) to show / hide the UI</div>
 
 <script src="https://unpkg.com/p5@1.9.2/lib/p5.min.js"></script>
 <script>
-/* ==================== UTILS ==================== */
+/* ======================= Utility ======================= */
 const $=s=>document.querySelector(s);
-const shortHash=h=>h?(String(h).slice(0,10)+'…'+String(h).slice(-8)):'n/a';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const mod=(a,n)=>((a%n)+n)%n;
+const shortHash=h=>h?(String(h).slice(0,10)+'…'+String(h).slice(-8)):'n/a';
 function XS32(seed){let x=seed>>>0||1;return()=>{x^=x<<13;x^=x>>>17;x^=x<<5;return (x>>>0)/0xFFFFFFFF;};}
 function hslToRgb(h,s,l){let r,g,b;if(s===0){r=g=b=l;}else{const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;r=hue2rgb(p,q,h+1/3);g=hue2rgb(p,q);b=hue2rgb(p,q,h-1/3);}return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];}
 function rgbToHsl(r,g,b){r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b);let h,s,l=(max+min)/2;if(max===min){h=s=0;}else{const d=max-min;s=l>0.5?d/(2-max-min):d/(max+min);switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4;break;}h/=6;}return[h,s,l];}
@@ -103,84 +107,79 @@ const shiftHue=(rgb,deg)=>{const[h,s,l]=rgbToHsl(rgb[0],rgb[1],rgb[2]);let hh=(h
 const lastByte = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; return parseInt(c.slice(-2),16)||0; };
 const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<c.length;i+=2){ const b=parseInt(c.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; };
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
+const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
+const lerp=(a,b,t)=>a+(b-a)*t; const lerpRGB=(a,b,t)=>[Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t))];
 const isHalving=h=>h>0&&(h%210000)===0;
 
+/* ======================= Vec3 helpers ======================= */
 const v3=(x,y,z)=>[x,y,z], vadd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
 const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
 const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
 
-/* ==================== SHADERS ==================== */
-/* Modes:
-   0 Marble, 1 Glass, 2 Wireframe, 3 Lava, 4 Toon, 5 Iridescent,
-   6 Spikes (10×), 7 Metallic, 8 Sky, 9 Safe
-*/
-const VERT=`
-precision mediump float; precision mediump int;
+/* ======================= Shader code ======================= */
+/* VERT supports animated "Spikes" with 10× the original amplitude (mesh displacement) */
+const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
-uniform mat4 uModelViewMatrix, uProjectionMatrix;
-uniform float uModeF, uTime, uAmp, uSpeed, uObjSeed;
-varying vec3 vPos, vNormal;
+uniform mat4 uModelViewMatrix,uProjectionMatrix;
+uniform float uModeF,uTime,uAmp,uSpeed,uObjSeed;
+varying vec3 vPos,vNormal;
 
-float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
-float n3(vec3 p){
-  vec3 i=floor(p), f=fract(p);
-  float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
-  float n010=hash(i+vec3(0,1,0)), n110=hash(i+vec3(1,1,0));
-  float n001=hash(i+vec3(0,0,1)), n101=hash(i+vec3(1,0,1));
-  float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
-  vec3 u=f*f*(3.0-2.0*f);
-  float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
-  float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
-  float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
-  return mix(n0,n1,u.z);
-}
-float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.03; a*=0.5; } return s; }
+float hash(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
+float n3(vec3 p){vec3 i=floor(p),f=fract(p);
+float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
+float n010=hash(i+vec3(0,1,0)), n110=hash(i+vec3(1,1,0));
+float n001=hash(i+vec3(0,0,1)), n101=hash(i+vec3(1,0,1));
+float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
+vec3 u=f*f*(3.0-2.0*f);
+float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
+float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
+float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
+return mix(n0,n1,u.z);}
+float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0.5;}return s;}
 
 void main(){
-  vec3 pos=aPosition, nrm=normalize(aPosition);
+  vec3 pos=aPosition;
+  vec3 nrm=normalize(aPosition);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
-  if(m==6){ // spikes
-    vec3 seed=vec3(uObjSeed, uObjSeed*1.9, uObjSeed*2.7);
+  // Spikes mode (index 6) — heavy displacement (about 10×)
+  if(m==6){
+    vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float t=uTime*(1.0+uSpeed);
     float s=fbm(normalize(pos)*6.5 + seed + vec3(0.0,t*1.1,0.0));
     float spike=smoothstep(0.55,0.93,s);
-    float amp=1.8*(0.65+0.35*uAmp); // strong
-    pos += nrm * (amp * spike * length(aPosition));
+    float amp=6.5*(0.65+0.35*uAmp);  // ~10× compared to original
+    pos += nrm*(amp*spike*length(aPosition));
   }
   vPos=pos; vNormal=normalize(pos);
   gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
-}
-`;
+}`;
 
-const FRAG=`
-precision mediump float; precision mediump int;
-varying vec3 vPos, vNormal;
+/* FRAG contains all materials: Marble, Glass, Wireframe, Lava, Toon, Iridescent, Spikes (shading), Metallic, Sky, Safe */
+const FRAG=`precision mediump float; precision mediump int;
+varying vec3 vPos,vNormal;
 uniform vec3 uColorA,uColorB;
 uniform float uTime,uAlpha,uPhase,uAmp,uSpeed,uModeF,uObjSeed;
 
-float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
-float n3(vec3 p){
-  vec3 i=floor(p), f=fract(p);
-  float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
-  float n010=hash(i+vec3(0,1,0)), n110=hash(i+vec3(1,1,0));
-  float n001=hash(i+vec3(0,0,1)), n101=hash(i+vec3(1,0,1));
-  float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
-  vec3 u=f*f*(3.0-2.0*f);
-  float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
-  float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
-  float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
-  return mix(n0,n1,u.z);
-}
-float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.02; a*=0.5; } return s; }
-vec3 hsv2rgb(vec3 c){ vec3 p=abs(fract(c.xxx+vec3(0.,2./3.,1./3.))*6.-3.); return c.z*mix(vec3(1.0), clamp(p-1.0,0.0,1.0), c.y); }
+float hash(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
+float n3(vec3 p){vec3 i=floor(p),f=fract(p);
+float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
+float n010=hash(i+vec3(0,1,0)), n110=hash(i+vec3(1,1,0));
+float n001=hash(i+vec3(0,0,1)), n101=hash(i+vec3(1,0,1));
+float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
+vec3 u=f*f*(3.0-2.0*f);
+float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
+float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
+float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
+return mix(n0,n1,u.z);}
+float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.02;a*=0.5;}return s;}
+vec3 hsv2rgb(vec3 c){vec3 p=abs(fract(c.xxx+vec3(0.,0.6666667,0.3333333))*6.-3.);return c.z*mix(vec3(1.0),clamp(p-1.0,0.0,1.0),c.y);}
 
 void main(){
   vec3 n=normalize(vNormal);
-  vec3 V=vec3(0.0,0.0,1.0);
-  vec3 L1=normalize(vec3(0.6,0.7,0.5));
-  vec3 L2=normalize(vec3(-0.4,0.65,-0.2));
+  vec3 V=vec3(0,0,1);
+  vec3 L1=normalize(vec3(0.6,0.7,0.5)), L2=normalize(vec3(-0.4,0.65,-0.2));
   float ndl=max(dot(n,L1),0.0)*0.65 + max(dot(n,L2),0.0)*0.35;
   float rim=pow(1.0-max(dot(n,V),0.0),2.0);
 
@@ -194,111 +193,108 @@ void main(){
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
-    col=base*(0.35+0.65*ndl)+vec3(1.0)*rim*0.12;
-
+    col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   } else if(m==1){ // Glass
     float fres=pow(1.0-max(dot(n,V),0.0),3.0);
-    col=mix(colA,colB,0.5)*(0.1+0.18*ndl)+vec3(1.0)*fres*0.85;
-
-  } else if(m==2){ // Wireframe
-    float k=9.0+2.0*fract(uObjSeed*7.0); vec3 q=normalize(vPos);
+    col=mix(colA,colB,0.5)*(0.1+0.18*ndl) + vec3(1.0)*fres*0.85;
+  } else if(m==2){ // Wireframe (green)
+    float k=9.0+2.0*fract(uObjSeed*7.0);
+    vec3 q=normalize(vPos);
     float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
     float edge=smoothstep(0.92,0.985,g);
     vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
-    col=base+vec3(0.2,1.0,0.2)*edge*0.95+vec3(1.0)*rim*0.12;
-
+    col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
   } else if(m==3){ // Lava
     vec3 seed=vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3);
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + seed);
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
-    col=mix(cool,hot,veins)*(0.35+0.65*ndl)+vec3(1.0)*rim*0.08;
-
+    col=mix(cool,hot,veins)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
   } else if(m==4){ // Toon
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
-    col=base*(0.22+s)+vec3(1.0)*step(0.8,rim)*0.18;
-
+    col=base*(0.22+s) + vec3(1.0)*step(0.8,rim)*0.18;
   } else if(m==5){ // Iridescent
     float h=fract(0.5+0.35*dot(n,vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
-    col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl)+vec3(1.0)*rim*0.18;
-
-  } else if(m==6){ // Spikes shade
+    col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
+  } else if(m==6){ // Spikes shading (matches VERT displacement)
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + seed);
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
-    vec3 highlight=base*1.7, shaded=base*0.45;
-    col=mix(shaded,highlight,spike)*(0.28+0.72*ndl)+vec3(1.0)*rim*0.14;
-
+    vec3 hi=base*1.7, lo=base*0.45;
+    col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
   } else if(m==7){ // Metallic
-    float spec=pow(max(dot(n, normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
-    col=mix(colA,colB,0.5)*(0.20+0.55*ndl)+vec3(1.0)*spec*0.9+vec3(1.0)*rim*0.10;
-
-  } else if(m==8){ // Sky (light blue + white clouds)
+    float spec=pow(max(dot(n,normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
+    col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
+  } else if(m==8){ // Sky (blue with clouds)
     vec3 seed=vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7);
-    vec3 p = normalize(vPos);
-    float ang = t*0.35 + uPhase*0.3;
-    mat2 R = mat2(cos(ang),-sin(ang), sin(ang),cos(ang));
+    vec3 p=normalize(vPos);
+    float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
     p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
-    float base = fbm(p*3.0 + seed);
-    float puff = fbm(p*6.0 + vec3(0.0,t*0.2,0.0) + seed*1.7);
-    float clouds = smoothstep(0.55,0.85, base*0.6 + puff*0.7);
-    vec3 sky = vec3(0.53,0.75,0.98);
-    vec3 cloud = vec3(1.0);
-    vec3 baseCol = mix(sky, cloud, clouds);
-    col = baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-
+    float base=fbm(p*3.0+seed);
+    float puff=fbm(p*6.0+vec3(0.0,t*0.2,0.0)+seed*1.7);
+    float clouds=smoothstep(0.55,0.85,base*0.6+puff*0.7);
+    vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
+    vec3 baseCol=mix(sky,cloud,clouds);
+    col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   } else { // Safe
-    col=mix(colA,colB,0.5)*(0.35+0.65*ndl)+vec3(1.0)*rim*0.12;
+    col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
-  gl_FragColor=vec4(clamp(col,0.0,1.0), uAlpha);
-}
-`;
+  gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
+}`;
 
-/* ==================== CONSTANTS & COLOR MAPS ==================== */
+/* ======================= Visual constants ======================= */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
+
+/* ======================= Treemap color helpers ======================= */
 const FEERATE_MAX=50000;
 const C_GREEN=[0x0B,0x4F,0x35], C_YEL=[0xFF,0xFF,0x00], C_ORG=[0xFF,0xA5,0x00], C_RED=[0xFF,0x00,0x00], C_PURP=[0x81,0x08,0x4E];
-const lerp=(a,b,t)=>a+(b-a)*t; const lerpRGB=(a,b,t)=>[Math.round(lerp(a[0],b[0],t)),Math.round(lerp(a[1],b[1],t)),Math.round(lerp(a[2],b[2],t))];
 function feeToColor(fr){const t=clamp(fr/FEERATE_MAX,0,1);
-  if(t<=0.25){return lerpRGB(C_GREEN,C_YEL,t/0.25);}
-  if(t<=0.50){return lerpRGB(C_YEL,C_ORG,(t-0.25)/0.25);}
-  if(t<=0.75){return lerpRGB(C_ORG,C_RED,(t-0.50)/0.25);}
-  return lerpRGB(C_RED,C_PURP,(t-0.75)/0.25);
-}
+  if(t<=0.25){return lerpRGB(C_GREEN,C_YEL,t/0.25);} if(t<=0.50){return lerpRGB(C_YEL,C_ORG,(t-0.25)/0.25);}
+  if(t<=0.75){return lerpRGB(C_ORG,C_RED,(t-0.50)/0.25);} return lerpRGB(C_RED,C_PURP,(t-0.75)/0.25); }
 const NEON_GREEN=[0,255,120], WHITE=[255,255,255], BLACK=[0,0,0];
 const BROWN=[110,70,30], ORANGE=[255,140,0];
-function rankToROYGBIV(t){ const hue=lerp(0, 300, t); const [r,g,b]=hslToRgb((hue%360)/360, 0.95, 0.55); return [r,g,b]; }
+function rankToROYGBIV(t){ const hue=lerp(0,300,t); const [r,g,b]=hslToRgb((hue%360)/360,0.95,0.55); return [r,g,b]; }
 function rankToBrownOrangeWhite(t){ if(t<0.5) return lerpRGB(BROWN, ORANGE, t/0.5); return lerpRGB(ORANGE, WHITE, (t-0.5)/0.5); }
 function rankToBlackNeonWhite(t){ if(t<0.5) return lerpRGB(BLACK, NEON_GREEN, t/0.5); return lerpRGB(NEON_GREEN, WHITE, (t-0.5)/0.5); }
 
-/* ==================== PALETTE & MODES ==================== */
+/* ======================= Palette + structure mapping ======================= */
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
-  let hP = baseHue; let hN = mod(hP + (90 + rng() * 120), 360); let hE = mod(hP + (180 + rng() * 120), 360); let hS = mod(hP + (30 + rng() * 120), 360);
+  let hP = baseHue;
+  let hN = mod(baseHue + (90 + rng() * 120), 360);
+  let hE = mod(baseHue + (180 + rng() * 120), 360);
+  let hS = mod(baseHue + (30 + rng() * 120), 360);
   let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
   let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
   let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
   let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
-  return{ proton:hslToRgb(hP/360, sP, lP), neutron:hslToRgb(hN/360, sN, lN), electron:hslToRgb(hE/360, sE, lE), shell:hslToRgb(hS/360, sS, lS) };
+  return{
+    proton:  hslToRgb(hP/360, sP, lP),
+    neutron: hslToRgb(hN/360, sN, lN),
+    electron:hslToRgb(hE/360, sE, lE),
+    shell:   hslToRgb(hS/360, sS, lS)
+  };
 }
-function feeSpread(){ return 0.25; }
 function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
+
+/* Deterministic material set (one mode per group) */
+const MODE_NAMES=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
 function chooseSetModesFromBlock(b){
-  const mE = (((b.nonce||0)>>>24)%10);
-  const mP = ((b.version||0)&0xff)%10;
-  const mN = (hexByteSum(b.merkle_root||'')%10);
-  const ringVar = lastByte(b.id||b.hash||'') % 3;
-  return { mE, mP, mN, ringVar };
+  const h=b.height|0; const mr=b.merkle_root||b.merkleRoot||''; const nonce=b.nonce||0; const bits=b.bits||0;
+  const sA=byteAt(mr,3), sB=byteAt(mr,7), sC=byteAt(mr,11), sD=lastByte(b.id||b.hash||'');
+  const mlist=[0,1,2,3,4,5,6,7,8]; // avoid Safe unless fallback
+  const pick=(seed)=>mlist[(seed + h + (nonce&255) + (bits&255))%mlist.length];
+  return { protons: pick(sA), neutrons: pick(sB), electrons: pick(sC), rings: pick(sD)%3 };
 }
 
-/* ==================== BUILD ATOM ==================== */
+/* Build atom from block */
 function buildAtomFromBlock(b){
-  const height=b.height, txCount=b.tx_count??1, timestamp=b.timestamp??0;
-  const nonce=b.nonce??0, merkleRoot=b.merkle_root||"", weight=b.weight??0, size=b.size??0, version=b.version??0, hash=b.id||b.hash||"";
+  const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
+  const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
   const colors=paletteFromHeight(height);
 
   const baseE=(height%118)+1, eJitter=(byteAt(hash,5)%64)-32;
@@ -312,18 +308,17 @@ function buildAtomFromBlock(b){
   const shells=fillShells(electrons);
 
   const prod=Math.max(1, txCount*Math.max(1,size));
-  const lgProd=Math.log10(prod);
-  const speedScale=clamp((lgProd-8.6)/(10.7-8.6)*(2.2-0.55)+0.55,0.55,2.2);
+  const lg=Math.log10(prod);
+  const speedScale=clamp((lg-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
 
   const dens=clamp(weight/Math.max(1,size*4),0.6,1.4);
-  const tightness=clamp((dens*0.75)+(1.15-0.55*feeSpread()), 0.6,1.4);
-  const eccGlobal=clamp(0.08+0.7*feeSpread()+((version&0xF)/60)+((nonce&0x3f)/255)*0.2, 0.08,0.88);
+  const tightness=clamp((dens*0.75)+(1.15-0.55*0.25), 0.6,1.4);
+
+  const eccGlobal=clamp(0.3 + ((version&0xf)/16)*0.5 + ((nonce&0x3f)/63)*0.2, 0.08,0.88);
 
   const hashLast=lastByte(hash);
-  const ringThick=0.8+(hashLast/255)*2.0;
-  const ringAlpha=220;
-  const hueShiftDeg=(hashLast/255-0.5)*36;
-  const ringColor=shiftHue(colors.shell, hueShiftDeg);
+  const ringThick=0.9, ringAlpha=220;
+  const ringColor=shiftHue(colors.shell, (hashLast/255-0.5)*36);
 
   const orbitSpread=1.0+((version&0xf)-7.5)*0.01;
   const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
@@ -339,7 +334,7 @@ function buildAtomFromBlock(b){
       const e=clamp(eccGlobal*(0.6+0.8*(b1/255)),0.05,0.93), pre=(0.05+0.45*(b2/255))*speedScale, phase=(b0/255)*Math.PI*2;
       const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
       const hueOffset=( (i*97 + j*131 + seed) % 360 );
-      const objSeed = ( (seed * 2654435761) >>> 0 ) / 4294967295;
+      const objSeed=(seed%1000)/1000;
       electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset,objSeed};
     }
   }
@@ -353,499 +348,413 @@ function buildAtomFromBlock(b){
     const r=NUCLEUS_R0*(0.35+0.65*rNorm), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
     const isProton = i<Z;
     const hueOffset = (i*23 + (isProton?177:311)) % 360;
-    const seed = ((i+1)*1103515245 ^ (height*12345)) >>> 0;
-    const objSeed = (seed % 1000003) / 1000003;
+    const objSeed = ((i*101 + (isProton?37:73)) % 997)/997;
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset,objSeed});
   }
 
+  // Shader animation knobs
+  const animAmp=clamp(0.35,0.18,0.6);
+  const animSpeed=clamp(0.9,0.35,1.85);
   const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
-  const disco = height===170;
-  const halving = !disco && isHalving(height);
-  const is1337 = height===1337;
 
-  const {mE, mP, mN, ringVar} = chooseSetModesFromBlock(b);
+  const isDisco = height===170;
+  const is1337  = height===1337;
+  const halving = !isDisco && isHalving(height);
 
   return {
     block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
-    shader:{blockPhase, amp:0.32, speed:0.9},
-    setModes:{ electrons:mE, protons:mP, neutrons:mN, ringVar },
-    style:{ eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick, ringAlpha, ringColor, nucleusTight:1.0, halving, disco, is1337 }
+    shader:{amp:animAmp,speed:animSpeed,blockPhase},
+    setModes: chooseSetModesFromBlock(b),
+    style:{
+      eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
+      ringThick, ringAlpha, ringColor,
+      halving, disco:isDisco, is1337,
+      nucleusTight: tightness
+    }
   };
 }
 
-/* ==================== PANELS ==================== */
-let uiPointerDown=false;
-function injectPanels(atom){
-  const det = $('#blockPanel'); det.innerHTML='';
-  const sum=document.createElement('summary');
-  const sLeft=document.createElement('span'); sLeft.textContent='▼ Block Details';
-  const sRight=document.createElement('span'); sRight.style.color='#d7dfff'; sRight.style.fontWeight='500';
-  sRight.textContent='#'+atom.block.height+' — '+shortHash(atom.block.id||atom.block.hash);
-  sum.appendChild(sLeft); sum.appendChild(sRight); det.appendChild(sum);
-  const body=document.createElement('div'); body.id='blkBody';
-
-  const chips=document.createElement('div'); chips.style.marginBottom='6px';
-  [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{ const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c); });
-  if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 170 ROYGBIV'; chips.appendChild(c); }
-  else if(atom.style.halving){ const c2=document.createElement('span'); c2.className='chip'; c2.textContent='Halving Mode'; chips.appendChild(c2); }
-  else if(atom.style.is1337){ const c3=document.createElement('span'); c3.className='chip'; c3.textContent='1337 Neon'; chips.appendChild(c3); }
-  body.appendChild(chips);
-
-  const tbl=document.createElement('table');
-  const rows=[
-    ['Tx count', atom.block.tx_count??'n/a'],
-    ['Size (bytes)', atom.block.size??'n/a'],
-    ['Weight (WU)', atom.block.weight??'n/a'],
-    ['Version', atom.block.version??'n/a'],
-    ['Nonce', atom.block.nonce??'n/a'],
-    ['Time', (atom.block.timestamp? new Date(atom.block.timestamp*1000).toLocaleString():'n/a')],
-    ['Merkle root', shortHash(atom.block.merkle_root)]
-  ];
-  rows.forEach(([k,v])=>{ const tr=document.createElement('tr'); const td1=document.createElement('td'); td1.textContent=k; const td2=document.createElement('td'); if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code);} else td2.textContent=String(v); tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr); });
-  body.appendChild(tbl);
-  det.appendChild(body);
-
-  const info=$('#infoPanel'); info.innerHTML='';
-  const infoSum=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
-  infoSum.appendChild(badge); infoSum.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(infoSum);
-  const infoBody=document.createElement('div'); infoBody.id='infoBody';
-  infoBody.innerHTML = '<p>HUD hidden by default — press <b>E</b> (desktop) or <b>triple-tap</b> (mobile) to toggle.</p><p>Sky style added; Spikes intensity increased.</p>';
-  info.appendChild(infoBody);
-}
-
-/* ==================== TREEMAP BACKGROUND (2D) ==================== */
+/* ======================= Treemap renderer ======================= */
 const bgCanvas=document.getElementById('bg2d'); const bgCtx=bgCanvas.getContext('2d',{alpha:false});
 let DPR=1, bgW=0, bgH=0, bgBaseCanvas=document.createElement('canvas'), bgBaseCtx=bgBaseCanvas.getContext('2d',{alpha:false});
 let currentTxs=[], currentAtom=null;
 
-function resizeBG(){
-  DPR = Math.max(1, Math.floor(window.devicePixelRatio||1));
-  bgW = Math.max(1, Math.floor(window.innerWidth));
-  bgH = Math.max(1, Math.floor(window.innerHeight));
-  bgBaseCanvas.width = bgW;  bgBaseCanvas.height = bgH;
-  bgCanvas.width = bgW*DPR;  bgCanvas.height = bgH*DPR;
-  bgCanvas.style.width = bgW+'px';  bgCanvas.style.height = bgH+'px';
-  if (currentTxs.length) renderTreemapBase(currentTxs, currentAtom);
-  compositeBG();
-}
-window.addEventListener('resize', resizeBG);
+function resizeBG(){ DPR=Math.max(1,Math.floor(devicePixelRatio||1)); bgW=innerWidth; bgH=innerHeight;
+  bgBaseCanvas.width=bgW; bgBaseCanvas.height=bgH; bgCanvas.width=bgW*DPR; bgCanvas.height=bgH*DPR; bgCanvas.style.width=bgW+'px'; bgCanvas.style.height=bgH+'px';
+  if(currentTxs.length&&currentAtom) renderTreemapBase(currentTxs,currentAtom); compositeBG(); }
+function compositeBG(){ const W=bgCanvas.width,H=bgCanvas.height; const ctx=bgCtx; ctx.save(); ctx.imageSmoothingEnabled=true; ctx.clearRect(0,0,W,H); ctx.drawImage(bgBaseCanvas,0,0,W,H); ctx.restore(); }
 
-const MIN_RECT_PX=1, BORDER_ALPHA=0.12, BORDER_SKIP_PX=4, WEIGHT_COMPRESS=0.06, SIZE_OFFSET=1;
-const DESKTOP_CAP=30000, MOBILE_CAP=15000;
-
-function layoutStrip(items,W,H){
-  const rects=[]; let y=0,row=[],rowAreaSum=0; const width=W;
-  function worstAspect(rowAreas,rowHeight){ if(!rowAreas.length)return Infinity; let worst=0; for(const a of rowAreas){ const w=a/rowHeight; const ar=Math.max(w/rowHeight,rowHeight/w); if(ar>worst) worst=ar;} return worst; }
-  let i=0;
-  while(i<items.length){
-    const a=items[i].area, newRowArea=rowAreaSum+a, newRowHeight=newRowArea/width;
-    const currentWorst=worstAspect(row.map(r=>r.area), rowAreaSum?(rowAreaSum/width):newRowHeight);
-    const newWorst=worstAspect(row.map(r=>r.area).concat(a), newRowHeight);
-    if(row.length && newWorst>currentWorst){
-      const h=Math.max(MIN_RECT_PX,rowAreaSum/width); let x=0;
-      for(const r of row){ const w=Math.max(MIN_RECT_PX,r.area/h); rects.push({x,y,w,h,color:r.color}); x+=w; }
-      y+=h; row=[]; rowAreaSum=0;
-    }else{ row.push(items[i]); rowAreaSum=newRowArea; i++; }
-  }
-  if(row.length){ const h=Math.max(MIN_RECT_PX,rowAreaSum/width); let x=0; for(const r of row){ const w=Math.max(MIN_RECT_PX,r.area/h); rects.push({x,y,w,h,color:r.color}); x+=w; } }
-  return rects;
-}
 function renderTreemapBase(txs, atom){
-  currentTxs=txs||[]; currentAtom=atom||currentAtom;
-  const W=bgBaseCanvas.width, H=bgBaseCanvas.height;
-  const ctx=bgBaseCtx; ctx.clearRect(0,0,W,H); ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
-  if(!txs||!txs.length) return;
+  const ctx=bgBaseCtx; const W=bgBaseCanvas.width, H=bgBaseCanvas.height;
+  ctx.save(); ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
 
-  const itemsAll=[];
-  for(const tx of txs){
-    const vsRaw=Math.max(1,tx.vsize||tx.size||1);
-    const vs = Math.pow(vsRaw+SIZE_OFFSET, WEIGHT_COMPRESS);
-    const fr=(tx.fee&&vsRaw)?(tx.fee/vsRaw):0;
-    itemsAll.push({vsRaw, vs, fr});
-  }
-  const bySize=[...itemsAll].sort((a,b)=>a.vsRaw-b.vsRaw);
-  const sizeRank=new Map(); for(let i=0;i<bySize.length;i++){ sizeRank.set(bySize[i], i/(bySize.length-1||1)); }
+  // choose palette by special block
+  let paletteFn=(rank)=>feeToColor(rank*FEERATE_MAX);
+  if(atom.style.disco) paletteFn=rankToROYGBIV;
+  else if(atom.style.is1337) paletteFn=rankToBlackNeonWhite;
+  else if(atom.style.halving) paletteFn=rankToBrownOrangeWhite;
 
-  let colorFunc;
-  if(atom?.style?.is1337)      colorFunc = item => rankToBlackNeonWhite(sizeRank.get(item));
-  else if(atom?.height===170)  colorFunc = item => rankToROYGBIV(sizeRank.get(item));
-  else if(atom?.style?.halving && !atom?.style?.disco)
-                               colorFunc = item => rankToBrownOrangeWhite(sizeRank.get(item));
-  else                         colorFunc = item => feeToColor(item.fr);
+  // Sort transactions by virtual size ascending (left→right smallest→largest)
+  const items = txs.map(t=>({size:Math.max(1,t.vsize||t.size||1), feeRate:(t.fee&&t.size)?(t.fee/(t.size||1)):0})).sort((a,b)=>a.size-b.size);
 
-  const itemsCol = itemsAll.map(it=>({weight:Math.max(0.1,it.vs), color:colorFunc(it)}));
-  const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const CAP=isMobile?MOBILE_CAP:DESKTOP_CAP;
-  let items=itemsCol;
-  if(items.length>CAP){ const stride=Math.max(1,Math.floor(items.length/CAP)); const t=[]; for(let i=0;i<items.length;i+=stride) t.push(items[i]); items=t; }
-
-  const totalW=items.reduce((s,it)=>s+it.weight,0)||1;
-  const unitArea=(W*H)/totalW;
-  const itemsWithArea=items.map(it=>({area:Math.max(MIN_RECT_PX*MIN_RECT_PX, it.weight*unitArea), color:it.color}));
-  const rects=layoutStrip(itemsWithArea,W,H);
-
-  ctx.save();
-  for(const r of rects){
-    ctx.fillStyle=`rgb(${r.color[0]},${r.color[1]},${r.color[2]})`;
-    ctx.fillRect(r.x,r.y,r.w,r.h);
-    if(r.w>=BORDER_SKIP_PX && r.h>=BORDER_SKIP_PX){
-      ctx.strokeStyle=`rgba(255,255,255,${BORDER_ALPHA})`;
-      ctx.lineWidth=0.5;
-      ctx.strokeRect(r.x+0.25,r.y+0.25,Math.max(0,r.w-0.5),Math.max(0,r.h-0.5));
+  // Build many tiny rects: slice rows, then columns
+  const ROWS = Math.max(24, Math.ceil(Math.sqrt(items.length/10)));
+  const colsPerRow = Math.max(48, Math.ceil(items.length/ROWS));
+  const pad=1; // thin white borders
+  let idx=0; const total=items.length;
+  for(let r=0;r<ROWS;r++){
+    const y0=Math.floor((r/ROWS)*H), y1=Math.floor(((r+1)/ROWS)*H);
+    const rowH=y1-y0;
+    for(let c=0;c<colsPerRow;c++){
+      if(idx>=total) break;
+      const x0=Math.floor((c/colsPerRow)*W), x1=Math.floor(((c+1)/colsPerRow)*W);
+      const w=x1-x0;
+      // color by ranked feeRate across all txs
+      const rank = total>1? (idx/(total-1)) : 0.0;
+      const col = paletteFn(rank);
+      ctx.fillStyle=`rgb(${col[0]},${col[1]},${col[2]})`;
+      ctx.fillRect(x0+pad,y0+pad,Math.max(0,w-2*pad),Math.max(0,rowH-2*pad));
+      ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=1; ctx.strokeRect(x0+0.5,y0+0.5,w-1,rowH-1);
+      idx++;
     }
   }
-  ctx.restore();
 
-  if(atom?.style?.is1337){
-    ctx.save();
+  // Special backgrounds
+  if(atom.style.disco){
+    // nothing extra (rings do ROYGBIV)
+  } else if(atom.style.is1337){
+    // Pixel "1337" watermark centered
+    ctx.fillStyle='rgba(0,255,120,0.13)';
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.font=`${Math.floor(Math.min(W,H)*0.12)}px monospace`;
-    ctx.fillStyle='rgba(0,255,120,0.9)';
-    ctx.shadowColor='rgba(0,255,120,0.7)'; ctx.shadowBlur=18;
+    const sz=Math.min(W,H)*0.22;
+    ctx.font=`bold ${Math.floor(sz)}px monospace`;
     ctx.fillText('1337', W/2, H/2);
-    ctx.restore();
   }
-}
-function compositeBG(){ const W=bgCanvas.width, H=bgCanvas.height; const ctx=bgCtx; ctx.save(); ctx.globalCompositeOperation='source-over'; ctx.imageSmoothingEnabled=true; ctx.clearRect(0,0,W,H); ctx.drawImage(bgBaseCanvas, 0, 0, W, H); ctx.restore(); }
-function drawBackgroundFrame(atom,t){
-  if(atom?.style?.halving && !atom?.style?.disco){
-    const W=bgCanvas.width, H=bgCanvas.height;
-    const ctx=bgCtx; ctx.save();
-    const pulse=0.5+0.5*Math.sin(t*2.0);
-    ctx.globalCompositeOperation='lighter';
-    ctx.fillStyle=`rgba(255,140,0,${0.05+0.05*pulse})`;
-    ctx.fillRect(0,0,W,H);
-    ctx.restore();
-  }
+
+  ctx.restore();
 }
 
-/* ==================== OVERRIDES ==================== */
-const MODE_NAMES=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
-function populateSelectors(){
-  const opts = MODE_NAMES.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
-  $('#selProton').innerHTML = `<option value="">Auto</option>${opts}`;
-  $('#selNeutron').innerHTML = `<option value="">Auto</option>${opts}`;
-  $('#selElectron').innerHTML = `<option value="">Auto</option>${opts}`;
-}
-populateSelectors();
-let overrides = { proton:null, neutron:null, electron:null };
-['selProton','selNeutron','selElectron'].forEach(id=>{
-  $('#'+id).addEventListener('change', e=>{
-    const v=e.target.value===''?null:Number(e.target.value);
-    if(id==='selProton') overrides.proton=v;
-    if(id==='selNeutron') overrides.neutron=v;
-    if(id==='selElectron') overrides.electron=v;
+/* ======================= Panels ======================= */
+function injectPanels(atom){
+  ['legend','blockPanel','infoPanel'].forEach(id=>{const n=document.getElementById(id); if(!n) return; /* stays */});
+  const det=document.getElementById('blockPanel'); det.innerHTML='';
+  const sum=document.createElement('summary');
+  const sLeft=document.createElement('span'); sLeft.textContent='▼ Block Details';
+  const sRight=document.createElement('span'); sRight.style.color='#d7dfff'; sRight.style.fontWeight='500';
+  const blk=atom.block; sRight.textContent = '#' + blk.height + ' — ' + shortHash(blk.id||blk.hash);
+  sum.appendChild(sLeft); sum.appendChild(sRight); det.appendChild(sum);
+
+  const body=document.createElement('div'); body.id='blkBody';
+
+  const chips=document.createElement('div'); chips.style.marginBottom='6px';
+  const chip1=document.createElement('span'); chip1.className='chip'; chip1.textContent='Electrons: ' + atom.electrons; chips.appendChild(chip1);
+  const chip2=document.createElement('span'); chip2.className='chip'; chip2.textContent='Protons: ' + atom.Z; chips.appendChild(chip2);
+  const chip3=document.createElement('span'); chip3.className='chip'; chip3.textContent='Neutrons: ' + atom.N; chips.appendChild(chip3);
+  if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco #170'; chips.appendChild(c); }
+  else if(atom.style.is1337){ const c=document.createElement('span'); c.className='chip'; c.textContent='🟩 1337 Neon'; chips.appendChild(c); }
+  else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
+  body.appendChild(chips);
+
+  const tbl=document.createElement('table');
+  const rows=[
+    ['Tx count', (blk.tx_count!=null?blk.tx_count:'n/a')],
+    ['Size (bytes)', (blk.size!=null?blk.size:'n/a')],
+    ['Weight (WU)', (blk.weight!=null?blk.weight:'n/a')],
+    ['Version', (blk.version!=null?blk.version:'n/a')],
+    ['Bits', (blk.bits!=null?blk.bits:'n/a')],
+    ['Nonce', (blk.nonce!=null?blk.nonce:'n/a')],
+    ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
+    ['Merkle root', shortHash(blk.merkle_root)]
+  ];
+  rows.forEach(([k,v])=>{
+    const tr=document.createElement('tr');
+    const td1=document.createElement('td'); td1.textContent=k;
+    const td2=document.createElement('td');
+    if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code); }
+    else td2.textContent=String(v);
+    tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr);
   });
-});
 
-/* ==================== P5 SKETCH (custom controls) ==================== */
-let p5Instance=null, orbShader=null;
-let camDist=580, camYaw=0, camPitch=0, camTarget=[0,0,0];
+  // Styling drivers table
+  const drv=[
+    ['Electrons', 'count → height/hash; orbits → version/nonce; speed ∝ log₁₀(tx_count×size); size → weight/size; style set → deterministic from merkleRoot/nonce/bits; overrides via selector.'],
+    ['Protons/Neutrons', 'counts → height/merkleRoot/hash; position tightness → weight/size; styles → deterministic; overrides via selector.'],
+    ['Rings', 'color from palette & hash, with special #170 / halving / #1337 rules.'],
+    ['Background', '#170 = ROYGBIV, #1337 = black→neon→white + watermark, halving = brown→orange→white pulsing.']
+  ];
+  const tbl2=document.createElement('table');
+  drv.forEach(([k,v])=>{
+    const tr=document.createElement('tr');
+    const td1=document.createElement('td'); td1.textContent=k;
+    const td2=document.createElement('td'); td2.textContent=v;
+    tr.appendChild(td1); tr.appendChild(td2); tbl2.appendChild(tr);
+  });
+
+  body.appendChild(tbl); body.appendChild(document.createElement('hr')); body.appendChild(tbl2);
+  det.appendChild(body);
+
+  const info=document.getElementById('infoPanel');
+  info.innerHTML='';
+  const s2=document.createElement('summary');
+  const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
+  s2.appendChild(badge); s2.appendChild(document.createTextNode(' Info / How it works'));
+  info.appendChild(s2);
+  const ib=document.createElement('div');
+  ib.style.padding='10px 12px'; ib.innerHTML=
+    '<h3>Special blocks</h3><ul>'+
+    '<li><b>#170</b>: rainbow disco — all orbs pulse and cycle hue; rings ROYGBIV; treemap ROYGBIV.</li>'+
+    '<li><b>Halving blocks</b>: gold nucleus & rings, soft glowing halo; background pulses orange↔black; treemap brown→orange→white.</li>'+
+    '<li><b>#1337</b>: neon wireframe electrons (green), protons (yellow), neutrons (orange); rings neon green; background black→neon→white with “1337”.</li>'+
+    '</ul>'+
+    '<h3>Controls</h3><p>Rotate: drag / 1-finger • Zoom: wheel / pinch • Pan: right-drag / 2-finger • Toggle UI: E / double-tap</p>';
+  info.appendChild(ib);
+  // collapsed by default
+  det.open=false; info.open=false;
+}
+
+/* ======================= P5 + camera + draw ======================= */
+let p5Instance=null, orbShader=null, shaderLinked=false;
+let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
 let isDragging=false, lastX=0, lastY=0, dragButton=0;
-let pinchPrev=null, tripleTapTimes=[];
+let pinchPrev=null, twoPrevMid=null, lastTapTime=0;
 
-function startSketch(blk, txsForBg){
+function toggleUI(){ uiRoot.classList.toggle('show'); }
+
+function startSketch(blk, txs){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
-
-  const txs=(txsForBg||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
-  resizeBG(); renderTreemapBase(txs, atom); compositeBG();
+  currentAtom=atom;
+  currentTxs = (txs||[]).map(t=>({txid:t.txid, vsize:t.vsize||t.size||1, size:t.size, fee:t.fee||0}));
+  resizeBG(); renderTreemapBase(currentTxs, atom); compositeBG();
 
   const sketch=(p)=>{
-    p.setup=function(){
-      const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
-      cnv.canvas.classList.add('p5canvas');
-      p.setAttributes('alpha', false);
-      p.setAttributes('antialias', true, 'premultipliedAlpha', false);
-      try{ orbShader=p.createShader(VERT,FRAG); }catch(err){ console.error('Shader creation error:', err); orbShader=null; }
-      p.ambientLight(120);
-      p.directionalLight(255,255,255, 0.5,0.6,0.4);
-      // gentle initial spin
-      camYaw = 0.2; camPitch = -0.1; camDist = 560;
+    p.setup=()=>{ const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL); cnv.canvas.classList.add('p5canvas');
+      p.setAttributes('alpha',false); p.setAttributes('antialias',true,'premultipliedAlpha',false);
+      try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
+      p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
     };
-    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(txs, atom); compositeBG(); };
+    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeBG(); renderTreemapBase(currentTxs, atom); compositeBG(); };
 
-    // ---------- controls (mouse / touch) ----------
+    // Desktop mouse
     p.mousePressed=()=>{ isDragging=true; lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; };
     p.mouseReleased=()=>{ isDragging=false; };
-    p.mouseDragged=()=>{
-      const dx=(p.mouseX-lastX), dy=(p.mouseY-lastY);
-      lastX=p.mouseX; lastY=p.mouseY;
-      if(dragButton===p.LEFT){
-        camYaw   += dx*0.005;
-        camPitch += dy*0.005;
-        camPitch = clamp(camPitch, -Math.PI/2+0.02, Math.PI/2-0.02);
-      }else{ // pan
-        const panScale = camDist*0.002;
-        camTarget[0] -= dx*panScale;
-        camTarget[1] += dy*panScale;
-      }
-    };
-    p.mouseWheel=(e)=>{ camDist *= (1 + Math.sign(e.deltaY)*0.08); camDist = clamp(camDist, 80, 5000); };
+    p.mouseDragged=()=>{ const dx=p.mouseX-lastX, dy=p.mouseY-lastY; lastX=p.mouseX; lastY=p.mouseY;
+      if(dragButton===p.LEFT){ camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02); }
+      else{ const panScale=camDist*0.002; camTarget[0]-=dx*panScale; camTarget[1]+=dy*panScale; } };
+    p.mouseWheel=(e)=>{ camDist*= (1 + Math.sign(e.deltaY)*0.08); camDist=clamp(camDist,60,8000); };
 
+    // Mobile touch
     p.touchStarted=(e)=>{
-      const now=performance.now(); tripleTapTimes.push(now); if(tripleTapTimes.length>3) tripleTapTimes.shift();
-      if(tripleTapTimes.length===3 && (tripleTapTimes[2]-tripleTapTimes[0])<550){ toggleUI(); tripleTapTimes.length=0; }
-      if(e.touches && e.touches.length===2){ const dx=e.touches[0].clientX-e.touches[1].clientX; const dy=e.touches[0].clientY-e.touches[1].clientY; pinchPrev=Math.hypot(dx,dy); }
-      return false;
+      const now=performance.now(); if(now-lastTapTime<350){ toggleUI(); lastTapTime=0; } else lastTapTime=now;
+      if(e.touches && e.touches.length===1){ isDragging=true; lastX=e.touches[0].clientX; lastY=e.touches[0].clientY; dragButton=p.LEFT; }
+      if(e.touches && e.touches.length===2){
+        const t0=e.touches[0], t1=e.touches[1];
+        pinchPrev=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
+        twoPrevMid=[(t0.clientX+t1.clientX)/2, (t0.clientY+t1.clientY)/2];
+      }
+      e.preventDefault(); return false;
     };
     p.touchMoved=(e)=>{
-      if(e.touches && e.touches.length===2 && pinchPrev!=null){
-        const dx=e.touches[0].clientX-e.touches[1].clientX; const dy=e.touches[0].clientY-e.touches[1].clientY;
-        const d=Math.hypot(dx,dy); const k=(pinchPrev>0)?(pinchPrev/d):1; camDist*=k; camDist=clamp(camDist,80,5000); pinchPrev=d;
-        return false;
+      if(e.touches && e.touches.length===1){
+        const tx=e.touches[0].clientX, ty=e.touches[0].clientY; const dx=tx-lastX, dy=ty-lastY;
+        lastX=tx; lastY=ty; camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
+      } else if(e.touches && e.touches.length===2){
+        const t0=e.touches[0], t1=e.touches[1];
+        const d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
+        if(pinchPrev!=null){ const k=(pinchPrev>0)?(pinchPrev/d):1; camDist*=k; camDist=clamp(camDist,60,8000); }
+        pinchPrev=d;
+        const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientY+t1.clientY)/2;
+        if(twoPrevMid){ const dx=midX-twoPrevMid[0], dy=midY-twoPrevMid[1]; const panScale=camDist*0.002; camTarget[0]-=dx*panScale; camTarget[1]+=dy*panScale; }
+        twoPrevMid=[midX,midY];
       }
+      e.preventDefault(); return false;
     };
-    p.touchEnded=()=>{ pinchPrev=null; };
+    p.touchEnded=()=>{ isDragging=false; pinchPrev=null; twoPrevMid=null; };
 
     function setCamera(){
-      const fovy = p.radians(55);
-      const aspect = p.width/p.height;
-      const near = 0.01;           // <<— much closer
-      const far  = 20000;
-      p.perspective(fovy, aspect, near, far);
-
-      const cx = camTarget[0] + camDist*Math.cos(camPitch)*Math.sin(camYaw);
-      const cy = camTarget[1] + camDist*Math.sin(camPitch);
-      const cz = camTarget[2] + camDist*Math.cos(camPitch)*Math.cos(camYaw);
-      p.camera(cx, cy, cz, camTarget[0], camTarget[1], camTarget[2], 0,1,0);
-    }
-
-    function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
-      const m = Math.max(0, Math.min(9, (mode|0)));
-      if(orbShader){
-        try{
-          p.noStroke();
-          p.shader(orbShader);
-          orbShader.setUniform('uColorA', cA.map(v=>v/255));
-          orbShader.setUniform('uColorB', cB.map(v=>v/255));
-          orbShader.setUniform('uTime', t);
-          orbShader.setUniform('uAlpha', alpha);
-          orbShader.setUniform('uModeF', m*1.0);
-          orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0);
-          orbShader.setUniform('uAmp', atom.shader.amp||0.25);
-          orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
-          orbShader.setUniform('uObjSeed', seed||0.0);
-          p.sphere(r, 84, 56);
-          p.resetShader();
-          return;
-        }catch(e){ console.warn('Shader draw error — fallback:', e); orbShader=null; }
-      }
-      p.resetShader(); p.noStroke(); p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.shininess(30); p.specularMaterial(80); p.sphere(r, 64, 48);
+      const fovy=p.radians(55), aspect=p.width/p.height, near=0.01, far=20000;
+      p.perspective(fovy,aspect,near,far);
+      const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
+      const cy=camTarget[1]+camDist*Math.sin(camPitch);
+      const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
+      p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
     }
 
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
 
+    function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
+      const m=Math.max(0,Math.min(9,(mode|0)));
+      if(orbShader && shaderLinked){
+        try{
+          p.noStroke(); p.shader(orbShader);
+          orbShader.setUniform('uColorA', cA.map(v=>v/255)); orbShader.setUniform('uColorB', cB.map(v=>v/255));
+          orbShader.setUniform('uTime', t); orbShader.setUniform('uAlpha', alpha); orbShader.setUniform('uModeF', m*1.0);
+          orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0); orbShader.setUniform('uAmp', atom.shader.amp||0.25);
+          orbShader.setUniform('uSpeed', atom.shader.speed||0.9); orbShader.setUniform('uObjSeed', seed||0.0);
+          p.sphere(r,84,56); p.resetShader(); return;
+        }catch(e){ console.warn('Shader draw error — switching to fallback:',e); shaderLinked=false; orbShader=null; }
+      }
+      // Fallback
+      p.resetShader(); p.noStroke(); p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.shininess(30); p.specularMaterial(80); p.sphere(r,64,48);
+    }
+
     function drawRings(t){
       for(let i=0;i<atom.shells.length;i++){
-        const r=atom.radii[i];
-        p.push(); p.noFill();
-
-        if(atom.style.disco){ // 170 rainbow
-          p.strokeWeight(1.4);
-          p.beginShape(); const steps=260;
-          for(let k=0;k<=steps;k++){
-            const ang=(k/steps)*Math.PI*2;
-            const hue = ((k/steps)*360 + t*160 + i*15) % 360;
-            const c=hueToRgb(hue);
-            p.stroke(c[0],c[1],c[2],230);
-            p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0);
-          }
+        const r=atom.radii[i]; p.push(); p.noFill();
+        if(atom.style.disco){
+          p.strokeWeight(1.4); p.beginShape(); const steps=260;
+          for(let k=0;k<=steps;k++){ const ang=(k/steps)*Math.PI*2; const hue=((k/steps)*360 + t*160 + i*15)%360; const c=hueToRgb(hue);
+            p.stroke(c[0],c[1],c[2],230); p.vertex(r*Math.cos(ang), r*Math.sin(ang), 0); }
           p.endShape();
-
         } else if(atom.style.is1337){
-          p.stroke(0,255,120,230); if(i%2) p.stroke(255,255,0,230);
-          p.strokeWeight(1.8);
-          p.circle(0,0,r*2);
-
+          p.stroke(0,255,120,230); if(i%2) p.stroke(255,255,0,230); p.strokeWeight(1.8); p.circle(0,0,r*2);
         } else if(atom.style.halving){
-          const pulse = 0.5 + 0.5*Math.sin(t*2.0 + i*0.3);
-          const gold=[255,210,50], gold2=[255,170,30];
+          const pulse=0.5+0.5*Math.sin(t*2.0+i*0.3); const gold=[255,210,50], gold2=[255,170,30];
           p.push(); p.stroke(gold2[0],gold2[1],gold2[2], 60+80*pulse); p.strokeWeight(4.0+2.0*pulse); p.circle(0,0,r*2); p.pop();
-          p.stroke(gold[0],gold[1],gold[2], 220); p.strokeWeight(1.6);
-          p.circle(0,0,r*2);
-
+          p.stroke(gold[0],gold[1],gold[2],220); p.strokeWeight(1.6); p.circle(0,0,r*2);
         } else {
-          p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220); p.strokeWeight(1.1);
-          p.circle(0,0,r*2);
+          p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220); p.strokeWeight(1.1); p.circle(0,0,r*2);
         }
         p.pop();
       }
     }
 
     function drawHalvingGlow(t){
-      const gl=p._renderer.GL;
-      p.push();
-      p.blendMode(p.ADD);
-      gl.disable(gl.DEPTH_TEST);
-      p.noStroke();
-      for(let i=0;i<2;i++){
-        const k=1.25+i*0.35;
-        const a=16 - i*8;
-        p.fill(255,170,40,a);
-        p.sphere(NUCLEUS_R0*k, 28, 20);
-      }
-      gl.enable(gl.DEPTH_TEST);
-      p.pop();
+      const gl=p._renderer.GL; p.push(); p.blendMode(p.ADD); gl.disable(gl.DEPTH_TEST);
+      p.noStroke(); for(let i=0;i<2;i++){ const k=1.25+i*0.35, a=16-i*8; p.fill(255,170,40,a); p.sphere(NUCLEUS_R0*k,28,20); }
+      gl.enable(gl.DEPTH_TEST); p.pop();
     }
 
-    p.draw=function(){
+    p.draw=()=>{
       const t=p.millis()*0.001;
-      compositeBG();                 // draw static treemap
-      drawBackgroundFrame(atom,t);   // additive pulses for halving
+      compositeBG(); // redraw 2D background (static draw already done)
+      if(atom.style.halving){
+        // subtle pulse overlay for halving
+        const g = Math.floor(40 + 20*(0.5+0.5*Math.sin(t*1.8)));
+        bgCtx.save(); bgCtx.fillStyle=`rgba(${g*6},${g*3},0,0.06)`; bgCtx.fillRect(0,0,bgCanvas.width,bgCanvas.height); bgCtx.restore();
+      }
 
-      p.background(0);               // clear 3D layer
-      setCamera();
+      p.background(0); setCamera(); camYaw+=0.0005;
 
-      // slight auto motion
-      camYaw += 0.0005;
+      const effModeP= overrides.proton  ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.protons);
+      const effModeN= overrides.neutron ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.neutrons);
+      const effModeE= overrides.electron?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.electrons);
 
-      const effModeP = overrides.proton  ?? (atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.protons);
-      const effModeN = overrides.neutron ?? (atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.neutrons);
-      const effModeE = overrides.electron ??(atom.style.disco ? 5 : atom.style.halving ? 7 : atom.setModes.electrons);
+      // Rings + halving glow
+      drawRings(t); if(atom.style.halving&&!atom.style.disco) drawHalvingGlow(t);
 
-      // RINGS
-      drawRings(t);
-      if(atom.style.halving && !atom.style.disco){ drawHalvingGlow(t); }
-
-      // NUCLEUS
+      // Nucleus
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
-        if (atom.style.disco){
-          const hue = (t*240 + q.hueOffset) % 360;
-          const col = hueToRgb(hue);
-          const pulse = 1.0 + 0.35*Math.sin(t*9.0 + q.hueOffset*0.05);
-          drawOrbMat(col, col, NUCLEON_R*pulse, t, 1.0, 5, q.objSeed);
-        } else if(atom.style.is1337){
-          if(q.isProton) drawOrbMat([255,255,0],[255,255,0], NUCLEON_R, t, 1.0, 2, q.objSeed);
-          else           drawOrbMat([255,165,0],[255,165,0], NUCLEON_R, t, 1.0, 2, q.objSeed);
-        } else if(atom.style.halving){
-          const goldA=[255,215,64], goldB=[255,170,32];
-          drawOrbMat(goldA, goldB, NUCLEON_R, t, 1.0, 7, q.objSeed);
-        } else {
-          if(q.isProton) drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t, 1.0, effModeP, q.objSeed);
-          else           drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t, 1.0, effModeN, q.objSeed);
-        }
+        if(atom.style.disco){ const hue=(t*240+q.hueOffset)%360; const col=hslToRgb((hue%360)/360,0.95,0.55); const pulse=1.0+0.35*Math.sin(t*9.0+q.hueOffset*0.05);
+          drawOrbMat(col,col,NUCLEON_R*pulse,t,1.0,5,q.objSeed);
+        } else if(atom.style.is1337){ drawOrbMat(q.isProton?[255,255,0]:[255,165,0],[255,200,60],NUCLEON_R,t,1.0,2,q.objSeed);
+        } else if(atom.style.halving){ drawOrbMat([255,215,64],[255,170,32],NUCLEON_R,t,1.0,7,q.objSeed);
+        } else { if(q.isProton) drawOrbMat(atom.colors.proton, shiftHue(atom.colors.proton,18), NUCLEON_R, t,1.0,effModeP,q.objSeed);
+                 else           drawOrbMat(shiftHue(atom.colors.neutron,-22), atom.colors.neutron, NUCLEON_R, t,1.0,effModeN,q.objSeed); }
         p.pop();
       }
 
-      // ELECTRONS
+      // Electrons
       for(let i=0;i<atom.shells.length;i++){
-        const r=atom.radii[i], baseSpeed=atom.speeds[i];
+        const r=atom.radii[i], base=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
           const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
-          const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
-          const pre=t*m.pre + m.phase;
+          const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35), pre=t*m.pre+m.phase;
           const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
           const basePt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
-          const wob=1.0 + m.rosAmp*Math.sin(th*m.rosK + m.phase*0.7);
-          const pt=vmul(basePt, wob);
-
+          const wob=1.0+m.rosAmp*Math.sin(th*m.rosK+m.phase*0.7); const pt=vmul(basePt,wob);
           p.push(); p.translate(pt[0],pt[1],pt[2]);
-          if (atom.style.disco){
-            const hue = (t*240 + m.hueOffset) % 360;
-            const col = hslToRgb((hue%360)/360,0.95,0.55);
-            const pulse = 1.0 + 0.35*Math.sin(t*9.5 + m.hueOffset*0.07);
-            drawOrbMat(col, col, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 5, m.objSeed);
-          } else if (atom.style.is1337){
-            drawOrbMat([0,255,120],[0,255,120], ELECTRON_R*atom.style.eSizeScale, t, 1.0, 2, m.objSeed);
-          } else if (atom.style.halving){
-            const silverA=[220,228,235], silverB=[160,170,185];
-            const pulse=1.0+0.28*Math.sin(t*3.2+i*0.7+j*0.21);
-            drawOrbMat(silverA, silverB, ELECTRON_R*atom.style.eSizeScale*pulse, t, 1.0, 7, m.objSeed);
+          if(atom.style.disco){ const hue=(t*240+m.hueOffset)%360; const col=hslToRgb((hue%360)/360,0.95,0.55); const pulse=1.0+0.35*Math.sin(t*9.5+m.hueOffset*0.07);
+            drawOrbMat(col,col,ELECTRON_R*atom.style.eSizeScale*pulse,t,1.0,5,m.objSeed);
+          } else if(atom.style.is1337){ drawOrbMat([0,255,120],[0,255,120],ELECTRON_R*atom.style.eSizeScale,t,1.0,2,m.objSeed);
+          } else if(atom.style.halving){ const silverA=[220,228,235],silverB=[160,170,185]; const pulse=1.0+0.28*Math.sin(t*3.2+i*0.7+j*0.21);
+            drawOrbMat(silverA,silverB,ELECTRON_R*atom.style.eSizeScale*pulse,t,1.0,7,m.objSeed);
           } else {
-            const mixT=((j%7)/7)*0.35;
-            const eCol=[
-              Math.round(atom.colors.electron[0]*(1-mixT)+atom.style.ringColor[0]*mixT),
-              Math.round(atom.colors.electron[1]*(1-mixT)+atom.style.ringColor[1]*mixT),
-              Math.round(atom.colors.electron[2]*(1-mixT)+atom.style.ringColor[2]*mixT),
-            ];
-            drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, 1.0, (overrides.electron??atom.setModes.electrons), m.objSeed);
+            const mixT=((j%7)/7)*0.35; const eCol=mixRGB(atom.colors.electron, atom.style.ringColor, mixT);
+            drawOrbMat(eCol,atom.style.ringColor,ELECTRON_R*atom.style.eSizeScale,t,1.0,effModeE,m.objSeed);
           }
           p.pop();
-
-          atom.electronAngles[i][j]+=baseSpeed*m.spMul;
+          atom.electronAngles[i][j]+=base*m.spMul;
         }
       }
     };
   };
 
-  const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1';
-  document.body.appendChild(container);
+  const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1'; document.body.appendChild(container);
   p5Instance=new p5(sketch, container);
 }
 
-/* ==================== NETWORKING + BOOT ==================== */
+/* ======================= Overrides UI ======================= */
+const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
+function populateSelectors(){
+  const opts = MODE_LIST.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
+  selProton.innerHTML = `<option value="">Auto</option>${opts}`;
+  selNeutron.innerHTML = `<option value="">Auto</option>${opts}`;
+  selElectron.innerHTML = `<option value="">Auto</option>${opts}`;
+}
+populateSelectors();
+let overrides = { proton:null, neutron:null, electron:null };
+selProton.onchange = e => overrides.proton   = (e.target.value===''?null:Number(e.target.value));
+selNeutron.onchange= e => overrides.neutron  = (e.target.value===''?null:Number(e.target.value));
+selElectron.onchange=e => overrides.electron = (e.target.value===''?null:Number(e.target.value));
+
+/* ======================= Networking / Data ======================= */
 const API='https://mempool.space/api';
 async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
 async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
 
+// Paged tx fetch with graceful 400 stop
 async function fetchAllBlockTxs(hash){
-  const txs = [];
+  const txs=[];
   try{
-    const first = await fetchJSON(`${API}/block/${hash}/txs`);
-    if (Array.isArray(first)) {
-      for (const t of first) txs.push({ txid:t.txid||t.hash, vsize:t.vsize||t.size, size:t.size, fee:t.fee });
+    const first=await fetchJSON(`${API}/block/${hash}/txs`);
+    if(Array.isArray(first)){ for(const t of first) txs.push({txid:t.txid||t.hash,vsize:t.vsize||t.size,size:t.size,fee:t.fee}); }
+  }catch(e){ console.warn('first page /txs failed:',e?.message||e); return txs; }
+  let page=1;
+  while(true){
+    try{
+      const arr=await fetchJSON(`${API}/block/${hash}/txs/${page}`);
+      if(!arr||!arr.length) break;
+      for(const t of arr) txs.push({txid:t.txid||t.hash,vsize:t.vsize||t.size,size:t.size,fee:t.fee});
+      page++;
+    }catch(e){
+      console.warn(`stop paging at /txs/${page}:`, e?.message||e);
+      break;
     }
-  }catch(err){ console.warn('first page /txs failed:', err?.message||err); return txs; }
-  let page = 1;
-  while (true) {
-    try {
-      const arr = await fetchJSON(`${API}/block/${hash}/txs/${page}`);
-      if (!arr || !arr.length) break;
-      for (const t of arr) txs.push({ txid:t.txid||t.hash, vsize:t.vsize||t.size, size:t.size, fee:t.fee });
-      page += 1;
-    } catch (err) { console.warn(`stop paging at /txs/${page}:`, err?.message || err); break; }
   }
   return txs;
 }
 
 async function loadBlockByHeight(height){
-  $('#progress').style.display='block'; $('#progress').textContent='Resolving block '+height+'…';
+  progress.style.display='block'; progress.textContent='Resolving block '+height+'…';
   const hash=await fetchText(API+'/block-height/'+height);
-  $('#progress').textContent='Fetching header…';
+  progress.textContent='Fetching header…';
   const blk=await fetchJSON(API+'/block/'+hash);
-  $('#progress').textContent='Fetching transactions…';
+  progress.textContent='Fetching transactions…';
   const txs=await fetchAllBlockTxs(hash);
-  $('#progress').style.display='none';
-
-  // reset selectors to Auto on new load
-  $('#selProton').value=''; $('#selNeutron').value=''; $('#selElectron').value='';
-  overrides={proton:null, neutron:null, electron:null};
-
+  progress.style.display='none';
+  selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
   startSketch(blk, txs);
 }
 async function loadLatest(){
-  $('#progress').style.display='block'; $('#progress').textContent='Getting tip height…';
-  const h=await fetchText(API+'/blocks/tip/height'); $('#heightInput').value=h;
-  await loadBlockByHeight(h);
+  progress.style.display='block'; progress.textContent='Getting tip height…';
+  const h=await fetchText(API+'/blocks/tip/height'); heightInput.value=h; await loadBlockByHeight(h);
 }
 
-/* ==================== UI TOGGLE & HINT ==================== */
-function toggleUI(){
-  const root=$('#uiRoot');
-  root.classList.toggle('show');
-}
-document.addEventListener('keydown',(e)=>{ if(e.key==='e' || e.key==='E') toggleUI(); });
+/* ======================= Buttons, hotkeys, hint ======================= */
+loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ progress.textContent='Error: '+e.message; }};
+latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textContent='Error: '+e.message; }};
 
-// fade hint after ~15s
-setTimeout(()=>$('#hint').classList.add('hide'), 15000);
+document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') toggleUI(); });
+setTimeout(()=>hint.classList.add('hide'),15000);
 
-/* HUD events (stop camera while interacting) */
-['pointerdown','wheel'].forEach(ev=>$('#hud').addEventListener(ev,()=>{uiPointerDown=true;},{passive:false}));
-['pointerup','pointerleave','pointercancel'].forEach(ev=>$('#hud').addEventListener(ev,()=>{uiPointerDown=false;}));
-$('#loadBtn').onclick=async()=>{const h=Number($('#heightInput').value); if(!h){alert('Enter a block height'); return;}
-  try{ await loadBlockByHeight(h);}catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
-$('#latestBtn').onclick=async()=>{ try{ await loadLatest(); }catch(e){ document.getElementById('progress').textContent='Error: '+e.message; }};
-
-/* populate selectors text at boot and hide UI by default */
-(function bootUI(){ const root=$('#uiRoot'); root.classList.remove('show'); })();
-// new9
-/* size bg and auto-load latest on start */
+/* ======================= Boot ======================= */
+window.addEventListener('resize', resizeBG);
 resizeBG();
 loadLatest();
+// new10
 </script>
 </body>
 </html>
