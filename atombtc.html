@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — idle autorotate + view reset</title>
+<title>Bitcoin Block Atom — coin spin</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -116,7 +116,7 @@ const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
 const isHalving=h=>h>0&&(h%210000)===0;
 
-/* ---------- shader (same as your last working) ---------- */
+/* ---------- shader ---------- */
 const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix,uProjectionMatrix;
@@ -378,9 +378,11 @@ let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
 let initialCam={dist:560,yaw:0.2,pitch:-0.1,target:[0,0,0]}; // snapshot per load
 let isDragging=false, lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
-let lastInteraction=0;           // ms timestamp
-const IDLE_DELAY=1200;          // start autorotate after 1.2s idle
-const AUTOROTATE_SPEED=0.02;    // radians per second
+let lastInteraction=0;
+
+// NEW: coin-like constant spin (model rotation around vertical axis) — doubled speed
+const COIN_SPIN_SPEED = 0.08; // radians per second (twice the previous ~0.04)
+let modelSpin = 0;            // accumulates radians
 
 function markInteraction(){ lastInteraction = performance.now(); }
 function toggleUI(){ uiRoot.classList.toggle('show'); }
@@ -393,8 +395,9 @@ function toggleUI(){ uiRoot.classList.toggle('show'); }
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
 
-  // reset camera to defaults on new block & snapshot initial
+  // reset camera & model spin to defaults on new block & snapshot initial
   camDist=560; camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0];
+  modelSpin = 0;
   initialCam={dist:camDist,yaw:camYaw,pitch:camPitch,target:[...camTarget]};
   markInteraction();
 
@@ -529,10 +532,7 @@ function startSketch(blk){
       const t=p.millis()*0.001;
       p.background(0);
 
-      // autorotate when idle (no interaction for IDLE_DELAY)
-      const idle = (performance.now() - lastInteraction) > IDLE_DELAY && !isDragging && pinchPrev==null;
-      if(idle){ camYaw += AUTOROTATE_SPEED * (p.deltaTime/1000); }
-
+      // Halving background pulse (screen-space)
       if(atom.style.halving && !atom.style.disco){
         p.push(); p.resetMatrix(); p.noStroke(); p.blendMode(p.ADD);
         const g = Math.floor(40 + 20*(0.5+0.5*Math.sin(t*1.8)));
@@ -540,6 +540,7 @@ function startSketch(blk){
         p.pop();
       }
 
+      // Camera
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.01, far=20000;
       p.perspective(fovy,aspect,near,far);
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
@@ -547,13 +548,23 @@ function startSketch(blk){
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
+      // 🔁 Coin-like constant spin around the atom's vertical axis (always on)
+      modelSpin += COIN_SPIN_SPEED * (p.deltaTime/1000);
+
+      // Draw atom rotated in model space
+      p.push();
+      p.rotateY(modelSpin);
+
+      // Rings + optional halving nucleus glow
+      drawRings(t);
+      if(atom.style.halving&&!atom.style.disco) drawHalvingGlow(t);
+
+      // Effective modes (overrides or block-picked)
       const effModeP= overrides.proton  ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.protons);
       const effModeN= overrides.neutron ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.neutrons);
       const effModeE= overrides.electron?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.electrons);
 
-      drawRings(t);
-      if(atom.style.halving&&!atom.style.disco) drawHalvingGlow(t);
-
+      // Nucleus
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
         if(atom.style.disco){ const hue=(t*240+q.hueOffset)%360; const col=hslToRgb((hue%360)/360,0.95,0.55); const pulse=1.0+0.35*Math.sin(t*9.0+q.hueOffset*0.05);
@@ -565,6 +576,7 @@ function startSketch(blk){
         p.pop();
       }
 
+      // Electrons
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], base=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -587,6 +599,8 @@ function startSketch(blk){
           atom.electronAngles[i][j]+=base*m.spMul;
         }
       }
+
+      p.pop(); // end model-space spin
     };
   };
   const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1'; document.body.appendChild(container);
@@ -630,11 +644,11 @@ async function loadLatest(){
 loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ progress.textContent='Error: '+e.message; }};
 latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textContent='Error: '+e.message; }};
 resetBtn.onclick=()=>{ // restore camera to snapshot from current block load
-  camDist=initialCam.dist; camYaw=initialCam.yaw; camPitch=initialCam.pitch; camTarget=[...initialCam.target]; markInteraction();
+  camDist=initialCam.dist; camYaw=initialCam.yaw; camPitch=initialCam.pitch; camTarget=[...initialCam.target]; modelSpin=0; markInteraction();
 };
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') uiRoot.classList.toggle('show'); markInteraction(); });
 setTimeout(()=>hint.classList.add('hide'),15000);
-// new16
+// new17
 loadLatest();
 </script>
 </body>
