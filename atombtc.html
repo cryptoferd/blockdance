@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — coin spin + soap bubble glass</title>
+<title>Bitcoin Block Atom — coin spin + refined soap-bubble glass</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -143,7 +143,7 @@ void main(){
   vec3 nrm=normalize(aPosition);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-  // (6) Spikes — existing displacement
+  // (6) Spikes — displacement
   if(m==6){
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float t=uTime*(1.0+uSpeed);
@@ -153,15 +153,14 @@ void main(){
     pos += nrm*(amp*spike*length(aPosition));
   }
 
-  // (1) Glass — soap-bubble ripple displacement (gentle physical shell waves)
+  // (1) Glass — SOAP BUBBLE RIPPLE (now 2.5x stronger)
   if(m==1){
     float t=uTime*(1.0+0.6*uSpeed);
-    // two traveling waves + a little fbm to jitter phase
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
     float w2 = sin( dot(nrm, vec3(-0.3,0.9,0.1))*17.0 + t*1.6 + uObjSeed*7.3 );
     float j  = fbm(nrm*5.0 + vec3(0.0,t*0.4,0.0) + vec3(uObjSeed));
-    float ripple = (w1*0.6 + w2*0.4) * (0.012 + 0.008*j) * (0.7+0.3*uAmp);
-    pos += nrm * ripple * length(aPosition); // small % of radius
+    float ripple = (w1*0.6 + w2*0.4) * (0.012 + 0.008*j) * (0.7+0.3*uAmp) * 2.5; // ⬅ 2.5x
+    pos += nrm * ripple * length(aPosition);
   }
 
   vPos=pos; vNormal=normalize(pos);
@@ -186,7 +185,6 @@ float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
 return mix(n0,n1,u.z);}
 float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.02;a*=0.5;}return s;}
 vec3 hsv2rgb(vec3 c){vec3 p=abs(fract(c.xxx+vec3(0.,0.6666667,0.3333333))*6.-3.);return c.z*mix(vec3(1.0),clamp(p-1.0,0.0,1.0),c.y);}
-
 void main(){
   vec3 n=normalize(vNormal);
   vec3 V=vec3(0,0,1);
@@ -198,33 +196,38 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-  if(m==0){ // Marble
+  if(m==1){ // Glass — clearer, shinier bubble
+    float NoV = max(dot(n,V), 0.0);
+    float baseThick = 0.16 + 0.06*sin(t*0.9 + uObjSeed*5.3);
+    float micro = fbm(normalize(vPos)*5.5 + vec3(0.0,t*0.35,0.0) + vec3(uObjSeed*1.7));
+    float thick = baseThick + 0.07*(micro - 0.5);
+    float phase = thick * (1.8 + 1.2*NoV) * 6.28318530718;
+    float hue = fract(phase*0.15);
+    vec3 swirl = hsv2rgb(vec3(hue, 0.55, 1.0));   // subtle rainbow
+
+    // Stronger Fresnel for clear, shiny look (less “absorption”)
+    float fres = pow(1.0 - NoV, 2.0);             // steeper than ^3
+    vec3 reflectCol = mix(vec3(0.97), swirl, 0.65);  // bright reflection tint
+
+    // Two specular lobes
+    vec3 H1 = normalize(L1 + V);
+    vec3 H2 = normalize(L2 + V);
+    float spec = pow(max(dot(n,H1),0.0), 80.0)*0.9 + pow(max(dot(n,H2),0.0), 80.0)*0.7;
+
+    // Very little diffuse; mostly rim, reflection, and specular shine
+    vec3 shellTint = mix(vec3(1.0), swirl, 0.18);
+    col = shellTint*0.05                      // almost no diffuse
+        + reflectCol * (0.08 + 0.22*ndl + 0.75*fres)
+        + vec3(1.0)*spec
+        + vec3(1.0)*rim*0.10;
+
+  } else if(m==0){ // Marble
     vec3 seed=vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3);
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + seed);
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-
-  } else if(m==1){ // Glass — soap bubble (thin-film interference)
-    float NoV = max(dot(n,V), 0.0);
-    // animated pseudo-thickness map (thin film)
-    float baseThick = 0.16 + 0.06*sin(t*0.9 + uObjSeed*5.3);
-    float micro = fbm(normalize(vPos)*5.5 + vec3(0.0,t*0.35,0.0) + vec3(uObjSeed*1.7));
-    float thick = baseThick + 0.07*(micro - 0.5);
-    // hue cycles with thickness & view angle (approx interference)
-    float phase = thick * (1.8 + 1.2*NoV) * 6.28318530718; // ~2π*k
-    float hue = fract(phase*0.15);
-    vec3 swirl = hsv2rgb(vec3(hue, 0.55, 1.0)); // subtle saturation
-    // Fresnel reflection (strong near grazing)
-    float fres = pow(1.0 - NoV, 3.0);
-    vec3 reflectCol = mix(vec3(0.92), swirl, 0.55) * (0.10 + 0.25*ndl + 0.65*fres);
-    // Soft specular highlight
-    vec3 H = normalize(L1 + V);
-    float spec = pow(max(dot(n,H),0.0), 60.0) * 0.8;
-    // Add very faint rainbow in shell
-    vec3 shellTint = mix(vec3(1.0), swirl, 0.25);
-    col = shellTint*(0.08 + 0.18*ndl) + reflectCol + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.08;
 
   } else if(m==2){ // Wireframe (green)
     float k=9.0+2.0*fract(uObjSeed*7.0);
@@ -251,7 +254,7 @@ void main(){
     vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
     col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
 
-  } else if(m==6){ // Spikes (shaded)
+  } else if(m==6){ // Spikes
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + seed);
     float spike=smoothstep(0.62,0.90,s);
@@ -263,7 +266,7 @@ void main(){
     float spec=pow(max(dot(n,normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
 
-  } else if(m==8){ // Sky (clouds)
+  } else if(m==8){ // Sky
     vec3 seed=vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7);
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
@@ -275,10 +278,9 @@ void main(){
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
 
-  } else { // Safe
+  } else {
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
-
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
 }`;
 
@@ -310,7 +312,7 @@ function camBasis(yaw, pitch){
   return {forward,right,up};
 }
 
-/* ---------- color/structure mapping ---------- */
+/* ---------- mapping ---------- */
 function paletteFromHeight(height){
   const rng = XS32(height), golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng() * 45, 360);
@@ -415,7 +417,7 @@ function injectPanels(atom){
   const s2=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   s2.appendChild(badge); s2.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(s2);
   const ib=document.createElement('div'); ib.style.padding='10px 12px';
-  ib.innerHTML='<h3>Controls</h3><p>Rotate: drag / 1-finger • Zoom: wheel / pinch • Pan: right-drag / 2-finger • Toggle UI: <b>E</b> / <b>double-tap</b> the scene</p><h3>Glass style</h3><p>Now uses a thin-film interference shader with animated micro-thickness and Fresnel reflection, plus a subtle physical ripple that deforms the shell.</p>';
+  ib.innerHTML='<h3>Controls</h3><p>Rotate: drag / 1-finger • Zoom: wheel / pinch • Pan: right-drag / 2-finger • Toggle UI: <b>E</b> / <b>double-tap</b> the scene</p><h3>Glass style</h3><p>Soap-bubble thin-film swirls with stronger Fresnel reflection and 2.5× ripple deformation for a clearer, shinier look.</p>';
   info.appendChild(ib);
   det.open=false; info.open=false;
 }
@@ -428,7 +430,6 @@ let isDragging=false, lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
 let lastInteraction=0;
 
-// Coin-like constant spin around vertical axis (double speed)
 const COIN_SPIN_SPEED = 0.08;
 let modelSpin = 0;
 
@@ -533,8 +534,8 @@ function startSketch(blk){
     function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       const m=Math.max(0,Math.min(9,(mode|0)));
-      // Glass: make it mostly transparent automatically
-      const a = (m===1) ? (alpha * 0.35) : alpha;
+      // Glass: clearer (more transparent)
+      const a = (m===1) ? (alpha * 0.25) : alpha;
 
       if(orbShader && shaderLinked){
         try{
@@ -547,7 +548,7 @@ function startSketch(blk){
         }catch(e){ console.warn('Shader draw error — fallback:',e); shaderLinked=false; orbShader=null; }
       }
       p.resetShader(); p.noStroke();
-      if(m===1){ p.ambientMaterial(235,240,245, Math.round(255*a)); p.specularMaterial(255); p.shininess(60); }
+      if(m===1){ p.ambientMaterial(240,245,250, Math.round(255*a)); p.specularMaterial(255); p.shininess(70); }
       else     { p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*a)); p.shininess(30); p.specularMaterial(80); }
       p.sphere(r,64,48);
     }
@@ -581,7 +582,6 @@ function startSketch(blk){
       const t=p.millis()*0.001;
       p.background(0);
 
-      // Halving background pulse (screen-space)
       if(atom.style.halving && !atom.style.disco){
         p.push(); p.resetMatrix(); p.noStroke(); p.blendMode(p.ADD);
         const g = Math.floor(40 + 20*(0.5+0.5*Math.sin(t*1.8)));
@@ -597,18 +597,15 @@ function startSketch(blk){
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // Coin-like constant spin around the atom's vertical axis
+      // Constant coin-like spin
       modelSpin += COIN_SPIN_SPEED * (p.deltaTime/1000);
 
-      // Draw atom rotated in model space
       p.push();
       p.rotateY(modelSpin);
 
-      // Rings + optional halving nucleus glow
       drawRings(t);
       if(atom.style.halving&&!atom.style.disco) drawHalvingGlow(t);
 
-      // Effective modes (overrides or block-picked)
       const effModeP= overrides.proton  ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.protons);
       const effModeN= overrides.neutron ?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.neutrons);
       const effModeE= overrides.electron?? (atom.style.disco?5:atom.style.halving?7:atom.setModes.electrons);
@@ -649,7 +646,7 @@ function startSketch(blk){
         }
       }
 
-      p.pop(); // end model spin
+      p.pop();
     };
   };
   const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1'; document.body.appendChild(container);
@@ -668,7 +665,7 @@ populateSelectors();
 let overrides = { proton:null, neutron:null, electron:null };
 selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Number(e.target.value)); markInteraction(); };
 selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); markInteraction(); };
-selElectron.onchange=e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); markInteraction(); };
+selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); markInteraction(); };
 
 /* ---------- networking ---------- */
 const API='https://mempool.space/api';
@@ -695,7 +692,7 @@ latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textCo
 resetBtn.onclick=()=>{ camDist=initialCam.dist; camYaw=initialCam.yaw; camPitch=initialCam.pitch; camTarget=[...initialCam.target]; modelSpin=0; markInteraction(); };
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') uiRoot.classList.toggle('show'); markInteraction(); });
 setTimeout(()=>hint.classList.add('hide'),15000);
-// new18
+// new19
 loadLatest();
 </script>
 </body>
