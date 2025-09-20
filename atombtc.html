@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — screen-space pan (reversed) + deeper zoom</title>
+<title>Bitcoin Block Atom — idle autorotate + view reset</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -56,7 +56,7 @@
   @media (max-width: 800px){
     .hud{
       left:8px; right:8px; top:8px;
-      display:grid; grid-template-columns: 1fr auto auto; grid-auto-rows:minmax(36px,auto); gap:8px;
+      display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px;
       font-size:13px
     }
     .hud label{align-self:center}
@@ -75,6 +75,7 @@
     <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000"/>
     <button id="loadBtn">Load</button>
     <button id="latestBtn">Latest</button>
+    <button id="resetBtn" title="Reset view to original">Reset View</button>
     <span class="sep"></span>
     <span>Protons</span>
     <select id="selProton"></select>
@@ -239,8 +240,6 @@ const vmul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s], vdot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b
 const vcross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
 const vlen=a=>Math.hypot(a[0],a[1],a[2]); const vnorm=a=>{const l=vlen(a)||1; return [a[0]/l,a[1]/l,a[2]/l];};
 function rotateAroundAxis(p,u,ang){const c=Math.cos(ang),s=Math.sin(ang),dot=vdot(u,p),cross=vcross(u,p);return vadd(vadd(vmul(p,c),vmul(cross,s)),vmul(u,(1-c)*dot));}
-
-/* camera basis (for screen-space pan) */
 function camBasis(yaw, pitch){
   const cy=Math.cos(yaw), sy=Math.sin(yaw);
   const cp=Math.cos(pitch), sp=Math.sin(pitch);
@@ -376,14 +375,29 @@ function injectPanels(atom){
 /* ---------- p5 + inputs ---------- */
 let p5Instance=null, orbShader=null, shaderLinked=false;
 let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
+let initialCam={dist:560,yaw:0.2,pitch:-0.1,target:[0,0,0]}; // snapshot per load
 let isDragging=false, lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
+let lastInteraction=0;           // ms timestamp
+const IDLE_DELAY=1200;          // start autorotate after 1.2s idle
+const AUTOROTATE_SPEED=0.02;    // radians per second
 
+function markInteraction(){ lastInteraction = performance.now(); }
 function toggleUI(){ uiRoot.classList.toggle('show'); }
-['pointerdown','touchstart','mousedown','wheel'].forEach(ev=>uiRoot.addEventListener(ev,e=>e.stopPropagation(),{passive:false}));
+
+['pointerdown','touchstart','mousedown','wheel','keydown'].forEach(ev=>{
+  window.addEventListener(ev, markInteraction, {passive:true});
+});
+['pointerdown','wheel'].forEach(ev=>uiRoot.addEventListener(ev,e=>e.stopPropagation(),{passive:false}));
 
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
+
+  // reset camera to defaults on new block & snapshot initial
+  camDist=560; camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0];
+  initialCam={dist:camDist,yaw:camYaw,pitch:camPitch,target:[...camTarget]};
+  markInteraction();
+
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
@@ -409,6 +423,7 @@ function startSketch(blk){
             pinchPrev=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
             twoPrevMid=[(t0.clientX+t1.clientX)/2, (t0.clientY+t1.clientY)/2];
           }
+          markInteraction();
           e.preventDefault();
         }, {passive:false});
 
@@ -420,13 +435,10 @@ function startSketch(blk){
             const t0=e.touches[0], t1=e.touches[1];
             const d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
             if(pinchPrev!=null){
-              // smoother, deeper zoom
               camDist *= (pinchPrev>0)?(pinchPrev/d):1;
               camDist = clamp(camDist, 5, 20000);
             }
             pinchPrev=d;
-
-            // screen-space pan (REVERSED to match “drag up = move up”, “drag left = move left”)
             const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientY+t1.clientY)/2;
             if(twoPrevMid){
               const dx = midX - twoPrevMid[0];
@@ -439,6 +451,7 @@ function startSketch(blk){
             }
             twoPrevMid=[midX,midY];
           }
+          markInteraction();
           e.preventDefault();
         }, {passive:false});
 
@@ -449,25 +462,25 @@ function startSketch(blk){
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); };
 
     // Mouse
-    p.mousePressed=(e)=>{ isDragging=true; lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; };
+    p.mousePressed=(e)=>{ isDragging=true; lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; markInteraction(); };
     p.mouseReleased=()=>{ isDragging=false; };
     p.mouseDragged=()=>{
       const dx=p.mouseX-lastX, dy=p.mouseY-lastY; lastX=p.mouseX; lastY=p.mouseY;
       if(dragButton===p.LEFT){
         camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
       } else {
-        // screen-space pan (REVERSED directions)
         const {right, up} = camBasis(camYaw, camPitch);
         const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 2 / p.height;
         camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
         camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
         camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
       }
+      markInteraction();
     };
-    // smoother wheel zoom + deeper min zoom
     p.mouseWheel=(e)=>{
-      camDist *= Math.exp(e.deltaY * 0.0015);  // gentle exponential zoom
+      camDist *= Math.exp(e.deltaY * 0.0015);
       camDist = clamp(camDist, 5, 20000);
+      markInteraction();
       e.preventDefault();
     };
 
@@ -515,6 +528,10 @@ function startSketch(blk){
     p.draw=()=>{
       const t=p.millis()*0.001;
       p.background(0);
+
+      // autorotate when idle (no interaction for IDLE_DELAY)
+      const idle = (performance.now() - lastInteraction) > IDLE_DELAY && !isDragging && pinchPrev==null;
+      if(idle){ camYaw += AUTOROTATE_SPEED * (p.deltaTime/1000); }
 
       if(atom.style.halving && !atom.style.disco){
         p.push(); p.resetMatrix(); p.noStroke(); p.blendMode(p.ADD);
@@ -586,9 +603,9 @@ function populateSelectors(){
 }
 populateSelectors();
 let overrides = { proton:null, neutron:null, electron:null };
-selProton.onchange = e => overrides.proton   = (e.target.value===''?null:Number(e.target.value));
-selNeutron.onchange= e => overrides.neutron  = (e.target.value===''?null:Number(e.target.value));
-selElectron.onchange=e => overrides.electron = (e.target.value===''?null:Number(e.target.value));
+selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Number(e.target.value)); markInteraction(); };
+selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); markInteraction(); };
+selElectron.onchange=e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); markInteraction(); };
 
 /* ---------- networking ---------- */
 const API='https://mempool.space/api';
@@ -609,12 +626,15 @@ async function loadLatest(){
   const h=await fetchText(API+'/blocks/tip/height'); heightInput.value=h; await loadBlockByHeight(h);
 }
 
-/* ---------- HUD / hotkey / boot ---------- */
+/* ---------- HUD / hotkey / reset / boot ---------- */
 loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ progress.textContent='Error: '+e.message; }};
 latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textContent='Error: '+e.message; }};
-document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') uiRoot.classList.toggle('show'); });
+resetBtn.onclick=()=>{ // restore camera to snapshot from current block load
+  camDist=initialCam.dist; camYaw=initialCam.yaw; camPitch=initialCam.pitch; camTarget=[...initialCam.target]; markInteraction();
+};
+document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') uiRoot.classList.toggle('show'); markInteraction(); });
 setTimeout(()=>hint.classList.add('hide'),15000);
-// new15
+// new16
 loadLatest();
 </script>
 </body>
