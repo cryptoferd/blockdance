@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — full render (nucleus + electrons) — lifted clouds</title>
+<title>Bitcoin Block Atom — full render (nucleus + electrons) — lifted clouds (fix)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -112,11 +112,11 @@ const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
 
-/* ---------- shaders (updated: lifted clouds) ---------- */
+/* ---------- shaders (lifted clouds) ---------- */
 const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix,uProjectionMatrix;
-uniform float uModeF,uTime,uAmp,uSpeed,uObjSeed,uLayer; // uLayer: 0=base, 1=cloud shell
+uniform float uModeF,uTime,uAmp,uSpeed,uObjSeed,uLayer;
 varying vec3 vPos,vNormal;
 float hash(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
 float n3(vec3 p){vec3 i=floor(p),f=fract(p);
@@ -130,7 +130,6 @@ float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
 float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
 return mix(n0,n1,u.z);}
 float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0.5;}return s;}
-
 void main(){
   vec3 pos=aPosition;
   vec3 nrm=normalize(aPosition);
@@ -171,7 +170,7 @@ const FRAG=`precision mediump float; precision mediump int;
 varying vec3 vPos,vNormal;
 uniform vec3 uColorA,uColorB;
 uniform float uTime,uAlpha,uPhase,uAmp,uSpeed,uModeF,uObjSeed,uLayer;
-uniform vec3 uLightDir; // normalized key light
+uniform vec3 uLightDir;
 float hash(vec3 p){return fract(sin(dot(p,vec3(12.9898,78.233,37.719)))*43758.5453);}
 float n3(vec3 p){vec3 i=floor(p),f=fract(p);
 float n000=hash(i+vec3(0,0,0)), n100=hash(i+vec3(1,0,0));
@@ -198,7 +197,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,12.0)+0.5));
 
-  if(m==1){ // Glass bubble (unchanged)
+  if(m==1){
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.16 + 0.06*sin(t*0.45 + uObjSeed*5.3);
     float micro = fbm(normalize(vPos)*5.5 + vec3(0.0,t*0.175,0.0) + vec3(uObjSeed*1.7));
@@ -217,19 +216,16 @@ void main(){
   }
 
   if(m==8){
-    // Common sky field space
     vec3 p = normalize(vPos);
     float ang = t*0.35+uPhase*0.3;
     mat2 R = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
     p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
 
     if(uLayer<0.5){
-      // Sky base with shadows from lifted clouds
       float base = fbm(p*3.0 + vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7));
       float puff = fbm(p*6.0 + vec3(0.0,t*0.2,0.0) + vec3(uObjSeed*3.9));
       float clouds = smoothstep(0.55,0.85, base*0.6 + puff*0.7);
 
-      // Shadow sampling offset in light direction
       vec3 shadowP = normalize(vPos + L1 * 0.06);
       vec3 sp = normalize(shadowP);
       sp.xy = vec3(R*vec2(sp.x,sp.y),0.0).xy;
@@ -244,7 +240,6 @@ void main(){
       gl_FragColor = vec4(clamp(col,0.0,1.0), uAlpha);
       return;
     }else{
-      // Lifted cloud shell (semi-transparent)
       float c1 = fbm(p*3.0 + vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7));
       float c2 = fbm(p*6.0 + vec3(0.0,t*0.2,0.0) + vec3(uObjSeed*3.9));
       float clouds = smoothstep(0.62,0.88, 0.6*c1 + 0.7*c2);
@@ -258,10 +253,10 @@ void main(){
     }
   }
 
-  // Simple lit mix for other modes (your originals still apply)
   vec3 base = mix(colA,colB,0.5);
   col = base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
+}
 `;
 
 /* ---------- math / camera ---------- */
@@ -446,7 +441,19 @@ function startSketch(blk){
       const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
       p.setAttributes('alpha',false); p.setAttributes('antialias',true,'premultipliedAlpha',false);
-      try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
+
+      // Create shader and PRE-FLIGHT it; if anything goes wrong, drop to fallback.
+      try{
+        orbShader=p.createShader(VERT,FRAG);
+        shaderLinked=true;
+        // quick sanity: try using it once
+        try { p.shader(orbShader); p.resetShader(); }
+        catch(e){ console.warn('Shader preflight failed; using fallback.', e); shaderLinked=false; orbShader=null; }
+      }catch(e){
+        console.warn('Shader creation failed; using fallback.', e);
+        orbShader=null; shaderLinked=false;
+      }
+
       p.ambientLight(120); p.directionalLight(255,255,255,0.6,0.7,0.5);
 
       const canvasEl = cnv.canvas;
@@ -523,12 +530,8 @@ function startSketch(blk){
       e.preventDefault();
     };
 
-    function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
-
-    // UPDATED: draws sky mode as two layers; others as single pass
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       const m=Math.max(0,Math.min(12,(mode|0)));
-
       const sendUniforms=(layerFlag,aMul=1.0)=>{
         p.noStroke(); p.shader(orbShader);
         orbShader.setUniform('uColorA', cA.map(v=>v/255));
@@ -540,7 +543,7 @@ function startSketch(blk){
         orbShader.setUniform('uAmp', atom.shader.amp||0.25);
         orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
         orbShader.setUniform('uObjSeed', seed||0.0);
-        orbShader.setUniform('uLightDir', [0.6,0.7,0.5]); // match scene key
+        orbShader.setUniform('uLightDir', [0.6,0.7,0.5]);
         orbShader.setUniform('uLayer', layerFlag);
       };
 
@@ -551,12 +554,10 @@ function startSketch(blk){
             p.sphere(r,84,56);
             p.resetShader(); return;
           }
-          if(m===8){ // sky base + lifted clouds
-            // base receiver
+          if(m===8){ // sky base + cloud shell
             sendUniforms(0.0, 1.0);
             p.sphere(r, 84, 56);
             p.resetShader();
-            // lifted shell
             sendUniforms(1.0, 1.0);
             p.sphere(r*1.015, 84, 56);
             p.resetShader(); return;
@@ -571,9 +572,12 @@ function startSketch(blk){
         shaderLinked=false; orbShader=null;
       }
 
-      // Fallback lighting
-      p.resetShader(); p.noStroke();
-      p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha)); p.shininess(30); p.specularMaterial(80);
+      // Fallback: use standard p5 materials/lights so it never renders black
+      p.resetShader();
+      p.noStroke();
+      p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha));
+      p.specularMaterial(90);
+      p.shininess(35);
       p.sphere(r,64,48);
     }
 
@@ -632,6 +636,8 @@ function startSketch(blk){
 
     p.draw=()=>{
       const t=p.millis()*0.001;
+      // refresh lights every frame (helps some GPUs if context toggled)
+      p.ambientLight(120); p.directionalLight(255,255,255,0.6,0.7,0.5);
       p.background(0);
 
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
@@ -641,7 +647,7 @@ function startSketch(blk){
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // constant slow spin like a coin (doubled speed earlier kept)
+      // constant slow spin like a coin
       modelSpin += 0.16 * (p.deltaTime/1000);
       p.push();
       p.rotateY(modelSpin);
@@ -683,7 +689,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new26
+// new28
 loadLatest();
 </script>
 </body>
