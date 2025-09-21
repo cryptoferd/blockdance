@@ -530,56 +530,69 @@ function startSketch(blk){
       e.preventDefault();
     };
 
-    function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
-      const m=Math.max(0,Math.min(12,(mode|0)));
-      const sendUniforms=(layerFlag,aMul=1.0)=>{
-        p.noStroke(); p.shader(orbShader);
-        orbShader.setUniform('uColorA', cA.map(v=>v/255));
-        orbShader.setUniform('uColorB', cB.map(v=>v/255));
-        orbShader.setUniform('uTime', t);
-        orbShader.setUniform('uAlpha', alpha * aMul);
-        orbShader.setUniform('uModeF', m*1.0);
-        orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0);
-        orbShader.setUniform('uAmp', atom.shader.amp||0.25);
-        orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
-        orbShader.setUniform('uObjSeed', seed||0.0);
-        orbShader.setUniform('uLightDir', [0.6,0.7,0.5]);
-        orbShader.setUniform('uLayer', layerFlag);
-      };
+function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
+  const m=Math.max(0,Math.min(12,(mode|0)));
 
-      try{
-        if(orbShader && shaderLinked){
-          if(m===1){ // glass thinner
-            sendUniforms(0.0, 0.25);
-            p.sphere(r,84,56);
-            p.resetShader(); return;
-          }
-          if(m===8){ // sky base + cloud shell
-            sendUniforms(0.0, 1.0);
-            p.sphere(r, 84, 56);
-            p.resetShader();
-            sendUniforms(1.0, 1.0);
-            p.sphere(r*1.015, 84, 56);
-            p.resetShader(); return;
-          }
-          // normal single pass
-          sendUniforms(0.0, 1.0);
-          p.sphere(r,84,56);
-          p.resetShader(); return;
-        }
-      }catch(e){
-        console.warn('Shader draw error — fallback:',e);
-        shaderLinked=false; orbShader=null;
+  const sendUniforms=(layerFlag,aMul=1.0)=>{
+    p.noStroke(); p.shader(orbShader);
+    orbShader.setUniform('uColorA', cA.map(v=>v/255));
+    orbShader.setUniform('uColorB', cB.map(v=>v/255));
+    orbShader.setUniform('uTime', t);
+    orbShader.setUniform('uAlpha', alpha * aMul);
+    orbShader.setUniform('uModeF', m*1.0);
+    orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0);
+    orbShader.setUniform('uAmp', atom.shader.amp||0.25);
+    orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
+    orbShader.setUniform('uObjSeed', seed||0.0);
+    orbShader.setUniform('uLightDir', [0.6,0.7,0.5]);
+    orbShader.setUniform('uLayer', layerFlag);
+  };
+
+  // --- Shader path ---
+  try{
+    if(orbShader && shaderLinked){
+      if(m===1){ // glass thinner
+        sendUniforms(0.0, 0.25);
+        p.sphere(r,84,56);
+        p.resetShader(); return;
       }
-
-      // Fallback: use standard p5 materials/lights so it never renders black
-      p.resetShader();
-      p.noStroke();
-      p.ambientMaterial(cA[0],cA[1],cA[2], Math.round(255*alpha));
-      p.specularMaterial(90);
-      p.shininess(35);
-      p.sphere(r,64,48);
+      if(m===8){ // sky base + cloud shell
+        sendUniforms(0.0, 1.0);
+        p.sphere(r, 84, 56);
+        p.resetShader();
+        sendUniforms(1.0, 1.0);
+        p.sphere(r*1.015, 84, 56);
+        p.resetShader(); return;
+      }
+      sendUniforms(0.0, 1.0);
+      p.sphere(r,84,56);
+      p.resetShader(); return;
     }
+  }catch(e){
+    console.warn('Shader draw error — fallback:',e);
+    shaderLinked=false; orbShader=null;
+  }
+
+  // --- Fallback (safe, colorful) ---
+  p.resetShader();
+  p.noStroke();
+
+  // Make sure lights exist each call in case context flips
+  p.ambientLight(80);                        // not too bright
+  p.directionalLight(220,220,220, 0.6,0.7,0.5);
+  p.directionalLight(140,140,160,-0.35,0.6,-0.25);
+
+  // Base color (ambient+diffuse)
+  p.ambientMaterial(cA[0], cA[1], cA[2]);    // <- use the chosen color
+  // Gentle shininess so highlights don’t wash color
+  p.specularMaterial(50,50,50);
+  p.shininess(12);
+  // Tiny emissive tint so it never looks gray if a light misses
+  p.emissiveMaterial(cA[0]*0.06, cA[1]*0.06, cA[2]*0.06);
+
+  p.sphere(r, 64, 48);
+}
+
 
     function drawRings(t){
       p.push();
