@@ -145,7 +145,7 @@ void main(){
     pos += nrm*(amp*spike*length(aPosition));
   }
 
-  // Glass ripple (m==1) – displaced in vertex
+  // Glass ripple (m==1)
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -187,21 +187,31 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-  // Glass (bubble)
+  // ---- SOAP-BUBBLE glass: ultra translucent, faint thin-film, gentle rim ----
   if(m==1){
     float NoV = max(dot(n,V), 0.0);
-    float baseThick = 0.16 + 0.06*sin(t*0.45 + uObjSeed*5.3);
-    float micro = fbm(normalize(vPos)*5.5 + vec3(0.0,t*0.175,0.0) + vec3(uObjSeed*1.7));
-    float thick = baseThick + 0.07*(micro - 0.5);
-    float phase = thick * (1.8 + 1.2*NoV) * 6.28318530718;
-    float hue = fract(phase*0.15);
-    vec3 swirl = hsv2rgb(vec3(hue, 0.55, 1.0));
-    float fres = pow(1.0 - NoV, 2.0);
-    vec3 reflectCol = mix(vec3(0.98), swirl, 0.65);
+    float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
+    float micro = fbm(normalize(vPos)*5.0 + vec3(0.0,t*0.12,0.0) + vec3(uObjSeed*1.7));
+    float thick = baseThick + 0.06*(micro - 0.5);
+    float phase = thick * (1.6 + 1.1*NoV) * 6.28318530718;
+    float hue = fract(phase*0.14);
+    vec3 swirl = hsv2rgb(vec3(hue, 0.45, 1.0));
+
+    // Softer Fresnel to avoid blowout; only near rim
+    float fres = pow(1.0 - NoV, 4.0);
+
+    // Very faint reflection colored by swirl
+    vec3 reflectCol = mix(vec3(0.98), swirl, 0.55);
     vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
-    float spec = pow(max(dot(n,H1),0.0), 100.0)*0.95 + pow(max(dot(n,H2),0.0), 100.0)*0.85;
-    vec3 shellTint = mix(vec3(1.0), swirl, 0.18);
-    col = shellTint*0.05 + reflectCol * (0.08 + 0.22*ndl + 0.85*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.10;
+    // Much softer highlights
+    float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
+
+    // Final: barely-tinted shell + tiny reflection + soft rim + soft spec
+    vec3 shellTint = mix(vec3(1.0), swirl, 0.12);
+    col = shellTint*0.03
+        + reflectCol * (0.015 + 0.06*ndl + 0.22*fres)
+        + vec3(1.0)*spec
+        + vec3(1.0)*rim*0.06;
   } else if(m==0){ // Marble
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
@@ -512,20 +522,19 @@ function startSketch(blk){
       e.preventDefault();
     };
 
-    function hueToRgb(h){ return hslToRgb((h%360)/360, 0.95, 0.55); }
-
-    // -------- FIXED fallback materials here --------
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       const m=Math.max(0,Math.min(9,(mode|0)));
 
-      // Try shader first
+      // Even more transparent for GLASS
+      const a = (m===1) ? (alpha * 0.12) : alpha;
+
       if(orbShader && shaderLinked){
         try{
           p.noStroke(); p.shader(orbShader);
           orbShader.setUniform('uColorA', cA.map(v=>v/255));
           orbShader.setUniform('uColorB', cB.map(v=>v/255));
           orbShader.setUniform('uTime', t);
-          orbShader.setUniform('uAlpha', (m===1 ? alpha*0.25 : alpha)); // glass thinner
+          orbShader.setUniform('uAlpha', a);
           orbShader.setUniform('uModeF', m*1.0);
           orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0);
           orbShader.setUniform('uAmp', atom.shader.amp||0.25);
@@ -540,20 +549,24 @@ function startSketch(blk){
         }
       }
 
-      // Fallback (keep colors vivid, no whitewash)
+      // Fallback lighting (super translucent bubble)
       p.resetShader(); p.noStroke();
-      p.ambientLight(80);
-      p.directionalLight(220,220,220, 0.6,0.7,0.5);
-      p.directionalLight(140,140,160,-0.35,0.6,-0.25);
-
-      // Base color as ambient/diffuse
-      p.ambientMaterial(cA[0], cA[1], cA[2], Math.round(255*alpha));
-      // Soft specular so highlights don’t wash the color
-      p.specularMaterial(60,60,60);
-      p.shininess(12);
-      // Tiny emissive tint so they never go flat gray
-      p.emissiveMaterial(cA[0]*0.06, cA[1]*0.06, cA[2]*0.06);
-
+      if(m===1){
+        p.ambientLight(50);
+        p.directionalLight(150,150,150, 0.6,0.7,0.5);
+        p.ambientMaterial(235,240,245, Math.round(255*a));
+        p.specularMaterial(40,40,40);
+        p.shininess(10);
+        p.emissiveMaterial(18,18,22); // faint soapy tint so it never goes gray
+      } else {
+        p.ambientLight(80);
+        p.directionalLight(220,220,220, 0.6,0.7,0.5);
+        p.directionalLight(140,140,160,-0.35,0.6,-0.25);
+        p.ambientMaterial(cA[0], cA[1], cA[2], Math.round(255*a));
+        p.specularMaterial(60,60,60);
+        p.shininess(12);
+        p.emissiveMaterial(cA[0]*0.06, cA[1]*0.06, cA[2]*0.06);
+      }
       p.sphere(r,64,48);
     }
 
