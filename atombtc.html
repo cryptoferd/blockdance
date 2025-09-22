@@ -111,6 +111,7 @@ const lastByte = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g
 const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); let s=0; for(let i=0;i<c.length;i+=2){ const b=parseInt(c.substr(i,2),16); if(!isNaN(b)) s+=b; } return s; };
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
+const isPalindrome = (n)=>{const s=String(n); return s===s.split('').reverse().join('');};
 
 /* ---------- shaders ---------- */
 const VERT=`precision mediump float; precision mediump int;
@@ -174,7 +175,7 @@ float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
 float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
 float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
 return mix(n0,n1,u.z);}
-float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.02;a*=0.5;}return s;}
+float fbm(vec3 p){float s=0.0;a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.02;a*=0.5;}return s;}
 vec3 hsv2rgb(vec3 c){vec3 p=abs(fract(c.xxx+vec3(0.,0.6666667,0.3333333))*6.-3.);return c.z*mix(vec3(1.0),clamp(p-1.0,0.0,1.0),c.y);}
 void main(){
   vec3 n=normalize(vNormal);
@@ -187,7 +188,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-  // ---- SOAP-BUBBLE glass: ultra translucent, faint thin-film, gentle rim ----
+  // Glass — ultra translucent thin-film soap bubble
   if(m==1){
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
@@ -196,17 +197,10 @@ void main(){
     float phase = thick * (1.6 + 1.1*NoV) * 6.28318530718;
     float hue = fract(phase*0.14);
     vec3 swirl = hsv2rgb(vec3(hue, 0.45, 1.0));
-
-    // Softer Fresnel to avoid blowout; only near rim
     float fres = pow(1.0 - NoV, 4.0);
-
-    // Very faint reflection colored by swirl
     vec3 reflectCol = mix(vec3(0.98), swirl, 0.55);
     vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
-    // Much softer highlights
     float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
-
-    // Final: barely-tinted shell + tiny reflection + soft rim + soft spec
     vec3 shellTint = mix(vec3(1.0), swirl, 0.12);
     col = shellTint*0.03
         + reflectCol * (0.015 + 0.06*ndl + 0.22*fres)
@@ -247,7 +241,7 @@ void main(){
   } else if(m==7){ // Metallic
     float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
-  } else if(m==8){ // Sky / Clouds (simple)
+  } else if(m==8){ // Sky / Clouds
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
     p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
@@ -275,17 +269,10 @@ function camBasis(yaw, pitch){
   const cp=Math.cos(pitch), sp=Math.sin(pitch);
   const forward=[ sy*cp, sp, cy*cp ];
   const upW=[0,1,0];
-  let right=[
-    forward[1]*upW[2] - forward[2]*upW[1],
-    forward[2]*upW[0] - forward[0]*upW[2],
-    forward[0]*upW[1] - forward[1]*upW[0]
-  ];
+  let right=[ forward[1]*upW[2] - forward[2]*upW[1], forward[2]*upW[0] - forward[0]*upW[2], forward[0]*upW[1] - forward[1]*upW[0] ];
   const rl=Math.hypot(right[0],right[1],right[2])||1;
   right=[ right[0]/rl, right[1]/rl, right[2]/rl ];
-  let up=[
-    right[1]*forward[2] - right[2]*forward[1],
-    right[2]*forward[0] - right[0]*forward[2]
-  ];
+  let up=[ right[1]*forward[2] - right[2]*forward[1], right[2]*forward[0] - right[0]*forward[2] ];
   const ul=Math.hypot(up[0],up[1],up[2])||1;
   up=[ up[0]/ul, up[1]/ul, up[2]/ul ];
   return {forward,right,up};
@@ -326,6 +313,7 @@ function buildAtomFromBlock(b){
   const protonBias=(byteAt(merkleRoot,9)%31)-15; const Z=clamp(baseE+protonBias, 6, 160);
   const neutronSkew=((byteAt(hash,2)%101)-50)/180; const N=clamp(Math.round(Z*(1.0+neutronSkew)) + (hexByteSum(merkleRoot)%17)-8, 6, 220);
   const shells=fillShells(electrons);
+
   const prod=Math.max(1, txCount*Math.max(1,size)); const lg=Math.log10(prod);
   const speedScale=clamp((lg-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
   const dens=clamp(weight/Math.max(1,size*4),0.6,1.4); const tightness=clamp((dens*0.75)+(1.15-0.55*0.25), 0.6,1.4);
@@ -334,7 +322,8 @@ function buildAtomFromBlock(b){
   const orbitSpread=1.0+((version&0xf)-7.5)*0.01; const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
 
   const electronAngles=[], eMeta=[];
-  for(let i=0;i<shells.length;i++){ electronAngles[i]=[]; eMeta[i]=[];
+  const eDir=[], eAcc=[]; // for palindrome ping-pong
+  for(let i=0;i<shells.length;i++){ electronAngles[i]=[]; eMeta[i]=[]; eDir[i]=[]; eAcc[i]=[];
     for(let j=0;j<shells[i];j++){
       const b0=byteAt(merkleRoot,(i*31+j*11+1)), b1=byteAt(hash,(i*17+j*7+5)), b2=byteAt(merkleRoot,(i*53+j*13+9));
       const seed=(b0<<16)^(b1<<8)^b2; let u=vnorm(v3((b0/255)-0.5,(b1/255)-0.5,(b2/255)-0.5)); if(vlen(u)<1e-6) u=[0,0,1];
@@ -343,6 +332,7 @@ function buildAtomFromBlock(b){
       const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
       const hueOffset=( (i*97 + j*131 + seed) % 360 ); const objSeed=(seed%1000)/1000;
       electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset,objSeed};
+      eDir[i][j]=1; eAcc[i][j]=0;
     } }
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
   const speeds=shells.map((_,i)=> (0.004+0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5)))*speedScale);
@@ -356,12 +346,14 @@ function buildAtomFromBlock(b){
 
   const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
   const isDisco = height===170; const is1337  = height===1337; const halving = !isDisco && (height>0 && height%210000===0);
+  const palindrome = isPalindrome(height);
 
-  return { block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
+  return { block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,eDir,eAcc,nucleusPoints,colors,
     shader:{amp:animAmp,speed:animSpeed,blockPhase},
     setModes: chooseSetModesFromBlock(b),
+    flags:{halving,disco:isDisco,is1337,palindrome},
     style:{ eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick, ringAlpha, ringColor, halving, disco:isDisco, is1337, nucleusTight: tightness } };
+      ringThick, ringAlpha, ringColor, nucleusTight: tightness } };
 }
 
 /* ---------- panels ---------- */
@@ -369,16 +361,17 @@ function injectPanels(atom){
   const det=document.getElementById('blockPanel'); det.innerHTML='';
   const sum=document.createElement('summary');
   const sLeft=document.createElement('span'); sLeft.textContent='▼ Block Details';
-  const sRight=document.createElement('span'); sRight.style.color='#d7dfff'; sRight.style.fontWeight='500';
+  const sRight=document.createElement('span'); sRight.style.color='#d7ecff'; sRight.style.fontWeight='500';
   const blk=atom.block; sRight.textContent = '#' + blk.height + ' — ' + shortHash(blk.id||blk.hash);
   sum.appendChild(sLeft); sum.appendChild(sRight); det.appendChild(sum);
 
   const body=document.createElement('div'); body.id='blkBody';
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
   [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);});
-  if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco #170'; chips.appendChild(c); }
-  else if(atom.style.is1337){ const c=document.createElement('span'); c.className='chip'; c.textContent='🟩 1337 Neon'; chips.appendChild(c); }
-  else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
+  if(atom.flags.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco #170'; chips.appendChild(c); }
+  if(atom.flags.is1337){ const c=document.createElement('span'); c.className='chip'; c.textContent='🟩 1337 Neon'; chips.appendChild(c); }
+  if(atom.flags.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
+  if(atom.flags.palindrome){ const c=document.createElement('span'); c.className='chip'; c.textContent='↔ Palindrome (ping-pong)'; chips.appendChild(c); }
   body.appendChild(chips);
 
   const tbl=document.createElement('table');
@@ -522,12 +515,70 @@ function startSketch(blk){
       e.preventDefault();
     };
 
+    // Colors for special 1337 neon
+    const NEON_G=[80,255,120], NEON_Y=[255,255,80], NEON_O=[255,140,40];
+    const GOLD=[255,205,60];
+
+    function drawRings(t){
+      p.push();
+      const rings = atom.radii.length;
+      if(atom.flags.halving){
+        // Gold pulse + soft glow
+        const pulse = 0.6 + 0.4*Math.sin(t*2.0);
+        p.blendMode(p.ADD);
+        for(let g=6; g>=1; g--){
+          const a = Math.round(18 * pulse * (g/6));
+          p.noFill(); p.stroke(GOLD[0],GOLD[1],GOLD[2], a);
+          p.strokeWeight(2.5 + g*1.2);
+          for(let i=0;i<rings;i++) p.circle(0,0, atom.radii[i]*2);
+        }
+        p.blendMode(p.BLEND);
+        // core ring lines
+        for(let i=0;i<rings;i++){
+          p.noFill(); p.stroke(GOLD[0],GOLD[1],GOLD[2], 220);
+          p.strokeWeight(1.2);
+          p.circle(0,0, atom.radii[i]*2);
+        }
+      } else if(atom.flags.is1337){
+        const pulse = 0.75 + 0.25*Math.sin(t*2.8);
+        for(let i=0;i<rings;i++){
+          p.noFill(); p.stroke(NEON_G[0],NEON_G[1],NEON_G[2], Math.round(210*pulse));
+          p.strokeWeight(1.6);
+          p.circle(0,0, atom.radii[i]*2);
+        }
+      } else if(atom.flags.disco){
+        for(let i=0;i<rings;i++){
+          const hue = (t*60 + i*40)%360;
+          const [r,g,b]=hslToRgb(hue/360,0.95,0.55);
+          p.noFill(); p.stroke(r,g,b,220);
+          p.strokeWeight(1.3);
+          p.circle(0,0, atom.radii[i]*2);
+        }
+      } else {
+        for(let i=0;i<rings;i++){
+          p.noFill();
+          p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220);
+          p.strokeWeight(1.1);
+          p.circle(0,0, atom.radii[i]*2);
+        }
+      }
+      p.pop();
+
+      // Soft nucleus glow for halving (doesn't wash out)
+      if(atom.flags.halving){
+        p.push();
+        p.noStroke();
+        p.blendMode(p.ADD);
+        p.emissiveMaterial(80,60,10);
+        p.sphere(NUCLEUS_R0*1.22, 32, 24);
+        p.blendMode(p.BLEND);
+        p.pop();
+      }
+    }
+
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       const m=Math.max(0,Math.min(9,(mode|0)));
-
-      // Even more transparent for GLASS
-      const a = (m===1) ? (alpha * 0.12) : alpha;
-
+      const a = (m===1) ? (alpha * 0.12) : alpha; // glass thinner
       if(orbShader && shaderLinked){
         try{
           p.noStroke(); p.shader(orbShader);
@@ -543,68 +594,57 @@ function startSketch(blk){
           p.sphere(r,84,56);
           p.resetShader();
           return;
-        }catch(e){
-          console.warn('Shader draw error — fallback:',e);
-          shaderLinked=false; orbShader=null;
-        }
+        }catch(e){ console.warn('Shader draw error — fallback:',e); shaderLinked=false; orbShader=null; }
       }
-
-      // Fallback lighting (super translucent bubble)
+      // Fallback lighting
       p.resetShader(); p.noStroke();
       if(m===1){
-        p.ambientLight(50);
-        p.directionalLight(150,150,150, 0.6,0.7,0.5);
+        p.ambientLight(50); p.directionalLight(150,150,150,0.6,0.7,0.5);
         p.ambientMaterial(235,240,245, Math.round(255*a));
-        p.specularMaterial(40,40,40);
-        p.shininess(10);
-        p.emissiveMaterial(18,18,22); // faint soapy tint so it never goes gray
+        p.specularMaterial(40,40,40); p.shininess(10); p.emissiveMaterial(18,18,22);
       } else {
         p.ambientLight(80);
         p.directionalLight(220,220,220, 0.6,0.7,0.5);
         p.directionalLight(140,140,160,-0.35,0.6,-0.25);
         p.ambientMaterial(cA[0], cA[1], cA[2], Math.round(255*a));
-        p.specularMaterial(60,60,60);
-        p.shininess(12);
+        p.specularMaterial(60,60,60); p.shininess(12);
         p.emissiveMaterial(cA[0]*0.06, cA[1]*0.06, cA[2]*0.06);
       }
       p.sphere(r,64,48);
     }
 
-    function drawRings(t){
-      p.push();
-      for(let i=0;i<atom.shells.length;i++){
-        const r=atom.radii[i];
-        p.noFill();
-        p.stroke(atom.style.ringColor[0],atom.style.ringColor[1],atom.style.ringColor[2],220);
-        p.strokeWeight(1.1);
-        p.circle(0,0,r*2);
-      }
-      p.pop();
-    }
-
     function drawNucleus(t){
-      const protonMode  = (overrides.proton  ?? atom.setModes.protons);
-      const neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
+      const baseProtonMode  = (overrides.proton  ?? atom.setModes.protons);
+      const baseNeutronMode = (overrides.neutron ?? atom.setModes.neutrons);
       for(const q of atom.nucleusPoints){
         p.push();
         p.translate(q.x,q.y,q.z);
-        if(q.isProton){
-          const cA=atom.colors.proton, cB=shiftHue(atom.colors.proton,18);
-          drawOrbMat(cA,cB,NUCLEON_R,t,1.0,protonMode,q.objSeed);
-        }else{
-          const cA=shiftHue(atom.colors.neutron,-22), cB=atom.colors.neutron;
-          drawOrbMat(cA,cB,NUCLEON_R,t,1.0,neutronMode,q.objSeed);
+
+        let mode = q.isProton ? baseProtonMode : baseNeutronMode;
+        let cA, cB;
+
+        if(atom.flags.is1337){
+          mode = 2; // wireframe
+          if(q.isProton){ cA=NEON_Y; cB=NEON_Y; }
+          else{ cA=NEON_O; cB=NEON_O; }
+        } else {
+          if(q.isProton){ cA=atom.colors.proton; cB=shiftHue(atom.colors.proton,18); }
+          else{ cA=shiftHue(atom.colors.neutron,-22); cB=atom.colors.neutron; }
         }
+
+        drawOrbMat(cA,cB,NUCLEON_R,t,1.0,mode,q.objSeed);
         p.pop();
       }
     }
 
     function drawElectrons(t){
-      const eMode = (overrides.electron ?? atom.setModes.electrons);
+      let eMode = (overrides.electron ?? atom.setModes.electrons);
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
           const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
+
+          // ellipse axes
           const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
           const pre=t*m.pre + m.phase;
           const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
@@ -613,12 +653,35 @@ function startSketch(blk){
           const pt=vmul(basePt, wob);
 
           p.push(); p.translate(pt[0],pt[1],pt[2]);
-          const mixT=((j%7)/7)*0.35;
-          const eCol=mixRGB(atom.colors.electron, atom.style.ringColor, mixT);
-          drawOrbMat(eCol, atom.style.ringColor, ELECTRON_R*atom.style.eSizeScale, t, 1.0, eMode, m.objSeed);
+
+          let cA, cB;
+          if(atom.flags.is1337){
+            eMode = 2; // wireframe
+            cA=NEON_G; cB=NEON_G;
+          } else if(atom.flags.disco){
+            const hue = (t*120 + j*22 + i*33)%360;
+            cA=hslToRgb(hue/360,0.95,0.55); cB=hslToRgb(((hue+30)%360)/360,0.95,0.55);
+          } else {
+            const mixT=((j%7)/7)*0.35;
+            cA=mixRGB(atom.colors.electron, atom.style.ringColor, mixT);
+            cB=atom.style.ringColor;
+          }
+
+          drawOrbMat(cA, cB, ELECTRON_R*atom.style.eSizeScale, t, 1.0, eMode, m.objSeed);
           p.pop();
 
-          atom.electronAngles[i][j]+=baseSpeed*m.spMul;
+          // advance angle — ping-pong if palindrome
+          const step = baseSpeed*m.spMul;
+          if(atom.flags.palindrome){
+            atom.electronAngles[i][j] += atom.eDir[i][j] * step;
+            atom.eAcc[i][j] += step;
+            if(atom.eAcc[i][j] >= Math.PI*2){
+              atom.eAcc[i][j] = 0;
+              atom.eDir[i][j] *= -1; // flip direction after a full rotation
+            }
+          } else {
+            atom.electronAngles[i][j] += step;
+          }
         }
       }
     }
@@ -676,7 +739,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new29
+// new30
 loadLatest();
 </script>
 </body>
