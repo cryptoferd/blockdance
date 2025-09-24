@@ -310,6 +310,23 @@ function chooseSetModesFromBlock(b){
 }
 const isPalindromeHeight = (h)=>{ const s=String(h); return s===s.split('').reverse().join(''); };
 
+/* --- mode harmonizer (non-special blocks): keep vibe, stay distinct --- */
+function harmonizeModes(baseElectronMode){
+  // Electron → [Proton, Neutron]
+  const map = {
+    0:[5,7], // Marble → (Iridescent, Metallic)
+    1:[7,5], // Glass  → (Metallic,   Iridescent)
+    2:[4,0], // Wire   → (Toon,       Marble)
+    3:[6,4], // Lava   → (Spikes,     Toon)
+    4:[0,2], // Toon   → (Marble,     Wire)
+    5:[0,7], // Irid   → (Marble,     Metallic)
+    6:[3,4], // Spikes → (Lava,       Toon)
+    7:[1,5], // Metal  → (Glass,      Iridescent)
+    8:[5,0], // Sky    → (Iridescent, Marble)
+  };
+  return map[baseElectronMode] || [0,5];
+}
+
 function buildAtomFromBlock(b){
   const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
   const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
@@ -350,9 +367,12 @@ function buildAtomFromBlock(b){
   const isDisco = height===170; const is1337  = height===1337; const halving = !isDisco && (height>0 && height%210000===0);
   const palindrome = isPalindromeHeight(height);
 
+  const baseSet = chooseSetModesFromBlock(b);
+  const [pMode, nMode] = harmonizeModes(baseSet.electrons);
+
   return { block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
     shader:{amp:animAmp,speed:animSpeed,blockPhase},
-    setModes: chooseSetModesFromBlock(b),
+    setModes: { protons:pMode, neutrons:nMode, electrons:baseSet.electrons, rings:baseSet.rings },
     style:{ eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
       ringThick, ringAlpha, ringColor, halving, disco:isDisco, is1337, palindrome, nucleusTight: tightness } };
 }
@@ -441,11 +461,28 @@ function startSketch(blk){
   const largestRadius = atom.radii.length ? atom.radii[atom.radii.length-1] : 140;
   minCamDist = Math.max( largestRadius * 1.2, 90 );
   maxCamDist = 30000;
+  const maxPan = largestRadius * 3.0;
 
   // Helper colors for special modes
   const GOLD_A = [212,172,55], GOLD_B=[255,220,120];
   const SILVER_A=[210,215,220], SILVER_B=[240,245,250];
-  const NEON_GREEN=[60,255,130], NEON_YELLOW=[255,255,60], NEON_ORANGE=[255,160,40];
+
+  // Adaptive sphere detail for perf
+  const totalElectrons = atom.electrons;
+  const totalNucleons  = Math.min(900, atom.Z + atom.N);
+  function detailFor(count, baseU, baseV){
+    if(count > 400) return [Math.max(12, baseU-36), Math.max(8, baseV-24)];
+    if(count > 200) return [Math.max(16, baseU-28), Math.max(10, baseV-18)];
+    if(count > 120) return [Math.max(20, baseU-18), Math.max(14, baseV-12)];
+    if(count > 60 ) return [Math.max(24, baseU-10), Math.max(16, baseV-8)];
+    return [baseU, baseV];
+  }
+  let electronDetail = detailFor(totalElectrons, 52, 36);
+  let nucleonDetail  = detailFor(totalNucleons,  44, 30);
+  if(atom.style.disco){ // #170 extra reduction
+    electronDetail = [Math.max(18, electronDetail[0]-16), Math.max(12, electronDetail[1]-12)];
+    nucleonDetail  = [Math.max(16, nucleonDetail[0]-14),  Math.max(10, nucleonDetail[1]-10)];
+  }
 
   const sketch=(p)=>{
     p.setup=()=>{
@@ -503,6 +540,9 @@ function startSketch(blk){
               camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
               camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
               camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
+              // clamp pan to avoid losing the model
+              const L = Math.hypot(camTarget[0],camTarget[1],camTarget[2]);
+              if(L>maxPan){ const s=maxPan/L; camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s; }
             }
             twoPrevMid=[midX,midY];
           }
@@ -528,6 +568,8 @@ function startSketch(blk){
         camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
         camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
         camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
+        const L = Math.hypot(camTarget[0],camTarget[1],camTarget[2]);
+        if(L>maxPan){ const s=maxPan/L; camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s; }
       }
     };
     p.mouseWheel=(e)=>{
@@ -536,9 +578,10 @@ function startSketch(blk){
       e.preventDefault();
     };
 
-    function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
+    function drawOrbMat(cA,cB,r,t,alpha,mode,seed,isElectron){
       const m=Math.max(0,Math.min(9,(mode|0)));
       const a = (m===1) ? (alpha * 0.12) : alpha;
+      const detail = isElectron ? electronDetail : nucleonDetail;
 
       if(orbShader && shaderLinked){
         try{
@@ -552,7 +595,7 @@ function startSketch(blk){
           orbShader.setUniform('uAmp', atom.shader.amp||0.25);
           orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
           orbShader.setUniform('uObjSeed', seed||0.0);
-          p.sphere(r,84,56);
+          p.sphere(r, detail[0], detail[1]);
           p.resetShader();
           return;
         }catch(e){
@@ -569,7 +612,6 @@ function startSketch(blk){
         p.ambientMaterial(235,240,245, Math.round(255*a));
         p.specularMaterial(40,40,40);
         p.shininess(10);
-        p.emissiveMaterial(18,18,22);
       } else {
         p.ambientLight(80);
         p.directionalLight(220,220,220, 0.6,0.7,0.5);
@@ -577,20 +619,19 @@ function startSketch(blk){
         p.ambientMaterial(cA[0], cA[1], cA[2], Math.round(255*a));
         p.specularMaterial(60,60,60);
         p.shininess(12);
-        p.emissiveMaterial(cA[0]*0.06, cA[1]*0.06, cA[2]*0.06);
       }
-      p.sphere(r,64,48);
+      p.sphere(r, Math.max(16, detail[0]-8), Math.max(10, detail[1]-6));
     }
 
-    // Rainbow ring for Disco #170
+    // Disco ring
     function drawRainbowRing(radius, t){
-      const segs = 180;
+      const segs = 160;
       p.noFill();
-      p.strokeWeight(1.2);
+      p.strokeWeight(1.1);
       for(let k=0;k<segs;k++){
         const a1 = k   /segs * TAU;
         const a2 = (k+1)/segs * TAU;
-        const hue = (k/segs + 0.15*t)%1;
+        const hue = (k/segs + 0.12*t)%1;
         const rgb = hslToRgb(hue, 1.0, 0.5);
         p.stroke(rgb[0],rgb[1],rgb[2], 230);
         p.line(Math.cos(a1)*radius, Math.sin(a1)*radius, 0,
@@ -613,7 +654,7 @@ function startSketch(blk){
           } else if(atom.style.halving){
             const pulse = 0.5 + 0.5*Math.sin(t*2.0);
             col = mixRGB([212,172,55],[255,220,120], 0.65);
-            alpha = Math.round(160 + 90*pulse);
+            alpha = Math.round(140 + 80*pulse);
             thick = 1.0 + 0.6*pulse;
           }
           p.noFill();
@@ -626,50 +667,61 @@ function startSketch(blk){
     }
 
     function drawNucleus(t){
+      // Start with harmonized defaults
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
-      let cP_A = atom.colors.proton,  cP_B = shiftHue(atom.colors.proton,18);
-      let cN_A = shiftHue(atom.colors.neutron,-22), cN_B = atom.colors.neutron;
-      let sizePulse = 1.0;
 
+      // Colors to match electron palette but distinct
+      let cP_A = shiftHue(atom.colors.electron, -22), cP_B = shiftHue(atom.colors.electron, +8);
+      let cN_A = shiftHue(atom.colors.electron, +40),  cN_B = shiftHue(atom.colors.electron, +62);
+
+      // Special themes override
       if(atom.style.is1337){
         protonMode = 2; neutronMode = 2;
         cP_A = [255,255,60]; cP_B = [255,255,60];
         cN_A = [255,160,40]; cN_B = [255,160,40];
       }
 
-      let wantGlow=false;
+      let sizePulse = 1.0;
+      let drawSoftGlow = false;
       if(atom.style.halving){
         protonMode = 7; neutronMode = 7;
         cP_A = [212,172,55]; cP_B = [255,220,120];
         cN_A = [212,172,55]; cN_B = [255,220,120];
-        sizePulse = 1.0 + 0.06*Math.sin(t*2.0);
-        wantGlow = true;
+        sizePulse = 1.0 + 0.05*Math.sin(t*2.0);
+        drawSoftGlow = true;
       }
 
       const disco = atom.style.disco;
-      if(disco){ sizePulse = 1.0 + 0.12*Math.sin(t*2.5); }
+      if(disco){ sizePulse = 1.0 + 0.10*Math.sin(t*2.2); }
 
-      if(wantGlow){
-        p.push();
-        p.noStroke();
-        p.ambientLight(0);
-        p.emissiveMaterial(180,120,20, 30);
-        p.sphere(NUCLEUS_R0*1.55, 36, 24);
-        p.pop();
+      if(drawSoftGlow){
+        // Very translucent, soft radial falloff: three faint shells
+        const layers = 3;
+        for(let i=0;i<layers;i++){
+          const k = (i+1)/layers;
+          const rad = NUCLEUS_R0 * (1.05 + 0.35*k);
+          const a   = Math.round(18 * (1.0 - k)); // fade outward
+          p.push();
+          p.noStroke();
+          p.ambientMaterial(240,210,120, a);
+          p.sphere(rad, 20, 14);
+          p.pop();
+        }
       }
 
       for(const q of atom.nucleusPoints){
         p.push();
         p.translate(q.x,q.y,q.z);
         if(disco){
+          // Rainbow, but distinct look via different modes already
           const hue = ( (q.objSeed*0.8) + t*0.18 ) % 1;
           const col = hslToRgb(hue, 1.0, 0.55);
           const col2= hslToRgb((hue+0.18)%1, 1.0, 0.65);
-          drawOrbMat(col,col2,NUCLEON_R*sizePulse,t,1.0, q.isProton?protonMode:neutronMode, q.objSeed);
+          drawOrbMat(col,col2,NUCLEON_R*sizePulse,t,1.0, q.isProton?protonMode:neutronMode, q.objSeed,false);
         } else {
-          if(q.isProton){ drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed); }
-          else          { drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed); }
+          if(q.isProton){ drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed,false); }
+          else          { drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed,false); }
         }
         p.pop();
       }
@@ -685,11 +737,11 @@ function startSketch(blk){
       }
       if(atom.style.halving){
         eMode = 7; baseColA = [210,215,220]; baseColB = [240,245,250];
-        sizeScale *= 1.0 + 0.09*Math.sin(t*2.2);
+        sizeScale *= 1.0 + 0.08*Math.sin(t*2.0);
       }
       const disco = atom.style.disco;
       let discoPulse = 1.0;
-      if(disco){ discoPulse = 1.0 + 0.12*Math.sin(t*2.5 + 0.7); }
+      if(disco){ discoPulse = 1.0 + 0.10*Math.sin(t*2.2 + 0.7); }
 
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
@@ -714,7 +766,7 @@ function startSketch(blk){
           }
 
           p.push(); p.translate(pt[0],pt[1],pt[2]);
-          drawOrbMat(cA, cB, ELECTRON_R*sizeScale*discoPulse, t, 1.0, eMode, m.objSeed);
+          drawOrbMat(cA, cB, ELECTRON_R*sizeScale*discoPulse, t, 1.0, eMode, m.objSeed, true);
           p.pop();
 
           const prevTurns = atom._eTurns[i][j];
@@ -736,8 +788,8 @@ function startSketch(blk){
       const t=p.millis()*0.001;
 
       if(atom.style.halving){
-        const k = 0.5 + 0.5*Math.sin(t*1.6);
-        const bg = mixRGB([0,0,0],[30,12,0], k);
+        const k = 0.5 + 0.5*Math.sin(t*1.4);
+        const bg = mixRGB([0,0,0],[32,16,0], k);
         p.background(bg[0],bg[1],bg[2]);
       } else {
         p.background(0);
@@ -750,6 +802,7 @@ function startSketch(blk){
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
+      // constant slow spin
       modelSpin += 0.16 * (p.deltaTime/1000);
       p.push(); p.rotateY(modelSpin);
 
@@ -767,46 +820,56 @@ function startSketch(blk){
 
 /* ---------- networking / buttons / boot ---------- */
 const API='https://mempool.space/api';
-
-// fetch helpers with timeout + clear errors
 function withTimeout(ms, promise){
   let t; const timeout = new Promise((_,rej)=>t=setTimeout(()=>rej(new Error('Network timeout')), ms));
   return Promise.race([promise, timeout]).finally(()=>clearTimeout(t));
 }
 async function fetchText(u){
-  try{
-    const r=await withTimeout(10000, fetch(u,{mode:'cors'}));
-    if(!r.ok) throw new Error(r.status+' '+u);
-    return (await r.text()).trim();
-  }catch(e){
-    console.warn('fetchText error:', e);
-    throw e;
-  }
+  const r=await withTimeout(8000, fetch(u,{mode:'cors'}));
+  if(!r.ok) throw new Error(r.status+' '+u);
+  return (await r.text()).trim();
 }
 async function fetchJSON(u){
-  try{
-    const r=await withTimeout(10000, fetch(u,{mode:'cors'}));
-    if(!r.ok) throw new Error(r.status+' '+u);
-    return r.json();
-  }catch(e){
-    console.warn('fetchJSON error:', e);
-    throw e;
-  }
+  const r=await withTimeout(8000, fetch(u,{mode:'cors'}));
+  if(!r.ok) throw new Error(r.status+' '+u);
+  return r.json();
+}
+
+// Deterministic mock block (offline fallback) — uses height only
+function mockBlock(height){
+  const rng=XS32(height^0xA5A5A5A5);
+  const hexByte=()=>('0'+Math.floor(rng()*256).toString(16)).slice(-2);
+  let hash=''; for(let i=0;i<64;i++) hash+=hexByte();
+  let merkle=''; for(let i=0;i<64;i++) merkle+=hexByte();
+  return {
+    id: hash, hash,
+    height,
+    timestamp: Math.floor(Date.now()/1000) - Math.floor(rng()*1e6),
+    version: 0x20000000 | Math.floor(rng()*0xFFFF),
+    bits: 0x1d00ffff,
+    nonce: Math.floor(rng()*0xffffffff)>>>0,
+    size:  Math.floor(500000 + rng()*1000000),
+    weight: Math.floor(2000000 + rng()*2000000),
+    tx_count: Math.floor(1000 + rng()*2000),
+    merkle_root: merkle
+  };
 }
 
 async function loadBlockByHeight(height){
+  progress.style.display='block'; progress.textContent='Resolving block '+height+'…';
+  let blk=null;
   try{
-    progress.style.display='block'; progress.textContent='Resolving block '+height+'…';
     const hash=await fetchText(API+'/block-height/'+height);
     progress.textContent='Fetching header…';
-    const blk=await fetchJSON(API+'/block/'+hash);
-    progress.style.display='none';
-    selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
-    startSketch(blk);
+    blk=await fetchJSON(API+'/block/'+hash);
   }catch(e){
-    progress.textContent='Error loading block '+height+': '+e.message;
-    setTimeout(()=>{progress.style.display='none';}, 3000);
+    // Offline fallback
+    blk = mockBlock(height);
+    progress.textContent='Offline mode: generated a mock block for height '+height;
+    setTimeout(()=>{progress.style.display='none';}, 1800);
   }
+  selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
+  startSketch(blk);
 }
 
 async function loadLatest(){
@@ -816,9 +879,8 @@ async function loadLatest(){
     heightInput.value=h;
     await loadBlockByHeight(h);
   }catch(e){
-    console.warn('loadLatest failed:', e);
     progress.textContent='Could not fetch latest height. Enter a height above and press Load.';
-    setTimeout(()=>{progress.style.display='none';}, 4000);
+    setTimeout(()=>{progress.style.display='none';}, 3000);
   }
 }
 
@@ -828,10 +890,8 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-
-// Safe boot: try latest, but don't crash if it fails
-(async()=>{ await loadLatest(); })();
-// new34
+// new35
+// No auto-load on boot (prevents DNS spam). Enter a height and press Load, or try Latest.
 </script>
 </body>
 </html>
