@@ -147,7 +147,7 @@ void main(){
     pos += nrm*(amp*spike*length(aPosition));
   }
 
-  // Glass ripple (m==1)
+  // Glass (m==1)
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -157,10 +157,8 @@ void main(){
     pos += nrm * ripple * length(aPosition);
   }
 
-  // Fireball (m==9): intentionally no surface expansion (keep orb size)
-  if(m==9){
-    // no-op so the orb is not inflated
-  }
+  // Fireball (m==9): keep orb size (no surface expansion)
+  if(m==9){}
 
   vPos=pos; vNormal=normalize(pos);
   gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
@@ -201,19 +199,19 @@ void main(){
     float thick = baseThick + 0.06*(micro - 0.5);
     float phase = thick * (1.6 + 1.1*NoV) * 6.28318530718;
     float hue = fract(phase*0.14);
-    vec3 swirl = hsv2rgb(vec3(hue, 0.45, 1.0));
+    vec3 swirl = hsv2rgb(vec3(hue, 0.55, 1.0));
     float fres = pow(1.0 - NoV, 4.0);
-    vec3 reflectCol = mix(vec3(0.98), swirl, 0.55);
+    vec3 reflectCol = mix(vec3(0.98), swirl, 0.6);
     vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
     float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
-    vec3 shellTint = mix(vec3(1.0), swirl, 0.12);
-    col = shellTint*0.03 + reflectCol * (0.015 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
+    vec3 shellTint = mix(vec3(1.0), swirl, 0.15);
+    col = shellTint*0.03 + reflectCol * (0.02 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
   } else if(m==0){ // Marble
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
-    col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+    col=base*(0.38+0.62*ndl) + vec3(1.0)*rim*0.12;
   } else if(m==2){ // Wireframe
     float k=9.0+2.0*fract(uObjSeed*7.0);
     vec3 q=normalize(vPos);
@@ -225,24 +223,24 @@ void main(){
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3));
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
-    col=mix(cool,hot,veins)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.08;
+    col=mix(cool,hot,veins)*(0.38+0.62*ndl) + vec3(1.0)*rim*0.08;
   } else if(m==4){ // Toon
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
-    col=base*(0.22+s) + vec3(1.0)*step(0.8,rim)*0.18;
+    col=base*(0.24+s) + vec3(1.0)*step(0.8,rim)*0.18;
   } else if(m==5){ // Iridescent
     float h=fract(0.5+0.35*dot(normalize(vPos),vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
-    vec3 iri=hsv2rgb(vec3(h,0.9,1.0));
-    col=mix(iri,mix(colA,colB,0.4),0.3)*(0.3+0.7*ndl) + vec3(1.0)*rim*0.18;
+    vec3 iri=hsv2rgb(vec3(h,0.95,1.0));
+    col=mix(iri,mix(colA,colB,0.4),0.25)*(0.32+0.68*ndl) + vec3(1.0)*rim*0.18;
   } else if(m==6){ // Spikes
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7));
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
-    vec3 hi=base*1.7, lo=base*0.45;
+    vec3 hi=base*1.8, lo=base*0.45;
     col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
   } else if(m==7){ // Metallic
     float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
-    col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
+    col=mix(colA,colB,0.5)*(0.22+0.60*ndl) + vec3(1.0)*spec*0.95 + vec3(1.0)*rim*0.12;
   } else if(m==8){ // Sky
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
@@ -257,7 +255,7 @@ void main(){
     vec3 base = mix(colA, colB, 0.35);
     col = base*(0.28+0.72*ndl) + vec3(1.0)*rim*0.08;
   } else {
-    col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+    col=mix(colA,colB,0.5)*(0.38+0.62*ndl) + vec3(1.0)*rim*0.12;
   }
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
 }`;
@@ -290,38 +288,91 @@ function camBasis(yaw, pitch){
   return {forward,right,up};
 }
 
-/* ---------- palette / atom build ---------- */
-function paletteFromHeight(height){
-  const rng = XS32(height), golden = 137.50776405003785;
-  let baseHue = mod((height * golden) + rng() * 45, 360);
-  let hP = baseHue;
-  let hN = mod(baseHue + (90 + rng() * 120), 360);
-  let hE = mod(baseHue + (180 + rng() * 120), 360);
-  let hS = mod(baseHue + (30 + rng() * 120), 360);
-  let sP = 0.82 + 0.18 * rng(), lP = 0.48 + 0.12 * rng();
-  let sN = 0.72 + 0.25 * rng(), lN = 0.52 + 0.12 * rng();
-  let sE = 0.92 + 0.08 * rng(), lE = 0.58 + 0.12 * rng();
-  let sS = 0.82 + 0.18 * rng(), lS = 0.56 + 0.12 * rng();
-  return{
+/* ---------- color & diversity ---------- */
+function prngFromHex(hex){
+  const c=(hex||'').replace(/[^0-9a-fA-F]/g,''); let acc=0;
+  for(let i=0;i<c.length;i+=2){ acc = (acc*131 + parseInt(c.substr(i,2),16))>>>0; }
+  return XS32(acc||1);
+}
+function paletteFromBlock(height, hash, merkle){
+  // Brighter palette, bigger separations, per-atom jitter
+  const rng = XS32((height*2654435761)>>>0);
+  const rHash = prngFromHex(hash||''); const rMerk = prngFromHex(merkle||'');
+
+  const golden = 137.50776405003785;
+  let baseHue = mod((height * golden) + rng()*180 + rHash()*60 - 30, 360);
+
+  // large separations (~120° triadic/compl) + jitter
+  const sepA = 120 + (rMerk()*30-15);   // ±15°
+  const sepB = 240 + (rHash()*40-20);   // ±20°
+
+  // Saturation and lightness tuned for vibrancy
+  const sP = 0.88 + 0.10*rng(); const lP = 0.52 + 0.08*rMerk();
+  const sN = 0.90 + 0.08*rng(); const lN = 0.50 + 0.10*rHash();
+  const sE = 0.96;               const lE = 0.56 + 0.08*rng();
+  const sS = 0.90;               const lS = 0.55 + 0.10*rng();
+
+  // Assign hues (electrons get base, others spread around it)
+  const hE = baseHue;
+  const hP = mod(baseHue + sepA, 360);
+  const hN = mod(baseHue + sepB, 360);
+
+  // Shell/ring: contrast against electrons (complement w/ jitter)
+  const hS = mod(hE + 180 + (rng()*40-20), 360);
+
+  return {
     proton:  hslToRgb(hP/360, sP, lP),
     neutron: hslToRgb(hN/360, sN, lN),
     electron:hslToRgb(hE/360, sE, lE),
     shell:   hslToRgb(hS/360, sS, lS)
   };
 }
-function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; } if(rem>0) shells.push(rem); return shells; }
-function chooseSetModesFromBlock(b){
-  const h=b.height|0; const mr=b.merkle_root||''; const nonce=b.nonce||0; const bits=b.bits||0;
-  const sA=byteAt(mr,3), sB=byteAt(mr,7), sC=byteAt(mr,11), sD=lastByte(b.id||b.hash||'');
-  const mlist=[0,1,2,3,4,5,6,7,8,9];
-  const pick=(seed)=>mlist[(seed + h + (nonce&255) + (bits&255))%mlist.length];
-  return { protons: pick(sA), neutrons: pick(sB), electrons: pick(sC), rings: pick(sD)%3 };
+function diversityFromBlock(b){
+  const h=b.height|0, mr=b.merkle_root||'', id=b.id||b.hash||'';
+  const rA=prngFromHex(mr), rB=prngFromHex(id);
+  return {
+    // biases for style families (0..1)
+    famA: rA(), famB: rB(),
+    // geometry/behavior jitter (small)
+    orbitSpreadJ: 1.0 + (rB()*0.16 - 0.08),   // ±8%
+    eccBiasJ:     (rA()*0.18 - 0.09),         // ±0.09 added pre-clamp
+    sizeScaleJ:   1.0 + (rB()*0.20 - 0.10),   // ±10%
+    countJitter:  (byteAt(mr,5)%21)-10        // ±10 electrons/protons jiggle
+  };
+}
+
+/* ---------- mode picking with diversity (keeps sets distinct) ---------- */
+const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Fireball'];
+const FAMILY_BUCKETS = [
+  [1,5,7],    // glossy / iridescent / metallic
+  [3,6,9],    // aggressive: lava / spikes / fireball
+  [0,2,4,8]   // stylized: marble / wireframe / toon / sky
+];
+function pickFromWeighted(bucket, bias){
+  // rotate the bucket by bias to diversify
+  const idx = Math.floor(mod(bias * (bucket.length+1), bucket.length));
+  return bucket[idx];
+}
+function chooseSetModesFromBlock(b, diversity){
+  const nonce=b.nonce||0, bits=b.bits||0, h=b.height|0;
+  // weight families by biases; we pick different families for sets to force contrast
+  const famOrder = [...FAMILY_BUCKETS];
+  // simple shuffle seeded by height
+  famOrder.sort((a,bk)=>((h+bits+nonce)%3)-1);
+
+  const eFam = famOrder[0], pFam = famOrder[1], nFam = famOrder[2];
+  const eMode = pickFromWeighted(eFam, diversity.famA);
+  let pMode   = pickFromWeighted(pFam, diversity.famB*0.73 + 0.11);
+  let nMode   = pickFromWeighted(nFam, diversity.famB*0.41 + diversity.famA*0.33);
+
+  // Ensure distinctness (fallbacks)
+  if(pMode===eMode){ pMode = pickFromWeighted(pFam, diversity.famB*0.29 + 0.37); }
+  if(nMode===eMode || nMode===pMode){ nMode = pickFromWeighted(nFam, diversity.famA*0.61 + 0.23); }
+
+  const sD=lastByte(b.id||b.hash||'');
+  return { protons:pMode, neutrons:nMode, electrons:eMode, rings:(sD%3) };
 }
 const isPalindromeHeight = (h)=>{ const s=String(h); return s===s.split('').reverse().join(''); };
-function harmonizeModes(baseElectronMode){
-  const map = {0:[5,7],1:[7,5],2:[4,0],3:[6,4],4:[0,2],5:[0,7],6:[3,4],7:[1,5],8:[5,0],9:[3,7]};
-  return map[baseElectronMode] || [0,5];
-}
 
 /* ---------- FireParticles (longer life, upward, translucent) ---------- */
 class FireParticles{
@@ -336,57 +387,43 @@ class FireParticles{
     this.idx=0;
   }
   spawn(x,y,z, nx,ny,nz, colorA, colorB){
-    if(Math.random()>0.22) return; // slightly fewer particles since they live longer
+    if(Math.random()>0.22) return;
     const worldUp = [0,-1,0]; // p5 WEBGL "up" is -Y
     const k=2;
     for(let i=0;i<k;i++){
       const id = this.idx; this.idx=(this.idx+1)%this.max;
-
       const jitterX = (Math.random()-0.5)*1.8;
       const jitterZ = (Math.random()-0.5)*1.8;
-
       const vx = nx*5 + jitterX + 0.5*worldUp[0];
-      const vy = ny*5 + 7 + Math.random()*1.8 + 0.6*worldUp[1]; // negative => up
+      const vy = ny*5 + 7 + Math.random()*1.8 + 0.6*worldUp[1];
       const vz = nz*5 + jitterZ + 0.5*worldUp[2];
-
-      const t = Math.random()*0.5 + 0.25; // mix between orb A/B
+      const t = Math.random()*0.5 + 0.25;
       const base = [
         Math.round(colorA[0]*(1-t)+colorB[0]*t),
         Math.round(colorA[1]*(1-t)+colorB[1]*t),
         Math.round(colorA[2]*(1-t)+colorB[2]*t),
       ];
-
       this.pos[id][0]=x; this.pos[id][1]=y; this.pos[id][2]=z;
       this.vel[id][0]=vx; this.vel[id][1]=vy; this.vel[id][2]=vz;
       this.col[id]=base;
       this.size[id]=1.8+Math.random()*1.8;
-      this.maxL[id]=1.4+Math.random()*0.8; // longer life
+      this.maxL[id]=1.4+Math.random()*0.8;
       this.life[id]=this.maxL[id];
     }
   }
   update(dt){
     for(let i=0;i<this.max;i++){
       const L=this.life[i]; if(L<=0) continue;
-
-      // buoyancy (up), gentle drag
       this.vel[i][1] -= 9.0*dt;
       this.vel[i][0]*= (1.0-0.8*dt);
       this.vel[i][1]*= (1.0-0.22*dt);
       this.vel[i][2]*= (1.0-0.8*dt);
-
-      // subtle curl
       this.vel[i][0] += (Math.sin((this.pos[i][2]+this.pos[i][1])*0.08)*1.6)*dt;
       this.vel[i][2] += (Math.cos((this.pos[i][0]+this.pos[i][1])*0.08)*1.6)*dt;
-
-      // integrate
       this.pos[i][0]+=this.vel[i][0]*dt;
       this.pos[i][1]+=this.vel[i][1]*dt;
       this.pos[i][2]+=this.vel[i][2]*dt;
-
-      // slower growth so it doesn’t look smoky
       this.size[i] *= (1.0 + 0.42*dt);
-
-      // slower fade -> longer trails
       this.life[i]-=dt*0.6;
     }
   }
@@ -401,18 +438,15 @@ class FireParticles{
       const L=this.life[i]; if(L<=0) continue;
       const age = 1.0 - (L/this.maxL[i]);
       const a = Math.max(0, Math.min(1, L/this.maxL[i]));
-
-      // brighten toward tip, keep translucent
       const c = this.col[i];
       const bright = [
         Math.round(c[0]*(1-0.35*age) + 255*(0.35*age)),
         Math.round(c[1]*(1-0.35*age) + 255*(0.35*age)),
         Math.round(c[2]*(1-0.35*age) + 255*(0.35*age)),
       ];
-
       p.push();
       p.translate(this.pos[i][0], this.pos[i][1], this.pos[i][2]);
-      p.fill(bright[0], bright[1], bright[2], Math.round(140*a)); // translucent
+      p.fill(bright[0], bright[1], bright[2], Math.round(140*a));
       p.sphere(Math.max(0.9, this.size[i]*0.55), 8, 6);
       p.pop();
     }
@@ -426,17 +460,36 @@ class FireParticles{
 function buildAtomFromBlock(b){
   const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
   const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
-  const colors=paletteFromHeight(height);
-  const baseE=(height%118)+1, eJitter=(byteAt(hash,5)%64)-32; const electrons=clamp(baseE+eJitter, 6, 180);
-  const protonBias=(byteAt(merkleRoot,9)%31)-15; const Z=clamp(baseE+protonBias, 6, 160);
-  const neutronSkew=((byteAt(hash,2)%101)-50)/180; const N=clamp(Math.round(Z*(1.0+neutronSkew)) + (hexByteSum(merkleRoot)%17)-8, 6, 220);
+
+  const diversity = diversityFromBlock(b);
+  const colors=paletteFromBlock(height, hash, merkleRoot);
+
+  // counts with slightly wider jitter (seeded)
+  const baseE=(height%118)+1, eJitter=((byteAt(hash,5)%64)-32) + diversity.countJitter;
+  const electrons=clamp(baseE+eJitter, 6, 200);
+
+  const protonBias=((byteAt(merkleRoot,9)%37)-18); // was ±15 → now ±18
+  const Z=clamp(baseE+protonBias, 6, 180);
+
+  const neutronSkew=((byteAt(hash,2)%121)-60)/170; // slightly wider skew range
+  const N=clamp(Math.round(Z*(1.0+neutronSkew)) + (hexByteSum(merkleRoot)%23)-11, 6, 240);
+
   const shells=fillShells(electrons);
   const prod=Math.max(1, txCount*Math.max(1,size)); const lg=Math.log10(prod);
   const speedScale=clamp((lg-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
-  const dens=clamp(weight/Math.max(1,size*4),0.6,1.4); const tightness=clamp((dens*0.75)+(1.15-0.55*0.25), 0.6,1.4);
-  const eccGlobal=clamp(0.3 + ((version&0xf)/16)*0.5 + ((nonce&0x3f)/63)*0.2, 0.08,0.88);
-  const hashLast=lastByte(hash); const ringThick=0.9, ringAlpha=220; const ringColor=shiftHue(colors.shell, (hashLast/255-0.5)*36);
-  const orbitSpread=1.0+((version&0xf)-7.5)*0.01; const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
+
+  const dens=clamp(weight/Math.max(1,size*4),0.6,1.4);
+  const tightness=clamp((dens*0.75)+(1.15-0.55*0.25), 0.6,1.4);
+
+  let eccGlobal=clamp(0.3 + ((version&0xf)/16)*0.5 + ((nonce&0x3f)/63)*0.2 + diversity.eccBiasJ, 0.08,0.92);
+
+  const orbitSpread=(1.0+((version&0xf)-7.5)*0.01) * diversity.orbitSpreadJ;
+  const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
+
+  // rings: use paletteFromBlock shell color; also keep old slight hue shift by last byte
+  const hashLast=lastByte(hash);
+  const ringThick=1.0, ringAlpha=230;
+  const ringColor=shiftHue(colors.shell, (hashLast/255-0.5)*24);
 
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){ electronAngles[i]=[]; eMeta[i]=[];
@@ -445,7 +498,7 @@ function buildAtomFromBlock(b){
       const seed=(b0<<16)^(b1<<8)^b2; let u=vnorm(v3((b0/255)-0.5,(b1/255)-0.5,(b2/255)-0.5)); if(vlen(u)<1e-6) u=[0,0,1];
       const ref=Math.abs(u[2])<0.9?[0,0,1]:[1,0,0]; let v=vnorm(vcross(u,ref)), w=vcross(u,v);
       const e=clamp(eccGlobal*(0.6+0.8*(b1/255)),0.05,0.93), pre=(0.05+0.45*(b2/255))*speedScale, phase=(b0/255)*Math.PI*2;
-      const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=0.6+0.8*(b0/255);
+      const rosK=1+(seed%3), rosAmp=0.03+0.05*(b1/255), spMul=(0.6+0.8*(b0/255));
       const hueOffset=( (i*97 + j*131 + seed) % 360 ); const objSeed=(seed%1000)/1000;
       electronAngles[i][j]=(b2/255)*Math.PI*2; eMeta[i][j]={u,v,w,e,pre,phase,rosK,rosAmp,spMul,hueOffset,objSeed};
     } }
@@ -459,20 +512,21 @@ function buildAtomFromBlock(b){
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset,objSeed});
   }
 
+  // shaders & styles
   const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
   const isPearl170 = height===170;
   const is1337  = height===1337;
   const halving = (!isPearl170) && (height>0 && height%210000===0);
   const palindrome = isPalindromeHeight(height);
 
-  const baseSet = chooseSetModesFromBlock(b);
-  const [pMode, nMode] = harmonizeModes(baseSet.electrons);
+  const baseSet = chooseSetModesFromBlock(b, diversity);
 
   return { block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
     shader:{amp:animAmp,speed:animSpeed,blockPhase},
-    setModes: { protons:pMode, neutrons:nMode, electrons:baseSet.electrons, rings:baseSet.rings },
-    style:{ eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick, ringAlpha, ringColor, halving, pearl170:isPearl170, is1337, palindrome, nucleusTight: tightness } };
+    setModes: baseSet,
+    style:{ eSizeScale:clamp((1.0*diversity.sizeScaleJ) * ((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90),0.7,2.0),
+      ringThick, ringAlpha, ringColor, halving, pearl170:isPearl170, is1337, palindrome,
+      nucleusTight: tightness } };
 }
 
 /* ---------- panels ---------- */
@@ -675,6 +729,7 @@ function startSketch(blk){
                     ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
                     ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
         camTarget[0]+=add[0]; camTarget[1]+=add[1]; camTarget[2]+=add[2];
+        if(!isFiniteVec(add) || !isFiniteVec(camTarget)){ camTarget=[0,0,0]; }
         clampCamTarget();
       }
     };
@@ -713,8 +768,8 @@ function startSketch(blk){
 
       // Fallback
       p.resetShader(); p.noStroke();
-      p.ambientLight(80);
-      p.directionalLight(220,220,220, 0.6,0.7,0.5);
+      p.ambientLight(90);
+      p.directionalLight(230,230,230, 0.6,0.7,0.5);
       p.ambientMaterial(cA[0], cA[1], cA[2], Math.round(255*a));
       p.specularMaterial(60,60,60);
       p.shininess(12);
@@ -726,8 +781,7 @@ function startSketch(blk){
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i];
         let col = atom.style.ringColor.slice();
-        let alpha = 220;
-        let thick = 1.1;
+        let alpha = atom.style.ringAlpha, thick = atom.style.ringThick;
         if(atom.style.is1337){
           col = [60,255,130]; alpha=255; thick=1.4;
         } else if(atom.style.halving){
@@ -736,7 +790,7 @@ function startSketch(blk){
           alpha = Math.round(170 + 70*pulse);
           thick = 1.0 + 0.6*pulse;
         } else if(atom.style.pearl170){
-          col = [255,198,120]; alpha=220; thick=1.2;
+          col = [255,198,120]; alpha=230; thick=1.2;
         }
         p.noFill();
         p.stroke(col[0],col[1],col[2],alpha);
@@ -756,9 +810,9 @@ function startSketch(blk){
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
 
-      // harmonize with electrons' palette but distinct
-      let cP_A = shiftHue(atom.colors.electron, -22), cP_B = shiftHue(atom.colors.electron, +8);
-      let cN_A = shiftHue(atom.colors.electron, +40),  cN_B = shiftHue(atom.colors.electron, +62);
+      // Make nucleons visually related to electrons but notably distinct (offset hues)
+      let cP_A = shiftHue(atom.colors.electron, -35), cP_B = shiftHue(atom.colors.electron, -5);
+      let cN_A = shiftHue(atom.colors.electron, +45),  cN_B = shiftHue(atom.colors.electron, +75);
 
       if(atom.style.is1337){
         protonMode = 2; neutronMode = 2;
@@ -782,7 +836,7 @@ function startSketch(blk){
         cN_A = [250,240,255]; cN_B = [235,235,250];
       }
 
-      // Soft translucent glow for halving (visible nucleus, fades outward)
+      // Soft translucent glow for halving
       if(drawSoftGlow){
         const gl = p._renderer.GL;
         p.push(); p.noStroke(); p.blendMode(p.ADD); gl.depthMask(false);
@@ -868,7 +922,6 @@ function startSketch(blk){
           drawOrbMat(cA, cB, ELECTRON_R*sizeScale, t, 1.0, eMode, m.objSeed, electronDetail);
           p.pop();
 
-          // emit fire particles from electron surface normal (pointing outwards)
           const R = Math.hypot(pt[0],pt[1],pt[2])||1;
           emitFireAt(pt[0],pt[1],pt[2], pt[0]/R,pt[1]/R,pt[2]/R, cA,cB, isFireE);
 
@@ -917,7 +970,7 @@ function startSketch(blk){
       drawNucleus(t);
       drawElectrons(t);
 
-      // update + draw fire particles after geometry so they glow over it
+      // update + draw fire particles
       fire.update(dt);
       fire.draw();
 
