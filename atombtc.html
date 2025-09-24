@@ -256,8 +256,7 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==9){ // Fireball
-    // world "up" bias for flames lifting upwards
+  } else if(m==9){ // Fireball surface (particles are handled separately)
     float up = clamp(0.5 + 0.5*vNormal.y, 0.0, 1.0);
     float flow = fbm(normalize(vPos)*5.5 + vec3(0.0,t*1.2,0.0) + vec3(uObjSeed*2.1));
     float flicker = fbm(normalize(vPos)*10.0 + vec3(0.0,t*2.4,0.0) + vec3(uObjSeed*5.3));
@@ -265,11 +264,7 @@ void main(){
     vec3 hot = vec3(1.0,0.55,0.0);
     vec3 white = vec3(1.0);
     vec3 base = mix(hot, white, pow(heat,1.6));
-    float aura = smoothstep(0.45, 1.0, heat);
-    float a = clamp(0.55*aura + 0.25*ndl + 0.15*rim, 0.0, 1.0);
     col = base*(0.25+0.75*ndl) + vec3(1.0)*rim*0.08;
-    gl_FragColor = vec4(clamp(col,0.0,1.0), uAlpha * a);
-    return;
   } else {
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
@@ -337,6 +332,85 @@ function harmonizeModes(baseElectronMode){
   return map[baseElectronMode] || [0,5];
 }
 
+/* ---------- simple particle system for Fireball ---------- */
+class FireParticles{
+  constructor(p, maxCount=900){
+    this.p=p; this.max=maxCount;
+    this.pos = new Array(this.max).fill(0).map(()=>[0,0,0]);
+    this.vel = new Array(this.max).fill(0).map(()=>[0,0,0]);
+    this.col = new Array(this.max).fill(0).map(()=>[255,150,40]);
+    this.size= new Array(this.max).fill(0);
+    this.life= new Array(this.max).fill(0);
+    this.maxL= new Array(this.max).fill(0);
+    this.idx=0;
+  }
+  spawn(x,y,z, nx,ny,nz, colorA, colorB){
+    // small probability to keep count in check
+    if(Math.random()>0.28) return;
+    const k=3; // spawn up to k particles at once, but reuse pool
+    for(let i=0;i<k;i++){
+      const id = this.idx; this.idx=(this.idx+1)%this.max;
+      const up = [0,1,0];
+      // initial velocity: world up + surface normal
+      const v = [
+        nx*6 + (Math.random()-0.5)*2.2 + 0.6*up[0],
+        ny*6 + 8 + Math.random()*2.4 + 0.6*up[1],
+        nz*6 + (Math.random()-0.5)*2.2 + 0.6*up[2]
+      ];
+      const t = (i===0?Math.random()*0.5:Math.random()); // color mix
+      const c = mixRGB(colorA, colorB, t);
+      this.pos[id][0]=x; this.pos[id][1]=y; this.pos[id][2]=z;
+      this.vel[id]=v;
+      this.col[id]=c;
+      this.size[id]=2.2+Math.random()*2.0;
+      this.maxL[id]=0.7+Math.random()*0.7;
+      this.life[id]=this.maxL[id];
+    }
+  }
+  update(dt){
+    for(let i=0;i<this.max;i++){
+      const L=this.life[i]; if(L<=0) continue;
+      // buoyancy + slight drag
+      this.vel[i][1]+= 9.0*dt;
+      this.vel[i][0]*= (1.0-0.9*dt);
+      this.vel[i][1]*= (1.0-0.25*dt);
+      this.vel[i][2]*= (1.0-0.9*dt);
+      // curl-ish wobble
+      this.vel[i][0] += (Math.sin((this.pos[i][2]+this.pos[i][1])*0.08)*2.0)*dt;
+      this.vel[i][2] += (Math.cos((this.pos[i][0]+this.pos[i][1])*0.08)*2.0)*dt;
+
+      this.pos[i][0]+=this.vel[i][0]*dt;
+      this.pos[i][1]+=this.vel[i][1]*dt;
+      this.pos[i][2]+=this.vel[i][2]*dt;
+      this.size[i] *= (1.0 + 0.65*dt);
+      this.life[i]-=dt;
+    }
+  }
+  draw(){
+    const p=this.p;
+    const gl = p._renderer.GL;
+    p.push();
+    p.noStroke();
+    p.blendMode(p.ADD);
+    gl.depthMask(false);
+    for(let i=0;i<this.max;i++){
+      const L=this.life[i]; if(L<=0) continue;
+      const a = Math.max(0, Math.min(1, L/this.maxL[i]));
+      const c = this.col[i];
+      p.push();
+      p.translate(this.pos[i][0], this.pos[i][1], this.pos[i][2]);
+      // billboard-ish: tiny sphere is OK & cheap at this scale
+      p.fill(c[0], c[1], c[2], Math.round(180*a));
+      p.sphere(Math.max(1.0, this.size[i]*0.6), 8, 6);
+      p.pop();
+    }
+    gl.depthMask(true);
+    p.blendMode(p.BLEND);
+    p.pop();
+  }
+}
+
+/* ---------- build atom ---------- */
 function buildAtomFromBlock(b){
   const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
   const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
@@ -374,7 +448,7 @@ function buildAtomFromBlock(b){
   }
 
   const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
-  const isPearl170 = height===170;              // redesigned #170
+  const isPearl170 = height===170;
   const is1337  = height===1337;
   const halving = (!isPearl170) && (height>0 && height%210000===0);
   const palindrome = isPalindromeHeight(height);
@@ -438,7 +512,7 @@ let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
 let minCamDist=140, maxCamDist=20000;
 let lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
-let interactionMode='none'; // 'rotate' | 'panzoom' | 'none'
+let interactionMode='none';
 let modelSpin = 0;
 
 const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Fireball'];
@@ -463,6 +537,7 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
+  // palindrome helpers
   const eDir=[], eTurns=[];
   for(let i=0;i<atom.shells.length;i++){
     eDir[i]=[]; eTurns[i]=[];
@@ -499,6 +574,11 @@ function startSketch(blk){
     if(!isFiniteVec(camTarget)) camTarget=[0,0,0];
   }
 
+  // --- Fire particle system (GLOBAL to this sketch)
+  let fire = new FireParticles(p5.prototype, 900);
+  // We'll re-bind it to the actual p5 instance once created (in setup)
+  // and use 'fire' inside closures.
+
   const sketch=(p)=>{
     p.setup=()=>{
       const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
@@ -512,6 +592,9 @@ function startSketch(blk){
       catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
 
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
+
+      // bind fire system to real renderer p5 instance
+      fire = new FireParticles(p, 900);
 
       const canvasEl = cnv.canvas;
       if(canvasEl){
@@ -641,7 +724,6 @@ function startSketch(blk){
           alpha = Math.round(170 + 70*pulse);
           thick = 1.0 + 0.6*pulse;
         } else if(atom.style.pearl170){
-          // soft gold rings to complement pearlescent
           col = [255,198,120]; alpha=220; thick=1.2;
         }
         p.noFill();
@@ -650,6 +732,12 @@ function startSketch(blk){
         p.circle(0,0,r*2);
       }
       p.pop();
+    }
+
+    // fire emit helper
+    function emitFireAt(x,y,z, nx,ny,nz, cA, cB, isFire){
+      if(!isFire) return;
+      fire.spawn(x,y,z, nx,ny,nz, cA, cB);
     }
 
     function drawNucleus(t){
@@ -676,8 +764,7 @@ function startSketch(blk){
       }
 
       if(atom.style.pearl170){
-        protonMode  = 1; // glass
-        neutronMode = 1;
+        protonMode  = 1; neutronMode = 1;
         cP_A = [245,245,255]; cP_B = [235,235,255];
         cN_A = [250,240,255]; cN_B = [235,235,250];
       }
@@ -700,8 +787,6 @@ function startSketch(blk){
       for(const q of atom.nucleusPoints){
         p.push();
         let x=q.x, y=q.y, z=q.z;
-
-        // #170 pearl motion patterns inside nucleus
         if(atom.style.pearl170){
           const swirl = 0.35 * Math.sin(t*0.6 + q.objSeed*6.28);
           const cs=Math.cos(swirl), sn=Math.sin(swirl);
@@ -709,10 +794,19 @@ function startSketch(blk){
           const breathe = 1.0 + 0.06*Math.sin(t*1.3 + q.objSeed*4.0 + (q.isProton?0.0:1.2));
           x=rx*breathe; y=y*breathe; z=rz*breathe;
         }
-
         p.translate(x,y,z);
-        if(q.isProton){ drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed, nucleonDetail); }
-        else          { drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed, nucleonDetail); }
+        const nx = x/(vlen([x,y,z])||1), ny = y/(vlen([x,y,z])||1), nz = z/(vlen([x,y,z])||1);
+
+        const isFireP = (overrides.proton ?? atom.setModes.protons)===9;
+        const isFireN = (overrides.neutron?? atom.setModes.neutrons)===9;
+
+        if(q.isProton){
+          drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed, nucleonDetail);
+          emitFireAt(x,y,z, nx,ny,nz, cP_A,cP_B, isFireP);
+        }else{
+          drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed, nucleonDetail);
+          emitFireAt(x,y,z, nx,ny,nz, cN_A,cN_B, isFireN);
+        }
         p.pop();
       }
     }
@@ -730,9 +824,10 @@ function startSketch(blk){
         sizeScale *= 1.0 + 0.08*Math.sin(t*2.0);
       }
       if(atom.style.pearl170){
-        eMode = 1; // glass
-        baseColA=[245,245,255]; baseColB=[230,235,255];
+        eMode = 1; baseColA=[245,245,255]; baseColB=[230,235,255];
       }
+
+      const isFireE = (overrides.electron ?? atom.setModes.electrons)===9;
 
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
@@ -741,7 +836,6 @@ function startSketch(blk){
           let a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
           let pre=t*m.pre + m.phase;
 
-          // #170: Lissajous-like
           if(atom.style.pearl170){
             a *= 1.0 + 0.06*Math.sin(t*0.9 + m.objSeed*3.0);
             b *= 1.0 + 0.06*Math.cos(t*1.1 + m.objSeed*4.1);
@@ -761,6 +855,10 @@ function startSketch(blk){
           drawOrbMat(cA, cB, ELECTRON_R*sizeScale, t, 1.0, eMode, m.objSeed, electronDetail);
           p.pop();
 
+          // emit fire particles from electron surface normal (pointing outwards)
+          const R = Math.hypot(pt[0],pt[1],pt[2])||1;
+          emitFireAt(pt[0],pt[1],pt[2], pt[0]/R,pt[1]/R,pt[2]/R, cA,cB, isFireE);
+
           const dir = (atom.style.palindrome ? atom._eDir[i][j] : 1);
           const delta = baseSpeed*m.spMul*dir;
           const nextAngle = atom.electronAngles[i][j] + delta;
@@ -778,6 +876,7 @@ function startSketch(blk){
 
     p.draw=()=>{
       const t=p.millis()*0.001;
+      const dt=Math.max(0.001, Math.min(0.05, p.deltaTime/1000));
 
       // Background
       if(atom.style.halving){
@@ -797,13 +896,17 @@ function startSketch(blk){
       if(![cx,cy,cz].every(Number.isFinite)){ camTarget=[0,0,0]; }
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // slow coin-spin
-      modelSpin += 0.16 * (p.deltaTime/1000);
+      // coin-spin
+      modelSpin += 0.16 * dt;
       p.push(); p.rotateY(modelSpin);
 
       drawRings(t);
       drawNucleus(t);
       drawElectrons(t);
+
+      // update + draw fire particles after geometry so they glow over it
+      fire.update(dt);
+      fire.draw();
 
       p.pop();
     };
@@ -815,17 +918,8 @@ function startSketch(blk){
 
 /* ---------- networking / buttons / boot ---------- */
 const API='https://mempool.space/api';
-
-async function fetchText(u){
-  const r=await fetch(u);
-  if(!r.ok) throw new Error(r.status+' '+u);
-  return (await r.text()).trim();
-}
-async function fetchJSON(u){
-  const r=await fetch(u);
-  if(!r.ok) throw new Error(r.status+' '+u);
-  return r.json();
-}
+async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
+async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
 
 const progress = $('#progress');
 function showProgress(msg){ progress.style.display='block'; progress.textContent=msg; }
@@ -840,18 +934,14 @@ async function loadBlockByHeight(height){
     hideProgress();
     selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
     startSketch(blk);
-  }catch(e){
-    showProgress('Error: '+e.message);
-  }
+  }catch(e){ showProgress('Error: '+e.message); }
 }
 async function loadLatest(){
   try{
     showProgress('Getting tip height…');
     const h=await fetchText(API+'/blocks/tip/height');
     heightInput.value=h; await loadBlockByHeight(h);
-  }catch(e){
-    showProgress('Error: '+e.message+'\\nTry entering a known height (e.g. 840000) and press Load.');
-  }
+  }catch(e){ showProgress('Error: '+e.message+'\nTry entering a known height (e.g. 840000) and press Load.'); }
 }
 
 loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ showProgress('Error: '+e.message); }};
@@ -860,9 +950,8 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-
+// new41
 // Boot
-// new40
 loadLatest();
 </script>
 </body>
