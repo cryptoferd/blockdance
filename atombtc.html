@@ -414,6 +414,7 @@ let minCamDist=140, maxCamDist=20000;
 let isDragging=false, lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
 let modelSpin = 0;
+let frameParity = 0; // for #170 electron frame-skipping
 
 const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
 let overrides = { proton:null, neutron:null, electron:null };
@@ -432,7 +433,7 @@ function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
 
   camDist=560; camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0];
-  modelSpin = 0;
+  modelSpin = 0; frameParity = 0;
 
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
@@ -448,7 +449,7 @@ function startSketch(blk){
   const largestRadius = atom.radii.length ? atom.radii[atom.radii.length-1] : 140;
   minCamDist = Math.max( largestRadius * 1.2, 90 );
   maxCamDist = 30000;
-  const maxPan = largestRadius * 3.0;
+  const maxPan = largestRadius * 2.2; // tighter to avoid losing the model
 
   // perf-aware mesh detail
   const totalElectrons = atom.electrons;
@@ -462,9 +463,21 @@ function startSketch(blk){
   }
   let electronDetail = detailFor(totalElectrons, 52, 36);
   let nucleonDetail  = detailFor(totalNucleons,  44, 30);
+
+  // Aggressive #170 LOD
   if(atom.style.disco){
-    electronDetail = [Math.max(18, electronDetail[0]-16), Math.max(12, electronDetail[1]-12)];
-    nucleonDetail  = [Math.max(16, nucleonDetail[0]-14),  Math.max(10, nucleonDetail[1]-10)];
+    electronDetail = [14,10];
+    nucleonDetail  = [12,8];
+  }
+
+  function clampCamTarget(){
+    // Per-axis clamp
+    camTarget[0] = clamp(camTarget[0], -maxPan, maxPan);
+    camTarget[1] = clamp(camTarget[1], -maxPan, maxPan);
+    camTarget[2] = clamp(camTarget[2], -maxPan, maxPan);
+    // Radial clamp
+    const L = Math.hypot(camTarget[0],camTarget[1],camTarget[2]);
+    if(L>maxPan){ const s=maxPan/L; camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s; }
   }
 
   const sketch=(p)=>{
@@ -480,6 +493,7 @@ function startSketch(blk){
       }catch(e){
         orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e);
       }
+      // baseline lights
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
       const canvasEl = cnv.canvas;
@@ -523,8 +537,7 @@ function startSketch(blk){
               camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
               camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
               camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
-              const L = Math.hypot(camTarget[0],camTarget[1],camTarget[2]);
-              if(L>maxPan){ const s=maxPan/L; camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s; }
+              clampCamTarget();
             }
             twoPrevMid=[midX,midY];
           }
@@ -549,8 +562,7 @@ function startSketch(blk){
         camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
         camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
         camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
-        const L = Math.hypot(camTarget[0],camTarget[1],camTarget[2]);
-        if(L>maxPan){ const s=maxPan/L; camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s; }
+        clampCamTarget();
       }
     };
     p.mouseWheel=(e)=>{
@@ -585,6 +597,7 @@ function startSketch(blk){
         }
       }
 
+      // Fallback (rare)
       p.resetShader(); p.noStroke();
       if(m===1){
         p.ambientLight(50);
@@ -604,7 +617,7 @@ function startSketch(blk){
     }
 
     function drawRainbowRing(radius, t){
-      const segs = 160;
+      const segs = 120; // slightly reduced for perf
       p.noFill();
       p.strokeWeight(1.1);
       for(let k=0;k<segs;k++){
@@ -633,7 +646,7 @@ function startSketch(blk){
           } else if(atom.style.halving){
             const pulse = 0.5 + 0.5*Math.sin(t*2.0);
             col = mixRGB([212,172,55],[255,220,120], 0.65);
-            alpha = Math.round(140 + 80*pulse);
+            alpha = Math.round(170 + 70*pulse);
             thick = 1.0 + 0.6*pulse;
           }
           p.noFill();
@@ -649,7 +662,7 @@ function startSketch(blk){
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
 
-      // Aesthetic harmony: nucleons derived from electron palette but distinct
+      // Harmonized to electron palette but distinct
       let cP_A = shiftHue(atom.colors.electron, -22), cP_B = shiftHue(atom.colors.electron, +8);
       let cN_A = shiftHue(atom.colors.electron, +40),  cN_B = shiftHue(atom.colors.electron, +62);
 
@@ -670,30 +683,37 @@ function startSketch(blk){
       }
 
       const disco = atom.style.disco;
-      if(disco){ sizePulse = 1.0 + 0.10*Math.sin(t*2.2); }
+      if(disco){ sizePulse = 1.0 + 0.08*Math.sin(t*2.0); }
 
+      // --- Soft translucent glow for halving ---
       if(drawSoftGlow){
-        const layers = 3;
+        // Temporary warm ambient so the glow isn't black
+        p.push();
+        p.noStroke();
+        p.ambientLight(255,200,90); // warm boost just for glow
+        const layers = 4;
         for(let i=0;i<layers;i++){
           const k = (i+1)/layers;
-          const rad = NUCLEUS_R0 * (1.05 + 0.35*k);
-          const a   = Math.round(18 * (1.0 - k)); // fades out
-          p.push();
-          p.noStroke();
-          p.ambientMaterial(240,210,120, a);
-          p.sphere(rad, 20, 14);
-          p.pop();
+          const rad = NUCLEUS_R0 * (1.08 + 0.42*k);
+          const al  = Math.round(36 * (1.0 - k)); // very translucent
+          p.ambientMaterial(255,210,110, al);
+          p.sphere(rad, 18, 12);
         }
+        p.pop();
+        // Restore baseline lights for the solid nucleons
+        p.ambientLight(120);
+        p.directionalLight(255,255,255,0.5,0.6,0.4);
       }
 
       for(const q of atom.nucleusPoints){
         p.push();
         p.translate(q.x,q.y,q.z);
         if(disco){
+          // cheaper toon for disco, still rainbow
           const hue = ( (q.objSeed*0.8) + t*0.18 ) % 1;
           const col = hslToRgb(hue, 1.0, 0.55);
           const col2= hslToRgb((hue+0.18)%1, 1.0, 0.65);
-          drawOrbMat(col,col2,NUCLEON_R*sizePulse,t,1.0, q.isProton?protonMode:neutronMode, q.objSeed,false);
+          drawOrbMat(col,col2,NUCLEON_R*sizePulse,t,1.0, 4/*toon*/, q.objSeed,false);
         } else {
           if(q.isProton){ drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed,false); }
           else          { drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed,false); }
@@ -707,6 +727,7 @@ function startSketch(blk){
       let sizeScale = atom.style.eSizeScale;
       let baseColA = atom.colors.electron, baseColB = atom.style.ringColor;
 
+      const disco = atom.style.disco;
       if(atom.style.is1337){
         eMode = 2; baseColA = [60,255,130]; baseColB = [60,255,130];
       }
@@ -714,13 +735,18 @@ function startSketch(blk){
         eMode = 7; baseColA = [210,215,220]; baseColB = [240,245,250]; // silver
         sizeScale *= 1.0 + 0.08*Math.sin(t*2.0);
       }
-      const disco = atom.style.disco;
+      if(disco){
+        eMode = 4; // toon for perf
+      }
       let discoPulse = 1.0;
-      if(disco){ discoPulse = 1.0 + 0.10*Math.sin(t*2.2 + 0.7); }
+      if(disco){ discoPulse = 1.0 + 0.08*Math.sin(t*2.0 + 0.7); }
 
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
+          // #170 frame skipping: draw half the electrons per frame
+          if(disco && ((i+j+frameParity)&1)) continue;
+
           const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
           const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
           const pre=t*m.pre + m.phase;
@@ -762,14 +788,17 @@ function startSketch(blk){
     p.draw=()=>{
       const t=p.millis()*0.001;
 
+      // Background
       if(atom.style.halving){
-        const k = 0.5 + 0.5*Math.sin(t*1.4);
-        const bg = mixRGB([0,0,0],[32,16,0], k);
+        const k = 0.5 + 0.5*Math.sin(t*1.6);
+        // vivid orange pulse
+        const bg = mixRGB([10,4,0],[255,120,20], k);
         p.background(bg[0],bg[1],bg[2]);
       } else {
         p.background(0);
       }
 
+      // Camera
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
       p.perspective(fovy,aspect,near,far);
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
@@ -786,6 +815,9 @@ function startSketch(blk){
       drawElectrons(t);
 
       p.pop();
+
+      // flip parity for #170 alternating draw
+      frameParity ^= 1;
     };
   };
 
@@ -843,9 +875,8 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-
-// Auto-load latest on boot (same as your old snippet)
-// new37
+// new38
+// Auto-load latest on boot
 loadLatest();
 </script>
 </body>
