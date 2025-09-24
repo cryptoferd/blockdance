@@ -157,12 +157,9 @@ void main(){
     pos += nrm * ripple * length(aPosition);
   }
 
-  // Fireball — outward fluttering surface (m==9)
+  // Fireball (m==9): intentionally no surface expansion (keep orb size)
   if(m==9){
-    float t=uTime*(1.0+0.7*uSpeed);
-    float rise = fbm(nrm*6.5 + vec3(0.0,t*1.2,0.0) + vec3(uObjSeed*3.1));
-    float amp = (0.04 + 0.04*uAmp) * (0.6 + 0.4*rise);
-    pos += nrm * amp * length(aPosition) * 10.0;
+    // no-op so the orb is not inflated
   }
 
   vPos=pos; vNormal=normalize(pos);
@@ -256,15 +253,9 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==9){ // Fireball surface (particles are handled separately)
-    float up = clamp(0.5 + 0.5*vNormal.y, 0.0, 1.0);
-    float flow = fbm(normalize(vPos)*5.5 + vec3(0.0,t*1.2,0.0) + vec3(uObjSeed*2.1));
-    float flicker = fbm(normalize(vPos)*10.0 + vec3(0.0,t*2.4,0.0) + vec3(uObjSeed*5.3));
-    float heat = clamp(0.35 + 0.65*flow*up + 0.25*flicker, 0.0, 1.0);
-    vec3 hot = vec3(1.0,0.55,0.0);
-    vec3 white = vec3(1.0);
-    vec3 base = mix(hot, white, pow(heat,1.6));
-    col = base*(0.25+0.75*ndl) + vec3(1.0)*rim*0.08;
+  } else if(m==9){ // Fireball orb: translucent, palette-colored shell
+    vec3 base = mix(colA, colB, 0.35);
+    col = base*(0.28+0.72*ndl) + vec3(1.0)*rim*0.08;
   } else {
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
@@ -332,7 +323,7 @@ function harmonizeModes(baseElectronMode){
   return map[baseElectronMode] || [0,5];
 }
 
-/* ---------- simple particle system for Fireball (fixed upward motion & color) ---------- */
+/* ---------- FireParticles (longer life, upward, translucent) ---------- */
 class FireParticles{
   constructor(p, maxCount=900){
     this.p=p; this.max=maxCount;
@@ -344,28 +335,21 @@ class FireParticles{
     this.maxL= new Array(this.max).fill(0);
     this.idx=0;
   }
-  // colorA/colorB come from the orb material -> we match the flame’s hue to the orb
   spawn(x,y,z, nx,ny,nz, colorA, colorB){
-    // modest spawn rate to keep perf in check
-    if(Math.random()>0.28) return;
-
-    // p5 WEBGL: +Y is DOWN. "Up" is NEGATIVE Y.
-    const worldUp = [0,-1,0];
-
-    const k=3;
+    if(Math.random()>0.22) return; // slightly fewer particles since they live longer
+    const worldUp = [0,-1,0]; // p5 WEBGL "up" is -Y
+    const k=2;
     for(let i=0;i<k;i++){
       const id = this.idx; this.idx=(this.idx+1)%this.max;
 
-      // initial velocity: outward normal + upward (negative Y) + a bit of noise
-      const jitterX = (Math.random()-0.5)*2.2;
-      const jitterZ = (Math.random()-0.5)*2.2;
+      const jitterX = (Math.random()-0.5)*1.8;
+      const jitterZ = (Math.random()-0.5)*1.8;
 
-      const vx = nx*6 + jitterX + 0.6*worldUp[0];
-      const vy = ny*6 + 8 + Math.random()*2.4 + 0.6*worldUp[1]; // NEGATIVE pushes up visually
-      const vz = nz*6 + jitterZ + 0.6*worldUp[2];
+      const vx = nx*5 + jitterX + 0.5*worldUp[0];
+      const vy = ny*5 + 7 + Math.random()*1.8 + 0.6*worldUp[1]; // negative => up
+      const vz = nz*5 + jitterZ + 0.5*worldUp[2];
 
-      // match flame color to orb color (then it naturally brightens as it ages in update())
-      const t = Math.random()*0.6 + 0.2;          // prefer mid tones of the orb
+      const t = Math.random()*0.5 + 0.25; // mix between orb A/B
       const base = [
         Math.round(colorA[0]*(1-t)+colorB[0]*t),
         Math.round(colorA[1]*(1-t)+colorB[1]*t),
@@ -375,8 +359,8 @@ class FireParticles{
       this.pos[id][0]=x; this.pos[id][1]=y; this.pos[id][2]=z;
       this.vel[id][0]=vx; this.vel[id][1]=vy; this.vel[id][2]=vz;
       this.col[id]=base;
-      this.size[id]=2.2+Math.random()*2.0;
-      this.maxL[id]=0.7+Math.random()*0.7;
+      this.size[id]=1.8+Math.random()*1.8;
+      this.maxL[id]=1.4+Math.random()*0.8; // longer life
       this.life[id]=this.maxL[id];
     }
   }
@@ -384,28 +368,26 @@ class FireParticles{
     for(let i=0;i<this.max;i++){
       const L=this.life[i]; if(L<=0) continue;
 
-      // buoyancy: accelerate toward negative Y (visual up)
+      // buoyancy (up), gentle drag
       this.vel[i][1] -= 9.0*dt;
+      this.vel[i][0]*= (1.0-0.8*dt);
+      this.vel[i][1]*= (1.0-0.22*dt);
+      this.vel[i][2]*= (1.0-0.8*dt);
 
-      // light drag
-      this.vel[i][0]*= (1.0-0.9*dt);
-      this.vel[i][1]*= (1.0-0.25*dt);
-      this.vel[i][2]*= (1.0-0.9*dt);
-
-      // gentle curl wobble
-      this.vel[i][0] += (Math.sin((this.pos[i][2]+this.pos[i][1])*0.08)*2.0)*dt;
-      this.vel[i][2] += (Math.cos((this.pos[i][0]+this.pos[i][1])*0.08)*2.0)*dt;
+      // subtle curl
+      this.vel[i][0] += (Math.sin((this.pos[i][2]+this.pos[i][1])*0.08)*1.6)*dt;
+      this.vel[i][2] += (Math.cos((this.pos[i][0]+this.pos[i][1])*0.08)*1.6)*dt;
 
       // integrate
       this.pos[i][0]+=this.vel[i][0]*dt;
       this.pos[i][1]+=this.vel[i][1]*dt;
       this.pos[i][2]+=this.vel[i][2]*dt;
 
-      // expand a bit as it rises
-      this.size[i] *= (1.0 + 0.65*dt);
+      // slower growth so it doesn’t look smoky
+      this.size[i] *= (1.0 + 0.42*dt);
 
-      // fade
-      this.life[i]-=dt;
+      // slower fade -> longer trails
+      this.life[i]-=dt*0.6;
     }
   }
   draw(){
@@ -417,19 +399,21 @@ class FireParticles{
     gl.depthMask(false);
     for(let i=0;i<this.max;i++){
       const L=this.life[i]; if(L<=0) continue;
-      const age = 1.0 - (L/this.maxL[i]);            // 0 -> newborn, 1 -> dying
+      const age = 1.0 - (L/this.maxL[i]);
       const a = Math.max(0, Math.min(1, L/this.maxL[i]));
-      // brighten slightly as it rises (toward white), still based on orb color
+
+      // brighten toward tip, keep translucent
       const c = this.col[i];
       const bright = [
-        Math.round(c[0]*(1-0.4*age) + 255*(0.4*age)),
-        Math.round(c[1]*(1-0.4*age) + 255*(0.4*age)),
-        Math.round(c[2]*(1-0.4*age) + 255*(0.4*age)),
+        Math.round(c[0]*(1-0.35*age) + 255*(0.35*age)),
+        Math.round(c[1]*(1-0.35*age) + 255*(0.35*age)),
+        Math.round(c[2]*(1-0.35*age) + 255*(0.35*age)),
       ];
+
       p.push();
       p.translate(this.pos[i][0], this.pos[i][1], this.pos[i][2]);
-      p.fill(bright[0], bright[1], bright[2], Math.round(180*a));
-      p.sphere(Math.max(1.0, this.size[i]*0.6), 8, 6);
+      p.fill(bright[0], bright[1], bright[2], Math.round(140*a)); // translucent
+      p.sphere(Math.max(0.9, this.size[i]*0.55), 8, 6);
       p.pop();
     }
     gl.depthMask(true);
@@ -437,7 +421,6 @@ class FireParticles{
     p.pop();
   }
 }
-
 
 /* ---------- build atom ---------- */
 function buildAtomFromBlock(b){
@@ -603,10 +586,8 @@ function startSketch(blk){
     if(!isFiniteVec(camTarget)) camTarget=[0,0,0];
   }
 
-  // --- Fire particle system (GLOBAL to this sketch)
+  // --- Fire particle system (global to this sketch) ---
   let fire = new FireParticles(p5.prototype, 900);
-  // We'll re-bind it to the actual p5 instance once created (in setup)
-  // and use 'fire' inside closures.
 
   const sketch=(p)=>{
     p.setup=()=>{
@@ -705,7 +686,9 @@ function startSketch(blk){
 
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed,detail){
       const m=Math.max(0,Math.min(10,(mode|0)));
-      const a = (m===1) ? (alpha * 0.12) : alpha;
+      const a = (m===1) ? (alpha * 0.12)     // Glass: very thin
+              : (m===9) ? (alpha * 0.55)     // Fireball: translucent shell
+              :           alpha;
 
       if(orbShader && shaderLinked){
         try{
@@ -773,6 +756,7 @@ function startSketch(blk){
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
 
+      // harmonize with electrons' palette but distinct
       let cP_A = shiftHue(atom.colors.electron, -22), cP_B = shiftHue(atom.colors.electron, +8);
       let cN_A = shiftHue(atom.colors.electron, +40),  cN_B = shiftHue(atom.colors.electron, +62);
 
@@ -798,7 +782,7 @@ function startSketch(blk){
         cN_A = [250,240,255]; cN_B = [235,235,250];
       }
 
-      // Soft translucent glow for halving
+      // Soft translucent glow for halving (visible nucleus, fades outward)
       if(drawSoftGlow){
         const gl = p._renderer.GL;
         p.push(); p.noStroke(); p.blendMode(p.ADD); gl.depthMask(false);
@@ -979,7 +963,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new42
+// new43
 // Boot
 loadLatest();
 </script>
