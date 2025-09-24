@@ -332,7 +332,7 @@ function harmonizeModes(baseElectronMode){
   return map[baseElectronMode] || [0,5];
 }
 
-/* ---------- simple particle system for Fireball ---------- */
+/* ---------- simple particle system for Fireball (fixed upward motion & color) ---------- */
 class FireParticles{
   constructor(p, maxCount=900){
     this.p=p; this.max=maxCount;
@@ -344,24 +344,37 @@ class FireParticles{
     this.maxL= new Array(this.max).fill(0);
     this.idx=0;
   }
+  // colorA/colorB come from the orb material -> we match the flame’s hue to the orb
   spawn(x,y,z, nx,ny,nz, colorA, colorB){
-    // small probability to keep count in check
+    // modest spawn rate to keep perf in check
     if(Math.random()>0.28) return;
-    const k=3; // spawn up to k particles at once, but reuse pool
+
+    // p5 WEBGL: +Y is DOWN. "Up" is NEGATIVE Y.
+    const worldUp = [0,-1,0];
+
+    const k=3;
     for(let i=0;i<k;i++){
       const id = this.idx; this.idx=(this.idx+1)%this.max;
-      const up = [0,1,0];
-      // initial velocity: world up + surface normal
-      const v = [
-        nx*6 + (Math.random()-0.5)*2.2 + 0.6*up[0],
-        ny*6 + 8 + Math.random()*2.4 + 0.6*up[1],
-        nz*6 + (Math.random()-0.5)*2.2 + 0.6*up[2]
+
+      // initial velocity: outward normal + upward (negative Y) + a bit of noise
+      const jitterX = (Math.random()-0.5)*2.2;
+      const jitterZ = (Math.random()-0.5)*2.2;
+
+      const vx = nx*6 + jitterX + 0.6*worldUp[0];
+      const vy = ny*6 + 8 + Math.random()*2.4 + 0.6*worldUp[1]; // NEGATIVE pushes up visually
+      const vz = nz*6 + jitterZ + 0.6*worldUp[2];
+
+      // match flame color to orb color (then it naturally brightens as it ages in update())
+      const t = Math.random()*0.6 + 0.2;          // prefer mid tones of the orb
+      const base = [
+        Math.round(colorA[0]*(1-t)+colorB[0]*t),
+        Math.round(colorA[1]*(1-t)+colorB[1]*t),
+        Math.round(colorA[2]*(1-t)+colorB[2]*t),
       ];
-      const t = (i===0?Math.random()*0.5:Math.random()); // color mix
-      const c = mixRGB(colorA, colorB, t);
+
       this.pos[id][0]=x; this.pos[id][1]=y; this.pos[id][2]=z;
-      this.vel[id]=v;
-      this.col[id]=c;
+      this.vel[id][0]=vx; this.vel[id][1]=vy; this.vel[id][2]=vz;
+      this.col[id]=base;
       this.size[id]=2.2+Math.random()*2.0;
       this.maxL[id]=0.7+Math.random()*0.7;
       this.life[id]=this.maxL[id];
@@ -370,19 +383,28 @@ class FireParticles{
   update(dt){
     for(let i=0;i<this.max;i++){
       const L=this.life[i]; if(L<=0) continue;
-      // buoyancy + slight drag
-      this.vel[i][1]+= 9.0*dt;
+
+      // buoyancy: accelerate toward negative Y (visual up)
+      this.vel[i][1] -= 9.0*dt;
+
+      // light drag
       this.vel[i][0]*= (1.0-0.9*dt);
       this.vel[i][1]*= (1.0-0.25*dt);
       this.vel[i][2]*= (1.0-0.9*dt);
-      // curl-ish wobble
+
+      // gentle curl wobble
       this.vel[i][0] += (Math.sin((this.pos[i][2]+this.pos[i][1])*0.08)*2.0)*dt;
       this.vel[i][2] += (Math.cos((this.pos[i][0]+this.pos[i][1])*0.08)*2.0)*dt;
 
+      // integrate
       this.pos[i][0]+=this.vel[i][0]*dt;
       this.pos[i][1]+=this.vel[i][1]*dt;
       this.pos[i][2]+=this.vel[i][2]*dt;
+
+      // expand a bit as it rises
       this.size[i] *= (1.0 + 0.65*dt);
+
+      // fade
       this.life[i]-=dt;
     }
   }
@@ -395,12 +417,18 @@ class FireParticles{
     gl.depthMask(false);
     for(let i=0;i<this.max;i++){
       const L=this.life[i]; if(L<=0) continue;
+      const age = 1.0 - (L/this.maxL[i]);            // 0 -> newborn, 1 -> dying
       const a = Math.max(0, Math.min(1, L/this.maxL[i]));
+      // brighten slightly as it rises (toward white), still based on orb color
       const c = this.col[i];
+      const bright = [
+        Math.round(c[0]*(1-0.4*age) + 255*(0.4*age)),
+        Math.round(c[1]*(1-0.4*age) + 255*(0.4*age)),
+        Math.round(c[2]*(1-0.4*age) + 255*(0.4*age)),
+      ];
       p.push();
       p.translate(this.pos[i][0], this.pos[i][1], this.pos[i][2]);
-      // billboard-ish: tiny sphere is OK & cheap at this scale
-      p.fill(c[0], c[1], c[2], Math.round(180*a));
+      p.fill(bright[0], bright[1], bright[2], Math.round(180*a));
       p.sphere(Math.max(1.0, this.size[i]*0.6), 8, 6);
       p.pop();
     }
@@ -409,6 +437,7 @@ class FireParticles{
     p.pop();
   }
 }
+
 
 /* ---------- build atom ---------- */
 function buildAtomFromBlock(b){
@@ -950,7 +979,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new41
+// new42
 // Boot
 loadLatest();
 </script>
