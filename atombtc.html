@@ -19,13 +19,12 @@
        border:1px solid var(--border);border-radius:12px;padding:8px 10px;backdrop-filter:blur(6px);font-size:12px;z-index:31}
   .hud input, .hud button, .hud select{font:inherit;border-radius:8px;border:1px solid var(--border);
        background:#121820;color:var(--text);padding:6px 8px}
-  .hud input.api{min-width:260px}
   .hud button{cursor:pointer}
   .hud .sep{width:1px;height:24px;background:#283543;margin:0 6px}
 
   .panel{position:fixed;font-size:12px;color:var(--muted);padding:8px 10px;background:var(--panel);
          border:1px solid var(--border);border-radius:12px;max-width:min(580px,calc(100vw - 24px));backdrop-filter:blur(6px)}
-  #legend{left:12px;top:106px;z-index:31}
+  #legend{left:12px;top:78px;z-index:31}
   #legend div{white-space:nowrap}
 
   details#blockPanel{right:12px;bottom:12px;max-height:min(80vh,900px);overflow:auto;z-index:31}
@@ -48,15 +47,15 @@
                             background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
 
   #progress{position:fixed;left:12px;top:12px;transform:translateY(52px);z-index:40;color:#d7ecff;font-size:12px;
-            background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none;max-width:min(70vw,740px)}
+            background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none;max-width:min(70vw,740px);white-space:pre-line}
   #hint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:35;color:#b6c9de;opacity:0.35;font-size:12px;
         background:rgba(7,10,14,0.6);border:1px solid #24313b;border-radius:10px;padding:7px 10px;pointer-events:none;transition:opacity .4s ease}
   #hint.hide{opacity:0}
 
-  @media (max-width: 980px){
+  @media (max-width: 800px){
     .hud{
       left:8px; right:8px; top:8px;
-      display:grid; grid-template-columns: 1fr 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px;
+      display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px;
       font-size:13px
     }
     .hud .sep{display:none}
@@ -69,10 +68,6 @@
 
 <div class="uiRoot show" id="uiRoot">
   <div class="hud" id="hud">
-    <label>API Base:</label>
-    <input id="apiInput" class="api" placeholder="https://mempool.space/api"/>
-    <button id="testApiBtn" title="Ping tip height">Test</button>
-    <span class="sep"></span>
     <label>Height:</label>
     <input id="heightInput" type="number" min="1" placeholder="e.g. 170 or 840000"/>
     <button id="loadBtn">Load</button>
@@ -442,6 +437,7 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
+  // ping-pong direction bookkeeping for palindromic heights
   const eDir=[], eTurns=[];
   for(let i=0;i<atom.shells.length;i++){
     eDir[i]=[]; eTurns[i]=[];
@@ -454,9 +450,7 @@ function startSketch(blk){
   maxCamDist = 30000;
   const maxPan = largestRadius * 3.0;
 
-  const GOLD_A = [212,172,55], GOLD_B=[255,220,120];
-  const SILVER_A=[210,215,220], SILVER_B=[240,245,250];
-
+  // perf-aware mesh detail
   const totalElectrons = atom.electrons;
   const totalNucleons  = Math.min(900, atom.Z + atom.N);
   function detailFor(count, baseU, baseV){
@@ -655,6 +649,7 @@ function startSketch(blk){
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
 
+      // Aesthetic harmony: nucleons derived from electron palette but distinct
       let cP_A = shiftHue(atom.colors.electron, -22), cP_B = shiftHue(atom.colors.electron, +8);
       let cN_A = shiftHue(atom.colors.electron, +40),  cN_B = shiftHue(atom.colors.electron, +62);
 
@@ -668,10 +663,10 @@ function startSketch(blk){
       let drawSoftGlow = false;
       if(atom.style.halving){
         protonMode = 7; neutronMode = 7;
-        cP_A = [212,172,55]; cP_B = [255,220,120];
+        cP_A = [212,172,55]; cP_B = [255,220,120]; // gold
         cN_A = [212,172,55]; cN_B = [255,220,120];
         sizePulse = 1.0 + 0.05*Math.sin(t*2.0);
-        drawSoftGlow = true;
+        drawSoftGlow = true; // very translucent, soft outward falloff
       }
 
       const disco = atom.style.disco;
@@ -682,7 +677,7 @@ function startSketch(blk){
         for(let i=0;i<layers;i++){
           const k = (i+1)/layers;
           const rad = NUCLEUS_R0 * (1.05 + 0.35*k);
-          const a   = Math.round(18 * (1.0 - k));
+          const a   = Math.round(18 * (1.0 - k)); // fades out
           p.push();
           p.noStroke();
           p.ambientMaterial(240,210,120, a);
@@ -716,7 +711,7 @@ function startSketch(blk){
         eMode = 2; baseColA = [60,255,130]; baseColB = [60,255,130];
       }
       if(atom.style.halving){
-        eMode = 7; baseColA = [210,215,220]; baseColB = [240,245,250];
+        eMode = 7; baseColA = [210,215,220]; baseColB = [240,245,250]; // silver
         sizeScale *= 1.0 + 0.08*Math.sin(t*2.0);
       }
       const disco = atom.style.disco;
@@ -782,6 +777,7 @@ function startSketch(blk){
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
+      // constant slow spin like a coin (vertical axis)
       modelSpin += 0.16 * (p.deltaTime/1000);
       p.push(); p.rotateY(modelSpin);
 
@@ -797,136 +793,60 @@ function startSketch(blk){
   p5Instance=new p5(sketch, container);
 }
 
-/* ---------- networking (absolute URLs, diagnostics) ---------- */
-function saveApiBase(v){ try{ localStorage.setItem('atom_api_base', v); }catch{} }
-function loadApiBase(){ try{ return localStorage.getItem('atom_api_base'); }catch{ return null; } }
+/* ---------- networking / buttons / boot ---------- */
+const API='https://mempool.space/api';
 
-function normalizeApiBase(v){
-  if(!v) return 'https://mempool.space/api';
-  v = v.trim();
-  if(v.endsWith('/')) v = v.slice(0,-1);
-  if(!/^https?:\/\//i.test(v)){
-    v = 'https://' + v.replace(/^\/+/, '');
-  }
-  return v;
-}
-function abs(base, path){
-  base = normalizeApiBase(base);
-  if(!path.startsWith('/')) path = '/'+path;
-  return base + path;
-}
-function withTimeout(ms, promise){
-  let t; const timeout = new Promise((_,rej)=>t=setTimeout(()=>rej(new Error('Network timeout')), ms));
-  return Promise.race([promise, timeout]).finally(()=>clearTimeout(t));
-}
-async function fetchTextAbs(u){
+async function fetchText(u){
   console.log('[fetchText]', u);
-  const r=await withTimeout(10000, fetch(u,{mode:'cors'}));
+  const r=await fetch(u);
   if(!r.ok) throw new Error(r.status+' '+u);
   return (await r.text()).trim();
 }
-async function fetchJSONAbs(u){
+async function fetchJSON(u){
   console.log('[fetchJSON]', u);
-  const r=await withTimeout(10000, fetch(u,{mode:'cors'}));
+  const r=await fetch(u);
   if(!r.ok) throw new Error(r.status+' '+u);
   return r.json();
 }
 
-/* ---------- offline mock ---------- */
-function mockBlock(height){
-  const rng=XS32(height^0xA5A5A5A5);
-  const hexByte=()=>('0'+Math.floor(rng()*256).toString(16)).slice(-2);
-  let hash=''; for(let i=0;i<64;i++) hash+=hexByte();
-  let merkle=''; for(let i=0;i<64;i++) merkle+=hexByte();
-  return {
-    id: hash, hash,
-    height,
-    timestamp: Math.floor(Date.now()/1000) - Math.floor(rng()*1e6),
-    version: 0x20000000 | Math.floor(rng()*0xFFFF),
-    bits: 0x1d00ffff,
-    nonce: Math.floor(rng()*0xffffffff)>>>0,
-    size:  Math.floor(500000 + rng()*1000000),
-    weight: Math.floor(2000000 + rng()*2000000),
-    tx_count: Math.floor(1000 + rng()*2000),
-    merkle_root: merkle
-  };
-}
-
-/* ---------- UI actions ---------- */
 const progress = $('#progress');
-const apiInput = $('#apiInput');
-
 function showProgress(msg){ progress.style.display='block'; progress.textContent=msg; }
-function doneProgress(ms=1500){ setTimeout(()=>{progress.style.display='none';}, ms); }
+function hideProgress(){ progress.style.display='none'; }
 
 async function loadBlockByHeight(height){
-  const base = normalizeApiBase(apiInput.value || 'https://mempool.space/api');
-  const url1 = abs(base, 'block-height/'+height);
-  const url2FromHash = (hash)=>abs(base, 'block/'+hash);
-
-  showProgress('Resolving block '+height+'…\n'+url1);
-  let blk=null;
   try{
-    const hash=await fetchTextAbs(url1);
-    const url2=url2FromHash(hash);
-    showProgress('Fetching header…\n'+url2);
-    blk=await fetchJSONAbs(url2);
+    showProgress('Resolving block '+height+'…\n'+API+'/block-height/'+height);
+    const hash=await fetchText(API+'/block-height/'+height);
+    showProgress('Fetching header…\n'+API+'/block/'+hash);
+    const blk=await fetchJSON(API+'/block/'+hash);
+    hideProgress();
+    selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
+    startSketch(blk);
   }catch(e){
-    console.warn('loadBlockByHeight fallback:', e);
-    blk = mockBlock(height);
-    showProgress('Offline / fallback mock for height '+height+' ('+e.message+')');
-    doneProgress(2000);
+    showProgress('Error: '+e.message+'\n(If this says ERR_NAME_NOT_RESOLVED, check network/DNS.)');
   }
-  selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
-  startSketch(blk);
 }
-
 async function loadLatest(){
-  const base = normalizeApiBase(apiInput.value || 'https://mempool.space/api');
-  const url = abs(base, 'blocks/tip/height');
   try{
-    showProgress('Getting tip height…\n'+url);
-    const h=await fetchTextAbs(url);
+    showProgress('Getting tip height…\n'+API+'/blocks/tip/height');
+    const h=await fetchText(API+'/blocks/tip/height');
     heightInput.value=h;
     await loadBlockByHeight(h);
   }catch(e){
-    showProgress('Could not fetch latest height ('+e.message+'). Enter a height and press Load.');
-    doneProgress(3000);
+    showProgress('Error: '+e.message+'\nTry entering a known height (e.g. 840000) and press Load.');
   }
 }
 
-async function testApi(){
-  const base = normalizeApiBase(apiInput.value || 'https://mempool.space/api');
-  const url = abs(base, 'blocks/tip/height');
-  try{
-    showProgress('Testing API…\n'+url);
-    const h = await fetchTextAbs(url);
-    showProgress('API OK. Tip height: '+h+'\n'+url);
-    doneProgress(2500);
-  }catch(e){
-    showProgress('API test failed: '+e.message+'\nTried: '+url);
-    doneProgress(4000);
-  }
-}
-
-/* ---------- boot ---------- */
-(function initApiField(){
-  const saved = loadApiBase();
-  apiInput.value = normalizeApiBase(saved || 'https://mempool.space/api');
-  apiInput.addEventListener('change', ()=>{
-    apiInput.value = normalizeApiBase(apiInput.value);
-    saveApiBase(apiInput.value);
-  });
-})();
-loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} await loadBlockByHeight(h);};
-latestBtn.onclick=async()=>{ await loadLatest(); };
-testApiBtn.onclick=async()=>{ await testApi(); };
+loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ showProgress('Error: '+e.message); }};
+latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ showProgress('Error: '+e.message); }};
 resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0]; modelSpin=0; };
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new36
-// No auto-latest on boot; use Test or Latest, or load a specific height.
+
+// Auto-load latest on boot (same as your old snippet)
+// new37
+loadLatest();
 </script>
 </body>
 </html>
