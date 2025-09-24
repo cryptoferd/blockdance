@@ -188,7 +188,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-  // ---- SOAP-BUBBLE glass: ultra translucent, faint thin-film, gentle rim ----
+  // SOAP-BUBBLE glass: ultra translucent with soft thin-film
   if(m==1){
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
@@ -257,7 +257,7 @@ void main(){
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
-`;
+}`;
 
 /* ---------- math / camera ---------- */
 const NUCLEUS_R0=28, SHELL_STEP=22, ELECTRON_R=3.6, NUCLEON_R=2.7;
@@ -457,8 +457,16 @@ function startSketch(blk){
     p.setup=()=>{
       const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
-      p.setAttributes('alpha',false); p.setAttributes('antialias',true,'premultipliedAlpha',false);
-      try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
+      // Important: setAttributes must be called with 2 args each
+      p.setAttributes('alpha', false);
+      p.setAttributes('antialias', true);
+
+      try{
+        orbShader=p.createShader(VERT,FRAG);
+        shaderLinked=true;
+      }catch(e){
+        orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e);
+      }
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
       const canvasEl = cnv.canvas;
@@ -530,15 +538,13 @@ function startSketch(blk){
       }
     };
     p.mouseWheel=(e)=>{
-      const s = Math.exp(e.deltaY * 0.0012); // wheel-up => deltaY<0 => s<1 => zoom in
+      const s = Math.exp(e.deltaY * 0.0012);
       camDist = clamp(camDist * s, minCamDist, maxCamDist);
       e.preventDefault();
     };
 
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed){
       const m=Math.max(0,Math.min(9,(mode|0)));
-
-      // Even more transparent for GLASS
       const a = (m===1) ? (alpha * 0.12) : alpha;
 
       if(orbShader && shaderLinked){
@@ -562,7 +568,7 @@ function startSketch(blk){
         }
       }
 
-      // Fallback lighting (super translucent bubble)
+      // Fallback lighting
       p.resetShader(); p.noStroke();
       if(m===1){
         p.ambientLight(50);
@@ -570,7 +576,7 @@ function startSketch(blk){
         p.ambientMaterial(235,240,245, Math.round(255*a));
         p.specularMaterial(40,40,40);
         p.shininess(10);
-        p.emissiveMaterial(18,18,22); // faint soapy tint so it never goes gray
+        p.emissiveMaterial(18,18,22);
       } else {
         p.ambientLight(80);
         p.directionalLight(220,220,220, 0.6,0.7,0.5);
@@ -583,7 +589,7 @@ function startSketch(blk){
       p.sphere(r,64,48);
     }
 
-    // Rainbow ring drawing used for Disco #170
+    // Rainbow ring for Disco #170
     function drawRainbowRing(radius, t){
       const segs = 180;
       p.noFill();
@@ -591,7 +597,6 @@ function startSketch(blk){
       for(let k=0;k<segs;k++){
         const a1 = k   /segs * TAU;
         const a2 = (k+1)/segs * TAU;
-        // hue sweeps around, animated over time
         const hue = (k/segs + 0.15*t)%1;
         const rgb = hslToRgb(hue, 1.0, 0.5);
         p.stroke(rgb[0],rgb[1],rgb[2], 230);
@@ -611,11 +616,10 @@ function startSketch(blk){
           let alpha = 220;
           let thick = 1.1;
           if(atom.style.is1337){
-            col = NEON_GREEN.slice(); alpha=255; thick=1.4;
+            col = [60,255,130]; alpha=255; thick=1.4;
           } else if(atom.style.halving){
-            // gold rings with soft pulse
             const pulse = 0.5 + 0.5*Math.sin(t*2.0);
-            col = mixRGB(GOLD_A, GOLD_B, 0.65);
+            col = mixRGB([212,172,55],[255,220,120], 0.65);
             alpha = Math.round(160 + 90*pulse);
             thick = 1.0 + 0.6*pulse;
           }
@@ -629,89 +633,70 @@ function startSketch(blk){
     }
 
     function drawNucleus(t){
-      // Defaults/overrides
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
       let cP_A = atom.colors.proton,  cP_B = shiftHue(atom.colors.proton,18);
       let cN_A = shiftHue(atom.colors.neutron,-22), cN_B = atom.colors.neutron;
       let sizePulse = 1.0;
 
-      // Special: 1337 neon wireframes
+      // 1337 neon wireframe
       if(atom.style.is1337){
         protonMode = 2; neutronMode = 2;
-        cP_A = NEON_YELLOW; cP_B = NEON_YELLOW;
-        cN_A = NEON_ORANGE; cN_B = NEON_ORANGE;
+        cP_A = [255,255,60]; cP_B = [255,255,60];
+        cN_A = [255,160,40]; cN_B = [255,160,40];
       }
 
-      // Special: halving gold nucleus + global glow + gentle pulse
+      // Halving gold nucleus + glow
       let wantGlow=false;
       if(atom.style.halving){
-        protonMode = 7; neutronMode = 7; // metallic
-        cP_A = GOLD_A; cP_B = GOLD_B;
-        cN_A = GOLD_A; cN_B = GOLD_B;
+        protonMode = 7; neutronMode = 7;
+        cP_A = [212,172,55]; cP_B = [255,220,120];
+        cN_A = [212,172,55]; cN_B = [255,220,120];
         sizePulse = 1.0 + 0.06*Math.sin(t*2.0);
         wantGlow = true;
       }
 
-      // Special: #170 disco — rainbow cycle and stronger pulse
+      // #170 disco pulse
       const disco = atom.style.disco;
-      if(disco){
-        sizePulse = 1.0 + 0.12*Math.sin(t*2.5);
-      }
+      if(disco){ sizePulse = 1.0 + 0.12*Math.sin(t*2.5); }
 
-      // Draw soft nucleus glow (halving only)
       if(wantGlow){
         p.push();
         p.noStroke();
         p.ambientLight(0);
         p.emissiveMaterial(180,120,20, 30);
-        // Slightly larger than nucleus core
         p.sphere(NUCLEUS_R0*1.55, 36, 24);
         p.pop();
       }
 
-      // Nucleons
       for(const q of atom.nucleusPoints){
         p.push();
         p.translate(q.x,q.y,q.z);
-
-        // Disco color sweep per object (ROYGBIV)
         if(disco){
           const hue = ( (q.objSeed*0.8) + t*0.18 ) % 1;
           const col = hslToRgb(hue, 1.0, 0.55);
           const col2= hslToRgb((hue+0.18)%1, 1.0, 0.65);
           drawOrbMat(col,col2,NUCLEON_R*sizePulse,t,1.0, q.isProton?protonMode:neutronMode, q.objSeed);
         } else {
-          if(q.isProton){
-            drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed);
-          }else{
-            drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed);
-          }
+          if(q.isProton){ drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed); }
+          else          { drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed); }
         }
         p.pop();
       }
     }
 
     function drawElectrons(t){
-      // Defaults
       let eMode = (overrides.electron ?? atom.setModes.electrons);
       let sizeScale = atom.style.eSizeScale;
       let baseColA = atom.colors.electron, baseColB = atom.style.ringColor;
 
-      // Special: 1337 neon
       if(atom.style.is1337){
-        eMode = 2; // wireframe
-        baseColA = NEON_GREEN; baseColB = NEON_GREEN;
+        eMode = 2; baseColA = [60,255,130]; baseColB = [60,255,130];
       }
-
-      // Special: halving silver metallic + pulsing size
       if(atom.style.halving){
-        eMode = 7; // metallic
-        baseColA = SILVER_A; baseColB = SILVER_B;
+        eMode = 7; baseColA = [210,215,220]; baseColB = [240,245,250];
         sizeScale *= 1.0 + 0.09*Math.sin(t*2.2);
       }
-
-      // Special: #170 disco — electrons also rainbow + pulse
       const disco = atom.style.disco;
       let discoPulse = 1.0;
       if(disco){ discoPulse = 1.0 + 0.12*Math.sin(t*2.5 + 0.7); }
@@ -727,7 +712,6 @@ function startSketch(blk){
           const wob=1.0 + m.rosAmp*Math.sin(th*m.rosK + m.phase*0.7);
           const pt=vmul(basePt, wob);
 
-          // Color selection (disco vs normal)
           let cA, cB;
           if(disco){
             const hue = ( (m.objSeed*0.9) + t*0.25 ) % 1;
@@ -743,19 +727,15 @@ function startSketch(blk){
           drawOrbMat(cA, cB, ELECTRON_R*sizeScale*discoPulse, t, 1.0, eMode, m.objSeed);
           p.pop();
 
-          // Angle update with palindrome ping-pong handling
           const prevTurns = atom._eTurns[i][j];
           const dir = (atom.style.palindrome ? atom._eDir[i][j] : 1);
           const delta = baseSpeed*m.spMul*dir;
-          const prevAngle = atom.electronAngles[i][j];
-          const nextAngle = prevAngle + delta;
+          const nextAngle = atom.electronAngles[i][j] + delta;
           atom.electronAngles[i][j] = nextAngle;
 
           if(atom.style.palindrome){
             const newTurns = Math.floor(nextAngle/TAU);
-            if(newTurns > prevTurns){
-              atom._eDir[i][j] = -atom._eDir[i][j]; // flip direction after each full revolution
-            }
+            if(newTurns > prevTurns){ atom._eDir[i][j] = -atom._eDir[i][j]; }
             atom._eTurns[i][j] = newTurns;
           }
         }
@@ -765,10 +745,9 @@ function startSketch(blk){
     p.draw=()=>{
       const t=p.millis()*0.001;
 
-      // Background (override for halving pulse; otherwise black)
       if(atom.style.halving){
         const k = 0.5 + 0.5*Math.sin(t*1.6);
-        const bg = mixRGB([0,0,0],[30,12,0], k); // black↔very dark orange
+        const bg = mixRGB([0,0,0],[30,12,0], k);
         p.background(bg[0],bg[1],bg[2]);
       } else {
         p.background(0);
@@ -781,10 +760,8 @@ function startSketch(blk){
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // constant slow spin like a coin
       modelSpin += 0.16 * (p.deltaTime/1000);
-      p.push();
-      p.rotateY(modelSpin);
+      p.push(); p.rotateY(modelSpin);
 
       drawRings(t);
       drawNucleus(t);
@@ -823,8 +800,8 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new32
 loadLatest();
+// new33
 </script>
 </body>
 </html>
