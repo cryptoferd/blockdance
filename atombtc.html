@@ -112,6 +112,7 @@ const hexByteSum = (hex)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]
 const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g,''); if(c.length<2) return 0; const i=(idx*2)%(c.length-1); const b=parseInt(c.substr(i,2),16); return isNaN(b)?0:b; };
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
 const TAU = Math.PI*2;
+const isFiniteVec = v => v.every(Number.isFinite);
 
 /* ---------- shaders ---------- */
 const VERT=`precision mediump float; precision mediump int;
@@ -414,7 +415,7 @@ let minCamDist=140, maxCamDist=20000;
 let isDragging=false, lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
 let modelSpin = 0;
-let frameParity = 0; // for #170 electron frame-skipping
+let frameParity = 0;
 
 const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
 let overrides = { proton:null, neutron:null, electron:null };
@@ -438,7 +439,6 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // ping-pong direction bookkeeping for palindromic heights
   const eDir=[], eTurns=[];
   for(let i=0;i<atom.shells.length;i++){
     eDir[i]=[]; eTurns[i]=[];
@@ -449,9 +449,8 @@ function startSketch(blk){
   const largestRadius = atom.radii.length ? atom.radii[atom.radii.length-1] : 140;
   minCamDist = Math.max( largestRadius * 1.2, 90 );
   maxCamDist = 30000;
-  const maxPan = largestRadius * 2.2; // tighter to avoid losing the model
+  const maxPan = Math.max(200, largestRadius * 2.2);
 
-  // perf-aware mesh detail
   const totalElectrons = atom.electrons;
   const totalNucleons  = Math.min(900, atom.Z + atom.N);
   function detailFor(count, baseU, baseV){
@@ -463,12 +462,7 @@ function startSketch(blk){
   }
   let electronDetail = detailFor(totalElectrons, 52, 36);
   let nucleonDetail  = detailFor(totalNucleons,  44, 30);
-
-  // Aggressive #170 LOD
-  if(atom.style.disco){
-    electronDetail = [14,10];
-    nucleonDetail  = [12,8];
-  }
+  if(atom.style.disco){ electronDetail=[14,10]; nucleonDetail=[12,8]; }
 
   function clampCamTarget(){
     // Per-axis clamp
@@ -477,22 +471,23 @@ function startSketch(blk){
     camTarget[2] = clamp(camTarget[2], -maxPan, maxPan);
     // Radial clamp
     const L = Math.hypot(camTarget[0],camTarget[1],camTarget[2]);
-    if(L>maxPan){ const s=maxPan/L; camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s; }
+    if(!Number.isFinite(L) || L>maxPan){ const s = Number.isFinite(L)&&L>0 ? (maxPan/L) : 0; camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s; }
+    // Sanitize
+    if(!isFiniteVec(camTarget)) camTarget=[0,0,0];
   }
 
   const sketch=(p)=>{
     p.setup=()=>{
       const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
+      // prevent context menu (right-click)
+      cnv.canvas.addEventListener('contextmenu', e=>e.preventDefault());
       p.setAttributes('alpha', false);
       p.setAttributes('antialias', true);
 
-      try{
-        orbShader=p.createShader(VERT,FRAG);
-        shaderLinked=true;
-      }catch(e){
-        orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e);
-      }
+      try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }
+      catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
+
       // baseline lights
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
@@ -519,8 +514,7 @@ function startSketch(blk){
             camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
           } else if(e.touches.length===2){
             const t0=e.touches[0], t1=e.touches[1];
-            let d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
-            d = Math.max(1, d);
+            let d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY); d=Math.max(1,d);
             if(pinchPrev==null) pinchPrev=d;
             const rawScale = d / pinchPrev;
             const saneScale = isFinite(rawScale) ? clamp(rawScale, 0.2, 5.0) : 1.0;
@@ -533,10 +527,12 @@ function startSketch(blk){
             if(twoPrevMid){
               const dx = midX - twoPrevMid[0]; const dy = midY - twoPrevMid[1];
               const {right, up} = camBasis(camYaw, camPitch);
-              const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 2 / p.height;
-              camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
-              camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
-              camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
+              const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height; // gentler
+              let add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
+                        ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
+                        ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
+              if(!isFiniteVec(add)) add=[0,0,0];
+              camTarget[0] += add[0]; camTarget[1] += add[1]; camTarget[2] += add[2];
               clampCamTarget();
             }
             twoPrevMid=[midX,midY];
@@ -558,10 +554,12 @@ function startSketch(blk){
         camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
       } else {
         const {right, up} = camBasis(camYaw, camPitch);
-        const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 2 / p.height;
-        camTarget[0] += ( dx * panScale) * right[0] + (-dy * panScale) * up[0];
-        camTarget[1] += ( dx * panScale) * right[1] + (-dy * panScale) * up[1];
-        camTarget[2] += ( dx * panScale) * right[2] + (-dy * panScale) * up[2];
+        const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height; // gentler
+        let add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
+                  ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
+                  ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
+        if(!isFiniteVec(add)) add=[0,0,0];
+        camTarget[0] += add[0]; camTarget[1] += add[1]; camTarget[2] += add[2];
         clampCamTarget();
       }
     };
@@ -597,27 +595,18 @@ function startSketch(blk){
         }
       }
 
-      // Fallback (rare)
+      // Fallback
       p.resetShader(); p.noStroke();
-      if(m===1){
-        p.ambientLight(50);
-        p.directionalLight(150,150,150, 0.6,0.7,0.5);
-        p.ambientMaterial(235,240,245, Math.round(255*a));
-        p.specularMaterial(40,40,40);
-        p.shininess(10);
-      } else {
-        p.ambientLight(80);
-        p.directionalLight(220,220,220, 0.6,0.7,0.5);
-        p.directionalLight(140,140,160,-0.35,0.6,-0.25);
-        p.ambientMaterial(cA[0], cA[1], cA[2], Math.round(255*a));
-        p.specularMaterial(60,60,60);
-        p.shininess(12);
-      }
+      p.ambientLight(80);
+      p.directionalLight(220,220,220, 0.6,0.7,0.5);
+      p.ambientMaterial(cA[0], cA[1], cA[2], Math.round(255*a));
+      p.specularMaterial(60,60,60);
+      p.shininess(12);
       p.sphere(r, Math.max(16, detail[0]-8), Math.max(10, detail[1]-6));
     }
 
     function drawRainbowRing(radius, t){
-      const segs = 120; // slightly reduced for perf
+      const segs = 120;
       p.noFill();
       p.strokeWeight(1.1);
       for(let k=0;k<segs;k++){
@@ -662,7 +651,7 @@ function startSketch(blk){
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
 
-      // Harmonized to electron palette but distinct
+      // Harmonize with electron palette but distinct
       let cP_A = shiftHue(atom.colors.electron, -22), cP_B = shiftHue(atom.colors.electron, +8);
       let cN_A = shiftHue(atom.colors.electron, +40),  cN_B = shiftHue(atom.colors.electron, +62);
 
@@ -676,40 +665,42 @@ function startSketch(blk){
       let drawSoftGlow = false;
       if(atom.style.halving){
         protonMode = 7; neutronMode = 7;
-        cP_A = [212,172,55]; cP_B = [255,220,120]; // gold
+        cP_A = [212,172,55]; cP_B = [255,220,120];
         cN_A = [212,172,55]; cN_B = [255,220,120];
         sizePulse = 1.0 + 0.05*Math.sin(t*2.0);
-        drawSoftGlow = true; // very translucent, soft outward falloff
+        drawSoftGlow = true;
       }
 
       const disco = atom.style.disco;
       if(disco){ sizePulse = 1.0 + 0.08*Math.sin(t*2.0); }
 
-      // --- Soft translucent glow for halving ---
+      // --- Soft translucent glow for halving (true additive fog, no depth write) ---
       if(drawSoftGlow){
-        // Temporary warm ambient so the glow isn't black
+        const gl = p._renderer.GL;
+        const prevBlend = p.drawingContext.getParameter(gl.BLEND_SRC_ALPHA);
         p.push();
         p.noStroke();
-        p.ambientLight(255,200,90); // warm boost just for glow
-        const layers = 4;
+        p.blendMode(p.ADD);
+        gl.depthMask(false); // don't occlude anything
+
+        const layers = 5;
         for(let i=0;i<layers;i++){
           const k = (i+1)/layers;
-          const rad = NUCLEUS_R0 * (1.08 + 0.42*k);
-          const al  = Math.round(36 * (1.0 - k)); // very translucent
-          p.ambientMaterial(255,210,110, al);
-          p.sphere(rad, 18, 12);
+          const rad = NUCLEUS_R0 * (1.05 + 0.55*k);
+          const al  = Math.round(28 * (1.0 - k)); // very translucent
+          p.fill(255, 200, 90, al);
+          p.sphere(rad, 20, 14);
         }
+
+        gl.depthMask(true);
+        p.blendMode(p.BLEND);
         p.pop();
-        // Restore baseline lights for the solid nucleons
-        p.ambientLight(120);
-        p.directionalLight(255,255,255,0.5,0.6,0.4);
       }
 
       for(const q of atom.nucleusPoints){
         p.push();
         p.translate(q.x,q.y,q.z);
         if(disco){
-          // cheaper toon for disco, still rainbow
           const hue = ( (q.objSeed*0.8) + t*0.18 ) % 1;
           const col = hslToRgb(hue, 1.0, 0.55);
           const col2= hslToRgb((hue+0.18)%1, 1.0, 0.65);
@@ -732,19 +723,16 @@ function startSketch(blk){
         eMode = 2; baseColA = [60,255,130]; baseColB = [60,255,130];
       }
       if(atom.style.halving){
-        eMode = 7; baseColA = [210,215,220]; baseColB = [240,245,250]; // silver
+        eMode = 7; baseColA = [210,215,220]; baseColB = [240,245,250];
         sizeScale *= 1.0 + 0.08*Math.sin(t*2.0);
       }
-      if(disco){
-        eMode = 4; // toon for perf
-      }
+      if(disco){ eMode = 4; }
       let discoPulse = 1.0;
       if(disco){ discoPulse = 1.0 + 0.08*Math.sin(t*2.0 + 0.7); }
 
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
-          // #170 frame skipping: draw half the electrons per frame
           if(disco && ((i+j+frameParity)&1)) continue;
 
           const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
@@ -791,7 +779,6 @@ function startSketch(blk){
       // Background
       if(atom.style.halving){
         const k = 0.5 + 0.5*Math.sin(t*1.6);
-        // vivid orange pulse
         const bg = mixRGB([10,4,0],[255,120,20], k);
         p.background(bg[0],bg[1],bg[2]);
       } else {
@@ -804,9 +791,10 @@ function startSketch(blk){
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
       const cy=camTarget[1]+camDist*Math.sin(camPitch);
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
+      if(![cx,cy,cz].every(Number.isFinite)){ camTarget=[0,0,0]; }
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // constant slow spin like a coin (vertical axis)
+      // constant slow spin like a coin
       modelSpin += 0.16 * (p.deltaTime/1000);
       p.push(); p.rotateY(modelSpin);
 
@@ -816,7 +804,6 @@ function startSketch(blk){
 
       p.pop();
 
-      // flip parity for #170 alternating draw
       frameParity ^= 1;
     };
   };
@@ -829,13 +816,11 @@ function startSketch(blk){
 const API='https://mempool.space/api';
 
 async function fetchText(u){
-  console.log('[fetchText]', u);
   const r=await fetch(u);
   if(!r.ok) throw new Error(r.status+' '+u);
   return (await r.text()).trim();
 }
 async function fetchJSON(u){
-  console.log('[fetchJSON]', u);
   const r=await fetch(u);
   if(!r.ok) throw new Error(r.status+' '+u);
   return r.json();
@@ -847,23 +832,22 @@ function hideProgress(){ progress.style.display='none'; }
 
 async function loadBlockByHeight(height){
   try{
-    showProgress('Resolving block '+height+'…\n'+API+'/block-height/'+height);
+    showProgress('Resolving block '+height+'…');
     const hash=await fetchText(API+'/block-height/'+height);
-    showProgress('Fetching header…\n'+API+'/block/'+hash);
+    showProgress('Fetching header…');
     const blk=await fetchJSON(API+'/block/'+hash);
     hideProgress();
     selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
     startSketch(blk);
   }catch(e){
-    showProgress('Error: '+e.message+'\n(If this says ERR_NAME_NOT_RESOLVED, check network/DNS.)');
+    showProgress('Error: '+e.message);
   }
 }
 async function loadLatest(){
   try{
-    showProgress('Getting tip height…\n'+API+'/blocks/tip/height');
+    showProgress('Getting tip height…');
     const h=await fetchText(API+'/blocks/tip/height');
-    heightInput.value=h;
-    await loadBlockByHeight(h);
+    heightInput.value=h; await loadBlockByHeight(h);
   }catch(e){
     showProgress('Error: '+e.message+'\nTry entering a known height (e.g. 840000) and press Load.');
   }
@@ -875,7 +859,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new38
+// new39
 // Auto-load latest on boot
 loadLatest();
 </script>
