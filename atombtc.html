@@ -455,6 +455,19 @@ class FireParticles{
     p.pop();
   }
 }
+// Quick fix: electron shell filling (2n² rule, clamped to ~8 shells)
+window.fillShells = window.fillShells || function (e) {
+  let shells = [], rem = Math.max(0, e|0), n = 1;
+  while (rem > 0 && shells.length < 8) {
+    const cap = 2 * n * n;
+    const take = Math.min(rem, cap);
+    shells.push(take);
+    rem -= take;
+    n++;
+  }
+  if (rem > 0) shells.push(rem);
+  return shells;
+};
 
 /* ---------- build atom ---------- */
 function buildAtomFromBlock(b){
