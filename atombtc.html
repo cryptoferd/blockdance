@@ -581,7 +581,11 @@ let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
 let interactionMode='none';
 let modelSpin = 0;
 
-const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Fireball'];
+// ✅ Replace the second "const MODE_LIST = [...]" with this:
+if (!('MODE_LIST' in window)) {
+  window.MODE_LIST = ['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Fireball'];
+}
+
 let overrides = { proton:null, neutron:null, electron:null };
 function populateSelectors(){
   const opts = MODE_LIST.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
@@ -1016,7 +1020,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new43
+// new44
 // Boot
 loadLatest();
 </script>
