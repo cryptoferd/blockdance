@@ -188,8 +188,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
 
-  // SOAP-BUBBLE glass: ultra translucent with soft thin-film
-  if(m==1){
+  if(m==1){ // Glass
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
     float micro = fbm(normalize(vPos)*5.0 + vec3(0.0,t*0.12,0.0) + vec3(uObjSeed*1.7));
@@ -197,24 +196,19 @@ void main(){
     float phase = thick * (1.6 + 1.1*NoV) * 6.28318530718;
     float hue = fract(phase*0.14);
     vec3 swirl = hsv2rgb(vec3(hue, 0.45, 1.0));
-
     float fres = pow(1.0 - NoV, 4.0);
     vec3 reflectCol = mix(vec3(0.98), swirl, 0.55);
     vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
     float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
-
     vec3 shellTint = mix(vec3(1.0), swirl, 0.12);
-    col = shellTint*0.03
-        + reflectCol * (0.015 + 0.06*ndl + 0.22*fres)
-        + vec3(1.0)*spec
-        + vec3(1.0)*rim*0.06;
+    col = shellTint*0.03 + reflectCol * (0.015 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
   } else if(m==0){ // Marble
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==2){ // Wireframe-ish
+  } else if(m==2){ // Wireframe
     float k=9.0+2.0*fract(uObjSeed*7.0);
     vec3 q=normalize(vPos);
     float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
@@ -243,7 +237,7 @@ void main(){
   } else if(m==7){ // Metallic
     float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.20+0.55*ndl) + vec3(1.0)*spec*0.9 + vec3(1.0)*rim*0.10;
-  } else if(m==8){ // Sky / Clouds (simple)
+  } else if(m==8){ // Sky
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
     p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
@@ -457,7 +451,6 @@ function startSketch(blk){
     p.setup=()=>{
       const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
-      // Important: setAttributes must be called with 2 args each
       p.setAttributes('alpha', false);
       p.setAttributes('antialias', true);
 
@@ -639,14 +632,12 @@ function startSketch(blk){
       let cN_A = shiftHue(atom.colors.neutron,-22), cN_B = atom.colors.neutron;
       let sizePulse = 1.0;
 
-      // 1337 neon wireframe
       if(atom.style.is1337){
         protonMode = 2; neutronMode = 2;
         cP_A = [255,255,60]; cP_B = [255,255,60];
         cN_A = [255,160,40]; cN_B = [255,160,40];
       }
 
-      // Halving gold nucleus + glow
       let wantGlow=false;
       if(atom.style.halving){
         protonMode = 7; neutronMode = 7;
@@ -656,7 +647,6 @@ function startSketch(blk){
         wantGlow = true;
       }
 
-      // #170 disco pulse
       const disco = atom.style.disco;
       if(disco){ sizePulse = 1.0 + 0.12*Math.sin(t*2.5); }
 
@@ -777,31 +767,71 @@ function startSketch(blk){
 
 /* ---------- networking / buttons / boot ---------- */
 const API='https://mempool.space/api';
-async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
-async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
+
+// fetch helpers with timeout + clear errors
+function withTimeout(ms, promise){
+  let t; const timeout = new Promise((_,rej)=>t=setTimeout(()=>rej(new Error('Network timeout')), ms));
+  return Promise.race([promise, timeout]).finally(()=>clearTimeout(t));
+}
+async function fetchText(u){
+  try{
+    const r=await withTimeout(10000, fetch(u,{mode:'cors'}));
+    if(!r.ok) throw new Error(r.status+' '+u);
+    return (await r.text()).trim();
+  }catch(e){
+    console.warn('fetchText error:', e);
+    throw e;
+  }
+}
+async function fetchJSON(u){
+  try{
+    const r=await withTimeout(10000, fetch(u,{mode:'cors'}));
+    if(!r.ok) throw new Error(r.status+' '+u);
+    return r.json();
+  }catch(e){
+    console.warn('fetchJSON error:', e);
+    throw e;
+  }
+}
 
 async function loadBlockByHeight(height){
-  progress.style.display='block'; progress.textContent='Resolving block '+height+'…';
-  const hash=await fetchText(API+'/block-height/'+height);
-  progress.textContent='Fetching header…';
-  const blk=await fetchJSON(API+'/block/'+hash);
-  progress.style.display='none';
-  selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
-  startSketch(blk);
-}
-async function loadLatest(){
-  progress.style.display='block'; progress.textContent='Getting tip height…';
-  const h=await fetchText(API+'/blocks/tip/height'); heightInput.value=h; await loadBlockByHeight(h);
+  try{
+    progress.style.display='block'; progress.textContent='Resolving block '+height+'…';
+    const hash=await fetchText(API+'/block-height/'+height);
+    progress.textContent='Fetching header…';
+    const blk=await fetchJSON(API+'/block/'+hash);
+    progress.style.display='none';
+    selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
+    startSketch(blk);
+  }catch(e){
+    progress.textContent='Error loading block '+height+': '+e.message;
+    setTimeout(()=>{progress.style.display='none';}, 3000);
+  }
 }
 
-loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ progress.textContent='Error: '+e.message; }};
-latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ progress.textContent='Error: '+e.message; }};
+async function loadLatest(){
+  try{
+    progress.style.display='block'; progress.textContent='Getting tip height…';
+    const h=await fetchText(API+'/blocks/tip/height');
+    heightInput.value=h;
+    await loadBlockByHeight(h);
+  }catch(e){
+    console.warn('loadLatest failed:', e);
+    progress.textContent='Could not fetch latest height. Enter a height above and press Load.';
+    setTimeout(()=>{progress.style.display='none';}, 4000);
+  }
+}
+
+loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} await loadBlockByHeight(h);};
+latestBtn.onclick=async()=>{ await loadLatest(); };
 resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0]; modelSpin=0; };
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-loadLatest();
-// new33
+
+// Safe boot: try latest, but don't crash if it fails
+(async()=>{ await loadLatest(); })();
+// new34
 </script>
 </body>
 </html>
