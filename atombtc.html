@@ -135,7 +135,7 @@ float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0
 void main(){
   vec3 pos=aPosition;
   vec3 nrm=normalize(aPosition);
-  int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
+  int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
 
   // Spikes (m==6)
   if(m==6){
@@ -155,6 +155,14 @@ void main(){
     float j  = fbm(nrm*5.0 + vec3(0.0,t*0.4,0.0) + vec3(uObjSeed));
     float ripple = (w1*0.6 + w2*0.4) * (0.012 + 0.008*j) * (0.7+0.3*uAmp) * 10.0;
     pos += nrm * ripple * length(aPosition);
+  }
+
+  // Fireball — outward fluttering surface (m==9)
+  if(m==9){
+    float t=uTime*(1.0+0.7*uSpeed);
+    float rise = fbm(nrm*6.5 + vec3(0.0,t*1.2,0.0) + vec3(uObjSeed*3.1));
+    float amp = (0.04 + 0.04*uAmp) * (0.6 + 0.4*rise);
+    pos += nrm * amp * length(aPosition) * 10.0;
   }
 
   vPos=pos; vNormal=normalize(pos);
@@ -187,9 +195,9 @@ void main(){
 
   vec3 colA=uColorA, colB=uColorB, col;
   float t=uTime*(0.6+uSpeed);
-  int m=int(floor(clamp(uModeF,0.0,9.0)+0.5));
+  int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
 
-  if(m==1){ // Glass
+  if(m==1){ // Glass / pearlescent
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
     float micro = fbm(normalize(vPos)*5.0 + vec3(0.0,t*0.12,0.0) + vec3(uObjSeed*1.7));
@@ -248,6 +256,20 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+  } else if(m==9){ // Fireball
+    // world "up" bias for flames lifting upwards
+    float up = clamp(0.5 + 0.5*vNormal.y, 0.0, 1.0);
+    float flow = fbm(normalize(vPos)*5.5 + vec3(0.0,t*1.2,0.0) + vec3(uObjSeed*2.1));
+    float flicker = fbm(normalize(vPos)*10.0 + vec3(0.0,t*2.4,0.0) + vec3(uObjSeed*5.3));
+    float heat = clamp(0.35 + 0.65*flow*up + 0.25*flicker, 0.0, 1.0);
+    vec3 hot = vec3(1.0,0.55,0.0);
+    vec3 white = vec3(1.0);
+    vec3 base = mix(hot, white, pow(heat,1.6));
+    float aura = smoothstep(0.45, 1.0, heat);
+    float a = clamp(0.55*aura + 0.25*ndl + 0.15*rim, 0.0, 1.0);
+    col = base*(0.25+0.75*ndl) + vec3(1.0)*rim*0.08;
+    gl_FragColor = vec4(clamp(col,0.0,1.0), uAlpha * a);
+    return;
   } else {
     col=mix(colA,colB,0.5)*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   }
@@ -305,13 +327,13 @@ function fillShells(e){ let shells=[],rem=e,n=1; while(rem>0&&shells.length<8){ 
 function chooseSetModesFromBlock(b){
   const h=b.height|0; const mr=b.merkle_root||''; const nonce=b.nonce||0; const bits=b.bits||0;
   const sA=byteAt(mr,3), sB=byteAt(mr,7), sC=byteAt(mr,11), sD=lastByte(b.id||b.hash||'');
-  const mlist=[0,1,2,3,4,5,6,7,8];
+  const mlist=[0,1,2,3,4,5,6,7,8,9];
   const pick=(seed)=>mlist[(seed + h + (nonce&255) + (bits&255))%mlist.length];
   return { protons: pick(sA), neutrons: pick(sB), electrons: pick(sC), rings: pick(sD)%3 };
 }
 const isPalindromeHeight = (h)=>{ const s=String(h); return s===s.split('').reverse().join(''); };
 function harmonizeModes(baseElectronMode){
-  const map = {0:[5,7],1:[7,5],2:[4,0],3:[6,4],4:[0,2],5:[0,7],6:[3,4],7:[1,5],8:[5,0]};
+  const map = {0:[5,7],1:[7,5],2:[4,0],3:[6,4],4:[0,2],5:[0,7],6:[3,4],7:[1,5],8:[5,0],9:[3,7]};
   return map[baseElectronMode] || [0,5];
 }
 
@@ -352,7 +374,9 @@ function buildAtomFromBlock(b){
   }
 
   const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
-  const isDisco = height===170; const is1337  = height===1337; const halving = !isDisco && (height>0 && height%210000===0);
+  const isPearl170 = height===170;              // redesigned #170
+  const is1337  = height===1337;
+  const halving = (!isPearl170) && (height>0 && height%210000===0);
   const palindrome = isPalindromeHeight(height);
 
   const baseSet = chooseSetModesFromBlock(b);
@@ -362,7 +386,7 @@ function buildAtomFromBlock(b){
     shader:{amp:animAmp,speed:animSpeed,blockPhase},
     setModes: { protons:pMode, neutrons:nMode, electrons:baseSet.electrons, rings:baseSet.rings },
     style:{ eSizeScale:clamp((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,1.8),
-      ringThick, ringAlpha, ringColor, halving, disco:isDisco, is1337, palindrome, nucleusTight: tightness } };
+      ringThick, ringAlpha, ringColor, halving, pearl170:isPearl170, is1337, palindrome, nucleusTight: tightness } };
 }
 
 /* ---------- panels ---------- */
@@ -377,7 +401,7 @@ function injectPanels(atom){
   const body=document.createElement('div'); body.id='blkBody';
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
   [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);});
-  if(atom.style.disco){ const c=document.createElement('span'); c.className='chip'; c.textContent='🎉 Disco #170'; chips.appendChild(c); }
+  if(atom.style.pearl170){ const c=document.createElement('span'); c.className='chip'; c.textContent='🫧 #170 Pearlescent'; chips.appendChild(c); }
   else if(atom.style.is1337){ const c=document.createElement('span'); c.className='chip'; c.textContent='🟩 1337 Neon'; chips.appendChild(c); }
   else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
   if(atom.style.palindrome){ const c=document.createElement('span'); c.className='chip'; c.textContent='↔ Palindromic Ping-Pong'; chips.appendChild(c); }
@@ -403,7 +427,7 @@ function injectPanels(atom){
   const s2=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   s2.appendChild(badge); s2.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(s2);
   const ib=document.createElement('div'); ib.style.padding='10px 12px';
-  ib.innerHTML='<h3>Controls</h3><p>Rotate: drag / 1-finger • Zoom: wheel / pinch • Pan: right-drag / 2-finger • Toggle UI: <b>E</b> / <b>double-tap</b> the scene</p>';
+  ib.innerHTML='<h3>Controls</h3><p>Rotate: drag / 1-finger • Pan: right-drag / 2-finger • Zoom: wheel / pinch • Toggle UI: <b>E</b> / <b>double-tap</b></p>';
   info.appendChild(ib);
   det.open=false; info.open=false;
 }
@@ -412,12 +436,12 @@ function injectPanels(atom){
 let p5Instance=null, orbShader=null, shaderLinked=false;
 let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
 let minCamDist=140, maxCamDist=20000;
-let isDragging=false, lastX=0, lastY=0, dragButton=0;
+let lastX=0, lastY=0, dragButton=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
+let interactionMode='none'; // 'rotate' | 'panzoom' | 'none'
 let modelSpin = 0;
-let frameParity = 0;
 
-const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Safe'];
+const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Fireball'];
 let overrides = { proton:null, neutron:null, electron:null };
 function populateSelectors(){
   const opts = MODE_LIST.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
@@ -434,7 +458,7 @@ function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
 
   camDist=560; camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0];
-  modelSpin = 0; frameParity = 0;
+  modelSpin = 0; interactionMode='none';
 
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
@@ -451,6 +475,7 @@ function startSketch(blk){
   maxCamDist = 30000;
   const maxPan = Math.max(200, largestRadius * 2.2);
 
+  // perf-aware detail
   const totalElectrons = atom.electrons;
   const totalNucleons  = Math.min(900, atom.Z + atom.N);
   function detailFor(count, baseU, baseV){
@@ -462,17 +487,15 @@ function startSketch(blk){
   }
   let electronDetail = detailFor(totalElectrons, 52, 36);
   let nucleonDetail  = detailFor(totalNucleons,  44, 30);
-  if(atom.style.disco){ electronDetail=[14,10]; nucleonDetail=[12,8]; }
+  if(atom.style.pearl170){ electronDetail=[22,16]; nucleonDetail=[20,14]; }
 
   function clampCamTarget(){
-    // Per-axis clamp
-    camTarget[0] = clamp(camTarget[0], -maxPan, maxPan);
-    camTarget[1] = clamp(camTarget[1], -maxPan, maxPan);
-    camTarget[2] = clamp(camTarget[2], -maxPan, maxPan);
-    // Radial clamp
     const L = Math.hypot(camTarget[0],camTarget[1],camTarget[2]);
-    if(!Number.isFinite(L) || L>maxPan){ const s = Number.isFinite(L)&&L>0 ? (maxPan/L) : 0; camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s; }
-    // Sanitize
+    const lim = maxPan;
+    if(!Number.isFinite(L) || L>lim){
+      const s = Number.isFinite(L)&&L>0 ? (lim/L) : 0;
+      camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s;
+    }
     if(!isFiniteVec(camTarget)) camTarget=[0,0,0];
   }
 
@@ -480,27 +503,28 @@ function startSketch(blk){
     p.setup=()=>{
       const cnv=p.createCanvas(p.windowWidth,p.windowHeight,p.WEBGL);
       cnv.canvas.classList.add('p5canvas');
-      // prevent context menu (right-click)
       cnv.canvas.addEventListener('contextmenu', e=>e.preventDefault());
+      cnv.canvas.addEventListener('auxclick',  e=>e.preventDefault());
       p.setAttributes('alpha', false);
       p.setAttributes('antialias', true);
 
       try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }
       catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
 
-      // baseline lights
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
       const canvasEl = cnv.canvas;
       if(canvasEl){
         canvasEl.addEventListener('touchstart',(e)=>{
           if(e.touches.length===1){
+            interactionMode='rotate';
             const t=e.touches[0]; const now=performance.now();
             const dist=Math.hypot(t.clientX-lastTapXY[0], t.clientY-lastTapXY[1]);
-            if(now-lastTapTime<280 && dist<12){ document.getElementById('uiRoot').classList.toggle('show'); lastTapTime=0; }
+            if(now-lastTapTime<280 && dist<12){ $('#uiRoot').classList.toggle('show'); lastTapTime=0; }
             else { lastTapTime=now; lastTapXY=[t.clientX,t.clientY]; }
-            isDragging=true; lastX=t.clientX; lastY=t.clientY; dragButton=p.LEFT;
+            lastX=t.clientX; lastY=t.clientY;
           } else if(e.touches.length===2){
+            interactionMode='panzoom';
             const t0=e.touches[0], t1=e.touches[1];
             pinchPrev=Math.max(1, Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY));
             twoPrevMid=[(t0.clientX+t1.clientX)/2, (t0.clientY+t1.clientY)/2];
@@ -509,10 +533,10 @@ function startSketch(blk){
         }, {passive:false});
 
         canvasEl.addEventListener('touchmove',(e)=>{
-          if(e.touches.length===1){
+          if(interactionMode==='rotate' && e.touches.length===1){
             const t=e.touches[0], dx=t.clientX-lastX, dy=t.clientY-lastY; lastX=t.clientX; lastY=t.clientY;
             camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
-          } else if(e.touches.length===2){
+          } else if(interactionMode==='panzoom' && e.touches.length===2){
             const t0=e.touches[0], t1=e.touches[1];
             let d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY); d=Math.max(1,d);
             if(pinchPrev==null) pinchPrev=d;
@@ -527,12 +551,11 @@ function startSketch(blk){
             if(twoPrevMid){
               const dx = midX - twoPrevMid[0]; const dy = midY - twoPrevMid[1];
               const {right, up} = camBasis(camYaw, camPitch);
-              const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height; // gentler
-              let add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
-                        ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
-                        ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
-              if(!isFiniteVec(add)) add=[0,0,0];
-              camTarget[0] += add[0]; camTarget[1] += add[1]; camTarget[2] += add[2];
+              const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height;
+              const add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
+                          ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
+                          ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
+              camTarget[0]+=add[0]; camTarget[1]+=add[1]; camTarget[2]+=add[2];
               clampCamTarget();
             }
             twoPrevMid=[midX,midY];
@@ -540,26 +563,25 @@ function startSketch(blk){
           e.preventDefault();
         }, {passive:false});
 
-        canvasEl.addEventListener('touchend',()=>{ isDragging=false; pinchPrev=null; twoPrevMid=null; }, {passive:true});
+        canvasEl.addEventListener('touchend',()=>{ interactionMode='none'; pinchPrev=null; twoPrevMid=null; }, {passive:true});
       }
     };
 
     p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); };
 
-    p.mousePressed=(e)=>{ isDragging=true; lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; };
-    p.mouseReleased=()=>{ isDragging=false; };
+    p.mousePressed=(e)=>{ lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; interactionMode = (dragButton===p.RIGHT)?'panzoom':'rotate'; };
+    p.mouseReleased=()=>{ interactionMode='none'; };
     p.mouseDragged=()=>{
       const dx=p.mouseX-lastX, dy=p.mouseY-lastY; lastX=p.mouseX; lastY=p.mouseY;
-      if(dragButton===p.LEFT){
+      if(interactionMode==='rotate'){
         camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
-      } else {
+      } else if(interactionMode==='panzoom'){
         const {right, up} = camBasis(camYaw, camPitch);
-        const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height; // gentler
-        let add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
-                  ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
-                  ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
-        if(!isFiniteVec(add)) add=[0,0,0];
-        camTarget[0] += add[0]; camTarget[1] += add[1]; camTarget[2] += add[2];
+        const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height;
+        const add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
+                    ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
+                    ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
+        camTarget[0]+=add[0]; camTarget[1]+=add[1]; camTarget[2]+=add[2];
         clampCamTarget();
       }
     };
@@ -569,10 +591,9 @@ function startSketch(blk){
       e.preventDefault();
     };
 
-    function drawOrbMat(cA,cB,r,t,alpha,mode,seed,isElectron){
-      const m=Math.max(0,Math.min(9,(mode|0)));
+    function drawOrbMat(cA,cB,r,t,alpha,mode,seed,detail){
+      const m=Math.max(0,Math.min(10,(mode|0)));
       const a = (m===1) ? (alpha * 0.12) : alpha;
-      const detail = isElectron ? electronDetail : nucleonDetail;
 
       if(orbShader && shaderLinked){
         try{
@@ -605,44 +626,28 @@ function startSketch(blk){
       p.sphere(r, Math.max(16, detail[0]-8), Math.max(10, detail[1]-6));
     }
 
-    function drawRainbowRing(radius, t){
-      const segs = 120;
-      p.noFill();
-      p.strokeWeight(1.1);
-      for(let k=0;k<segs;k++){
-        const a1 = k   /segs * TAU;
-        const a2 = (k+1)/segs * TAU;
-        const hue = (k/segs + 0.12*t)%1;
-        const rgb = hslToRgb(hue, 1.0, 0.5);
-        p.stroke(rgb[0],rgb[1],rgb[2], 230);
-        p.line(Math.cos(a1)*radius, Math.sin(a1)*radius, 0,
-               Math.cos(a2)*radius, Math.sin(a2)*radius, 0);
-      }
-    }
-
     function drawRings(t){
       p.push();
-      if(atom.style.disco){
-        for(let i=0;i<atom.shells.length;i++) drawRainbowRing(atom.radii[i], t*0.35);
-      } else {
-        for(let i=0;i<atom.shells.length;i++){
-          const r=atom.radii[i];
-          let col = atom.style.ringColor.slice();
-          let alpha = 220;
-          let thick = 1.1;
-          if(atom.style.is1337){
-            col = [60,255,130]; alpha=255; thick=1.4;
-          } else if(atom.style.halving){
-            const pulse = 0.5 + 0.5*Math.sin(t*2.0);
-            col = mixRGB([212,172,55],[255,220,120], 0.65);
-            alpha = Math.round(170 + 70*pulse);
-            thick = 1.0 + 0.6*pulse;
-          }
-          p.noFill();
-          p.stroke(col[0],col[1],col[2],alpha);
-          p.strokeWeight(thick);
-          p.circle(0,0,r*2);
+      for(let i=0;i<atom.shells.length;i++){
+        const r=atom.radii[i];
+        let col = atom.style.ringColor.slice();
+        let alpha = 220;
+        let thick = 1.1;
+        if(atom.style.is1337){
+          col = [60,255,130]; alpha=255; thick=1.4;
+        } else if(atom.style.halving){
+          const pulse = 0.5 + 0.5*Math.sin(t*2.0);
+          col = mixRGB([212,172,55],[255,220,120], 0.65);
+          alpha = Math.round(170 + 70*pulse);
+          thick = 1.0 + 0.6*pulse;
+        } else if(atom.style.pearl170){
+          // soft gold rings to complement pearlescent
+          col = [255,198,120]; alpha=220; thick=1.2;
         }
+        p.noFill();
+        p.stroke(col[0],col[1],col[2],alpha);
+        p.strokeWeight(thick);
+        p.circle(0,0,r*2);
       }
       p.pop();
     }
@@ -651,7 +656,6 @@ function startSketch(blk){
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
 
-      // Harmonize with electron palette but distinct
       let cP_A = shiftHue(atom.colors.electron, -22), cP_B = shiftHue(atom.colors.electron, +8);
       let cN_A = shiftHue(atom.colors.electron, +40),  cN_B = shiftHue(atom.colors.electron, +62);
 
@@ -671,44 +675,44 @@ function startSketch(blk){
         drawSoftGlow = true;
       }
 
-      const disco = atom.style.disco;
-      if(disco){ sizePulse = 1.0 + 0.08*Math.sin(t*2.0); }
+      if(atom.style.pearl170){
+        protonMode  = 1; // glass
+        neutronMode = 1;
+        cP_A = [245,245,255]; cP_B = [235,235,255];
+        cN_A = [250,240,255]; cN_B = [235,235,250];
+      }
 
-      // --- Soft translucent glow for halving (true additive fog, no depth write) ---
+      // Soft translucent glow for halving
       if(drawSoftGlow){
         const gl = p._renderer.GL;
-        const prevBlend = p.drawingContext.getParameter(gl.BLEND_SRC_ALPHA);
-        p.push();
-        p.noStroke();
-        p.blendMode(p.ADD);
-        gl.depthMask(false); // don't occlude anything
-
+        p.push(); p.noStroke(); p.blendMode(p.ADD); gl.depthMask(false);
         const layers = 5;
         for(let i=0;i<layers;i++){
           const k = (i+1)/layers;
           const rad = NUCLEUS_R0 * (1.05 + 0.55*k);
-          const al  = Math.round(28 * (1.0 - k)); // very translucent
+          const al  = Math.round(28 * (1.0 - k));
           p.fill(255, 200, 90, al);
           p.sphere(rad, 20, 14);
         }
-
-        gl.depthMask(true);
-        p.blendMode(p.BLEND);
-        p.pop();
+        gl.depthMask(true); p.blendMode(p.BLEND); p.pop();
       }
 
       for(const q of atom.nucleusPoints){
         p.push();
-        p.translate(q.x,q.y,q.z);
-        if(disco){
-          const hue = ( (q.objSeed*0.8) + t*0.18 ) % 1;
-          const col = hslToRgb(hue, 1.0, 0.55);
-          const col2= hslToRgb((hue+0.18)%1, 1.0, 0.65);
-          drawOrbMat(col,col2,NUCLEON_R*sizePulse,t,1.0, 4/*toon*/, q.objSeed,false);
-        } else {
-          if(q.isProton){ drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed,false); }
-          else          { drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed,false); }
+        let x=q.x, y=q.y, z=q.z;
+
+        // #170 pearl motion patterns inside nucleus
+        if(atom.style.pearl170){
+          const swirl = 0.35 * Math.sin(t*0.6 + q.objSeed*6.28);
+          const cs=Math.cos(swirl), sn=Math.sin(swirl);
+          const rx = x*cs - z*sn, rz = x*sn + z*cs;
+          const breathe = 1.0 + 0.06*Math.sin(t*1.3 + q.objSeed*4.0 + (q.isProton?0.0:1.2));
+          x=rx*breathe; y=y*breathe; z=rz*breathe;
         }
+
+        p.translate(x,y,z);
+        if(q.isProton){ drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed, nucleonDetail); }
+        else          { drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed, nucleonDetail); }
         p.pop();
       }
     }
@@ -718,7 +722,6 @@ function startSketch(blk){
       let sizeScale = atom.style.eSizeScale;
       let baseColA = atom.colors.electron, baseColB = atom.style.ringColor;
 
-      const disco = atom.style.disco;
       if(atom.style.is1337){
         eMode = 2; baseColA = [60,255,130]; baseColB = [60,255,130];
       }
@@ -726,45 +729,45 @@ function startSketch(blk){
         eMode = 7; baseColA = [210,215,220]; baseColB = [240,245,250];
         sizeScale *= 1.0 + 0.08*Math.sin(t*2.0);
       }
-      if(disco){ eMode = 4; }
-      let discoPulse = 1.0;
-      if(disco){ discoPulse = 1.0 + 0.08*Math.sin(t*2.0 + 0.7); }
+      if(atom.style.pearl170){
+        eMode = 1; // glass
+        baseColA=[245,245,255]; baseColB=[230,235,255];
+      }
 
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
-          if(disco && ((i+j+frameParity)&1)) continue;
-
           const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
-          const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
-          const pre=t*m.pre + m.phase;
+          let a=r*(1+m.e*0.35), b=r*(1-m.e*0.35);
+          let pre=t*m.pre + m.phase;
+
+          // #170: Lissajous-like
+          if(atom.style.pearl170){
+            a *= 1.0 + 0.06*Math.sin(t*0.9 + m.objSeed*3.0);
+            b *= 1.0 + 0.06*Math.cos(t*1.1 + m.objSeed*4.1);
+            pre *= 0.8;
+          }
+
           const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
-          const basePt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
+          const basePt=vadd(vmul(v,a*Math.cos(th*1.0)), vmul(w,b*Math.sin(th*1.3)));
           const wob=1.0 + m.rosAmp*Math.sin(th*m.rosK + m.phase*0.7);
           const pt=vmul(basePt, wob);
 
-          let cA, cB;
-          if(disco){
-            const hue = ( (m.objSeed*0.9) + t*0.25 ) % 1;
-            cA = hslToRgb(hue, 1.0, 0.55);
-            cB = hslToRgb((hue+0.33)%1, 1.0, 0.60);
-          } else {
-            const mixT=((j%7)/7)*0.35;
-            cA = mixRGB(baseColA, baseColB, mixT);
-            cB = baseColB;
-          }
+          const mixT=((j%7)/7)*0.35;
+          const cA=mixRGB(baseColA, baseColB, mixT);
+          const cB=baseColB;
 
           p.push(); p.translate(pt[0],pt[1],pt[2]);
-          drawOrbMat(cA, cB, ELECTRON_R*sizeScale*discoPulse, t, 1.0, eMode, m.objSeed, true);
+          drawOrbMat(cA, cB, ELECTRON_R*sizeScale, t, 1.0, eMode, m.objSeed, electronDetail);
           p.pop();
 
-          const prevTurns = atom._eTurns[i][j];
           const dir = (atom.style.palindrome ? atom._eDir[i][j] : 1);
           const delta = baseSpeed*m.spMul*dir;
           const nextAngle = atom.electronAngles[i][j] + delta;
           atom.electronAngles[i][j] = nextAngle;
 
           if(atom.style.palindrome){
+            const prevTurns = atom._eTurns[i][j];
             const newTurns = Math.floor(nextAngle/TAU);
             if(newTurns > prevTurns){ atom._eDir[i][j] = -atom._eDir[i][j]; }
             atom._eTurns[i][j] = newTurns;
@@ -794,7 +797,7 @@ function startSketch(blk){
       if(![cx,cy,cz].every(Number.isFinite)){ camTarget=[0,0,0]; }
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // constant slow spin like a coin
+      // slow coin-spin
       modelSpin += 0.16 * (p.deltaTime/1000);
       p.push(); p.rotateY(modelSpin);
 
@@ -803,8 +806,6 @@ function startSketch(blk){
       drawElectrons(t);
 
       p.pop();
-
-      frameParity ^= 1;
     };
   };
 
@@ -849,18 +850,19 @@ async function loadLatest(){
     const h=await fetchText(API+'/blocks/tip/height');
     heightInput.value=h; await loadBlockByHeight(h);
   }catch(e){
-    showProgress('Error: '+e.message+'\nTry entering a known height (e.g. 840000) and press Load.');
+    showProgress('Error: '+e.message+'\\nTry entering a known height (e.g. 840000) and press Load.');
   }
 }
 
 loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ showProgress('Error: '+e.message); }};
 latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ showProgress('Error: '+e.message); }};
-resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0]; modelSpin=0; };
+resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0]; modelSpin=0; interactionMode='none'; };
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new39
-// Auto-load latest on boot
+
+// Boot
+// new40
 loadLatest();
 </script>
 </body>
