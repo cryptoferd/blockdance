@@ -130,7 +130,7 @@ float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
 float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
 float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
 return mix(n0,n1,u.z);}
-float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<5;i++){s+=a*n3(p); p*=2.03; a*=0.5;}return s;}
+float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0.5;}return s;}
 void main(){
   vec3 pos=aPosition;
   vec3 nrm=normalize(aPosition);
@@ -739,7 +739,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new30
+// new31
 loadLatest();
 </script>
 </body>
