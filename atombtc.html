@@ -466,10 +466,10 @@ function drawHandshakeOverlay(enabled){
   eCtx.globalAlpha = 0.65;            // ~65% opacity
   eCtx.textAlign = 'center';
   eCtx.textBaseline = 'middle';
-  const targetW = W * 0.33;           // ~1/3 width
+  const targetW = W * 0.2;           // ~1/3 width
   eCtx.font = `${Math.floor(targetW)}px system-ui, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji`;
   const x = W/2;
-  const y = H*0.18;                   // upper third-ish
+  const y = H*0.3;                   // upper third-ish
   eCtx.fillText('🤝', x, y);
   eCtx.restore();
 }
