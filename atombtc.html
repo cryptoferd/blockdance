@@ -9,7 +9,8 @@
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);
             font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
-  canvas.p5canvas{position:fixed;inset:0;z-index:1;display:block;touch-action:none}
+  /* WebGL canvas above emoji so emoji sits behind */
+  canvas.p5canvas{position:fixed;inset:0;z-index:2;display:block;touch-action:none}
 
   .uiRoot{position:fixed;inset:0;z-index:30;opacity:1;visibility:visible;pointer-events:none}
   .uiRoot.show{opacity:1;visibility:visible}
@@ -52,11 +53,12 @@
         background:rgba(7,10,14,0.6);border:1px solid #24313b;border-radius:10px;padding:7px 10px;pointer-events:none;transition:opacity .4s ease}
   #hint.hide{opacity:0}
 
-  /* 170 overlay emoji */
+  /* 170 overlay emoji — BEHIND the WebGL canvas */
   #emoji170{
     position:fixed; left:0; right:0;
-    top:12%; text-align:center; z-index:2; pointer-events:none;
-    font-size:33vw; line-height:0.9; opacity:0.65; filter:drop-shadow(0 0 18px rgba(255,255,255,0.12));
+    top:12%; text-align:center; z-index:1; pointer-events:none;
+    font-size:33vw; line-height:0.9; opacity:0.65; /* 65% */
+    filter:drop-shadow(0 0 18px rgba(255,255,255,0.12));
     display:none;
   }
 
@@ -75,6 +77,7 @@
 </head>
 <body>
 
+<div id="emoji170">🤝</div> <!-- sits behind canvas -->
 <div class="uiRoot show" id="uiRoot">
   <div class="hud" id="hud">
     <label>Height:</label>
@@ -102,7 +105,6 @@
   <details id="infoPanel"  class="panel"></details>
 </div>
 
-<div id="emoji170">🤝</div>
 <div id="progress">…</div>
 <div id="hint">Press <b>E</b> (desktop) or <b>double-tap</b> the scene (mobile) to show / hide the UI</div>
 
@@ -157,7 +159,7 @@ void main(){
     pos += nrm*(amp*spike*length(aPosition));
   }
 
-  // Glass (m==1)
+  // Glass ripple (m==1)
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -415,7 +417,7 @@ class FireParticles{
       this.vel[id][0]=vx; this.vel[id][1]=vy; this.vel[id][2]=vz;
       this.col[id]=base;
       this.size[id]=1.8+Math.random()*1.8;
-      this.maxL[id]=1.4+Math.random()*0.8;
+      this.maxL[id]=1.4+Math.random()*0.8; // longer life
       this.life[id]=this.maxL[id];
     }
   }
@@ -656,7 +658,8 @@ function startSketch(blk){
       cnv.canvas.classList.add('p5canvas');
       cnv.canvas.addEventListener('contextmenu', e=>e.preventDefault());
       cnv.canvas.addEventListener('auxclick',  e=>e.preventDefault());
-      p.setAttributes('alpha', false);
+      // IMPORTANT: allow transparency so emoji behind is visible
+      p.setAttributes('alpha', true);
       p.setAttributes('antialias', true);
 
       try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }
@@ -700,7 +703,7 @@ function startSketch(blk){
             camDist = clamp(limited, minCamDist, maxCamDist);
             pinchPrev = d;
 
-            const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientX+t1.clientX)/2;
+            const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientY+t1.clientY)/2;
             if(twoPrevMid){
               const dx = midX - twoPrevMid[0]; const dy = midY - twoPrevMid[1];
               const {right, up} = camBasis(camYaw, camPitch);
@@ -845,7 +848,7 @@ function startSketch(blk){
         sizePulse = 1.0 + 0.06*Math.sin(t*1.6);
       }
 
-      // Halving soft glow (very translucent)
+      // Halving soft glow (very translucent, layered)
       if(drawSoftGlow){
         const gl = p._renderer.GL;
         p.push(); p.noStroke(); p.blendMode(p.ADD); gl.depthMask(false);
@@ -958,13 +961,13 @@ function startSketch(blk){
       const t=p.millis()*0.001;
       const dt=Math.max(0.001, Math.min(0.05, p.deltaTime/1000));
 
-      // Background
+      // Background with ALPHA so the behind-layer emoji shows through slightly
       if(atom.style.halving){
         const k = 0.5 + 0.5*Math.sin(t*1.6);
         const bg = mixRGB([10,4,0],[255,120,20], k);
-        p.background(bg[0],bg[1],bg[2]);
+        p.background(bg[0],bg[1],bg[2], 235);
       } else {
-        p.background(0);
+        p.background(0,0,0, 235);
       }
 
       // Camera
@@ -976,7 +979,7 @@ function startSketch(blk){
       if(![cx,cy,cz].every(Number.isFinite)){ camTarget=[0,0,0]; }
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // coin-spin
+      // idle coin-spin
       modelSpin += 0.16 * dt;
       p.push(); p.rotateY(modelSpin);
 
@@ -1029,7 +1032,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new45
+// new46
 // Boot
 loadLatest();
 </script>
