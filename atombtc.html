@@ -90,7 +90,7 @@
 
   <div class="panel" id="legend">
     <div><b>Controls</b></div>
-    <div>• Rotate/Tilt: drag / 1-finger</div>
+    <div>• Rotate/Tilt: left-drag / 1-finger</div>
     <div>• Pan: right-drag / 2-finger drag</div>
     <div>• Zoom: wheel / pinch</div>
   </div>
@@ -119,6 +119,10 @@ const byteAt=(hex,idx)=>{ if(!hex) return 0; const c=hex.replace(/[^0-9a-fA-F]/g
 const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*t),Math.round(a[2]*(1-t)+b[2]*t)];
 const TAU = Math.PI*2;
 const isFiniteVec = v => v.every(Number.isFinite);
+
+/* helpers for merge map */
+const eID = (i,j) => `${i}:${j}`;
+const parseEID = id => id.split(':').map(n=>parseInt(n,10));
 
 /* ---------- shaders ---------- */
 const VERT=`precision mediump float; precision mediump int;
@@ -458,24 +462,35 @@ function resizeEmojiLayer(){
 resizeEmojiLayer();
 window.addEventListener('resize', resizeEmojiLayer);
 
+/* Handshake overlay controls */
+const HANDSHAKE_WIDTH_FRAC = 0.20; // width fraction
+const HANDSHAKE_Y_FRAC     = 0.35; // vertical position fraction
+const HANDSHAKE_OPACITY    = 0.65; // opacity
+
 function drawHandshakeOverlay(enabled){
   eCtx.clearRect(0,0,emojiLayer.width,emojiLayer.height);
   if(!enabled) return;
   const W = innerWidth, H = innerHeight;
+
   eCtx.save();
-  eCtx.globalAlpha = 0.65;            // ~65% opacity
+  eCtx.globalAlpha = HANDSHAKE_OPACITY;
   eCtx.textAlign = 'center';
   eCtx.textBaseline = 'middle';
-  const targetW = W * 0.2;           // ~1/3 width
+
+  // Size: roughly this fraction of the viewport width
+  const targetW = W * HANDSHAKE_WIDTH_FRAC;
   eCtx.font = `${Math.floor(targetW)}px system-ui, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji`;
-  const x = W/2;
-  const y = H*0.3;                   // upper third-ish
+
+  // Position: centered horizontally, at chosen vertical fraction
+  const x = W * 0.5;
+  const y = H * HANDSHAKE_Y_FRAC;
+
   eCtx.fillText('🤝', x, y);
   eCtx.restore();
 }
 
 /* ---------- build atom ---------- */
-function chooseSetModesFromBlockProxy(b, diversity){ return chooseSetModesFromBlock(b, diversity); } // keep older call sites tidy
+function chooseSetModesFromBlockProxy(b, diversity){ return chooseSetModesFromBlock(b, diversity); }
 
 function buildAtomFromBlock(b){
   const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
@@ -558,7 +573,7 @@ function injectPanels(atom){
   const body=document.createElement('div'); body.id='blkBody';
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
   [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);});
-  if(atom.style.pearl170){ const c=document.createElement('span'); c.className='chip'; c.textContent='🤝 #170 Iridescent'; chips.appendChild(c); }
+  if(atom.style.pearl170){ const c=document.createElement('span'); c.className='chip'; c.textContent='🤝 #170 Iridescent + Pulse + Merge'; chips.appendChild(c); }
   else if(atom.style.is1337){ const c=document.createElement('span'); c.className='chip'; c.textContent='🟩 1337 Neon'; chips.appendChild(c); }
   else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
   if(atom.style.palindrome){ const c=document.createElement('span'); c.className='chip'; c.textContent='↔ Palindromic Ping-Pong'; chips.appendChild(c); }
@@ -584,7 +599,7 @@ function injectPanels(atom){
   const s2=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   s2.appendChild(badge); s2.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(s2);
   const ib=document.createElement('div'); ib.style.padding='10px 12px';
-  ib.innerHTML='<h3>Controls</h3><p>Rotate: drag / 1-finger • Pan: right-drag / 2-finger • Zoom: wheel / pinch • Toggle UI: <b>E</b> / <b>double-tap</b></p>';
+  ib.innerHTML='<h3>Controls</h3><p>Rotate: left-drag / 1-finger • Pan: right-drag / 2-finger • Zoom: wheel / pinch • Toggle UI: <b>E</b> / <b>double-tap</b></p>';
   info.appendChild(ib);
   det.open=false; info.open=false;
 }
@@ -619,8 +634,12 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // emoji layer per-block
+  // per-170 overlay
   drawHandshakeOverlay(atom.style.pearl170);
+
+  // per-170 merge state
+  atom._merge = new Map();
+  atom._lastCollCheck = 0;
 
   // palindrome helpers
   const eDir=[], eTurns=[];
@@ -917,11 +936,14 @@ function startSketch(blk){
       }
       if(atom.style.pearl170){
         eMode = 5; // iridescent
-        sizeScale *= 1.0 + 0.10*Math.sin(t*1.8); // pulsing electrons
+        // Faster/stronger pulse for #170
+        sizeScale *= 1.0 + 0.25 * (0.5 + 0.5 * Math.sin(t*9.0));
       }
 
       const isFireE = (overrides.electron ?? atom.setModes.electrons)===9;
 
+      // -------- Pass 1: compute positions and info, store for collision/merge --------
+      const info = []; // flat list of {i,j, pt:[x,y,z], r, cA, cB, objSeed, baseSpeed, m}
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -930,6 +952,7 @@ function startSketch(blk){
           let pre=t*m.pre + m.phase;
 
           if(atom.style.pearl170){
+            // subtle breathing/orbit variety for 170
             a *= 1.0 + 0.06*Math.sin(t*0.9 + m.objSeed*3.0);
             b *= 1.0 + 0.06*Math.cos(t*1.1 + m.objSeed*4.1);
             pre *= 0.88;
@@ -944,24 +967,128 @@ function startSketch(blk){
           const cA=mixRGB(baseColA, baseColB, mixT);
           const cB=baseColB;
 
-          p.push(); p.translate(pt[0],pt[1],pt[2]);
-          drawOrbMat(cA, cB, ELECTRON_R*sizeScale, t, 1.0, eMode, m.objSeed, electronDetail);
-          p.pop();
+          info.push({
+            i,j, pt, r: ELECTRON_R*sizeScale, cA, cB,
+            objSeed: m.objSeed, baseSpeed, m
+          });
+        }
+      }
 
-          const R = Math.hypot(pt[0],pt[1],pt[2])||1;
-          emitFireAt(pt[0],pt[1],pt[2], pt[0]/R,pt[1]/R,pt[2]/R, cA,cB, isFireE);
+      // -------- Pass 2: collision detection (only for #170) --------
+      if(atom.style.pearl170){
+        // Clean expired merges
+        for(const [id, rec] of atom._merge){
+          if(!rec || t >= rec.until){ atom._merge.delete(id); }
+        }
 
-          const dir = (atom.style.palindrome ? atom._eDir[i][j] : 1);
-          const delta = baseSpeed*m.spMul*dir;
-          const nextAngle = atom.electronAngles[i][j] + delta;
-          atom.electronAngles[i][j] = nextAngle;
+        // Throttle checks (every ~5 frames)
+        if(t - atom._lastCollCheck > 0.08){
+          atom._lastCollCheck = t;
 
-          if(atom.style.palindrome){
-            const prevTurns = atom._eTurns[i][j];
-            const newTurns = Math.floor(nextAngle/TAU);
-            if(newTurns > prevTurns){ atom._eDir[i][j] = -atom._eDir[i][j]; }
-            atom._eTurns[i][j] = newTurns;
+          // Spatial hash (coarse)
+          const cell = 12; // world units per cell
+          const buckets = new Map();
+          const put = (key, idx)=>{ const arr=buckets.get(key)||[]; arr.push(idx); buckets.set(key,arr); };
+
+          for(let idx=0; idx<info.length; idx++){
+            const p=info[idx].pt;
+            const k = `${Math.round(p[0]/cell)}|${Math.round(p[1]/cell)}|${Math.round(p[2]/cell)}`;
+            put(k, idx);
           }
+
+          const near = (a,b)=> {
+            const dx=a[0]-b[0], dy=a[1]-b[1], dz=a[2]-b[2];
+            return Math.sqrt(dx*dx+dy*dy+dz*dz);
+          };
+          const MERGE_DIST = 9.0;    // distance to trigger merge
+          const MERGE_TIME = 2.0;    // seconds merged
+
+          for(const arr of buckets.values()){
+            // Compare within bucket (small)
+            for(let x=0; x<arr.length; x++){
+              const A = info[arr[x]];
+              const idA = eID(A.i,A.j);
+              // Skip if already merged
+              if(atom._merge.has(idA)) continue;
+
+              for(let y=x+1; y<arr.length; y++){
+                const B = info[arr[y]];
+                const idB = eID(B.i,B.j);
+                if(atom._merge.has(idB)) continue;
+
+                const d = near(A.pt, B.pt);
+                if(d <= MERGE_DIST){
+                  const until = t + MERGE_TIME;
+                  const recAB = { partner: idB, until, started:t };
+                  const recBA = { partner: idA, until, started:t };
+                  atom._merge.set(idA, recAB);
+                  atom._merge.set(idB, recBA);
+                  break; // A is merged; move on
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // -------- Pass 3: render (& fire), advance angles --------
+      // To avoid double-drawing merged pairs, only draw the "leader" id (lexicographically smaller)
+      const drawn = new Set();
+
+      for(const it of info){
+        const id = eID(it.i,it.j);
+        if(drawn.has(id)) continue;
+
+        let drawPt = it.pt.slice();
+        let drawR  = it.r;
+        let drawCA = it.cA, drawCB = it.cB;
+
+        if(atom.style.pearl170){
+          const rec = atom._merge.get(id);
+          if(rec && rec.until > t){
+            const pid = rec.partner;
+            const leader = id < pid ? id : pid;
+            if(id !== leader){ continue; } // partner will draw
+
+            const [pi,pj] = parseEID(pid);
+            const mate = info.find(x=>x.i===pi && x.j===pj);
+            if(mate){
+              // Midpoint + bigger radius (grow)
+              drawPt = [
+                (it.pt[0] + mate.pt[0]) * 0.5,
+                (it.pt[1] + mate.pt[1]) * 0.5,
+                (it.pt[2] + mate.pt[2]) * 0.5
+              ];
+              // Smooth in/out scale over the merge window (cosine)
+              const u = Math.min(1, Math.max(0, (t - rec.started) / (rec.until - rec.started)));
+              const smooth = 0.5 - 0.5*Math.cos(Math.PI * u);
+              drawR *= (1.0 + 0.7 * smooth); // up to ~1.7x
+              // Blend colors
+              drawCA = mixRGB(it.cA, mate.cA, 0.5);
+              drawCB = mixRGB(it.cB, mate.cB, 0.5);
+            }
+            drawn.add(leader);
+            drawn.add(pid);
+          }
+        }
+
+        // Render electron
+        p.push(); p.translate(drawPt[0],drawPt[1],drawPt[2]);
+        drawOrbMat(drawCA, drawCB, drawR, t, 1.0, eMode, it.objSeed, electronDetail);
+        p.pop();
+
+        // Fire emission (if fireball mode selected via UI)
+        const R = Math.hypot(drawPt[0],drawPt[1],drawPt[2])||1;
+        emitFireAt(drawPt[0],drawPt[1],drawPt[2], drawPt[0]/R,drawPt[1]/R,drawPt[2]/R, drawCA,drawCB, isFireE);
+
+        // Advance angles
+        const dir = (atom.style.palindrome ? atom._eDir[it.i]?.[it.j] ?? 1 : 1);
+        atom.electronAngles[it.i][it.j] += it.baseSpeed * it.m.spMul * dir;
+
+        if(atom.style.palindrome){
+          const turns = Math.floor(atom.electronAngles[it.i][it.j]/TAU);
+          if(turns > (atom._eTurns[it.i][it.j] || 0)){ atom._eDir[it.i][it.j] = -dir; }
+          atom._eTurns[it.i][it.j] = turns;
         }
       }
     }
@@ -1047,7 +1174,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new49
+// new50
 // Boot
 loadLatest();
 </script>
