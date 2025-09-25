@@ -9,7 +9,6 @@
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);
             font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
-  /* WebGL canvas above emoji so emoji sits behind */
   canvas.p5canvas{position:fixed;inset:0;z-index:2;display:block;touch-action:none}
 
   .uiRoot{position:fixed;inset:0;z-index:30;opacity:1;visibility:visible;pointer-events:none}
@@ -48,19 +47,11 @@
                             background:#1e2a33;color:#cfe4ff;border:1px solid #2b3a44;font-weight:800}
 
   #progress{position:fixed;left:12px;top:12px;transform:translateY(52px);z-index:40;color:#d7ecff;font-size:12px;
-            background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none;max-width:min(70vw,740px);white-space:pre-line}
+            background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:10px;display:none;
+            max-width:min(70vw,740px);white-space:pre-line}
   #hint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:35;color:#b6c9de;opacity:0.35;font-size:12px;
         background:rgba(7,10,14,0.6);border:1px solid #24313b;border-radius:10px;padding:7px 10px;pointer-events:none;transition:opacity .4s ease}
   #hint.hide{opacity:0}
-
-  /* 170 overlay emoji — BEHIND the WebGL canvas */
-  #emoji170{
-    position:fixed; left:0; right:0;
-    top:12%; text-align:center; z-index:1; pointer-events:none;
-    font-size:33vw; line-height:0.9; opacity:0.65; /* 65% */
-    filter:drop-shadow(0 0 18px rgba(255,255,255,0.12));
-    display:none;
-  }
 
   @media (max-width: 800px){
     .hud{
@@ -71,13 +62,11 @@
     .hud .sep{display:none}
     #legend{left:8px; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
     details#blockPanel, #infoPanel{left:8px; right:8px; max-width:none}
-    #emoji170{ font-size:40vw; top:10%; }
   }
 </style>
 </head>
 <body>
 
-<div id="emoji170">🤝</div> <!-- sits behind canvas -->
 <div class="uiRoot show" id="uiRoot">
   <div class="hud" id="hud">
     <label>Height:</label>
@@ -169,7 +158,7 @@ void main(){
     pos += nrm * ripple * length(aPosition);
   }
 
-  // Fireball (m==9): keep orb size (no surface expansion)
+  // Fireball (m==9): no surface expansion (particles provide the effect)
 
   vPos=pos; vNormal=normalize(pos);
   gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
@@ -262,7 +251,7 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==9){ // Fireball orb: translucent, palette-colored shell
+  } else if(m==9){ // Fireball orb: translucent shell (particles do the fire)
     vec3 base = mix(colA, colB, 0.35);
     col = base*(0.28+0.72*ndl) + vec3(1.0)*rim*0.08;
   } else {
@@ -344,7 +333,7 @@ function diversityFromBlock(b){
   };
 }
 
-/* ---------- mode picking (distinct sets) ---------- */
+/* ---------- mode picking ---------- */
 const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Fireball'];
 const FAMILY_BUCKETS = [
   [1,5,7],    // glossy / iridescent / metallic
@@ -370,19 +359,13 @@ function chooseSetModesFromBlock(b, diversity){
 }
 const isPalindromeHeight = (h)=>{ const s=String(h); return s===s.split('').reverse().join(''); };
 
-/* ---------- shells helper (exposed once) ---------- */
-window.fillShells = window.fillShells || function (e) {
-  let shells = [], rem = Math.max(0, e|0), n = 1;
-  while (rem > 0 && shells.length < 8) {
-    const cap = 2 * n * n;
-    const take = Math.min(rem, cap);
-    shells.push(take);
-    rem -= take;
-    n++;
-  }
-  if (rem > 0) shells.push(rem);
+/* ---------- shells helper ---------- */
+function fillShells(e){
+  let shells=[],rem=Math.max(0,e|0),n=1;
+  while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; }
+  if(rem>0) shells.push(rem);
   return shells;
-};
+}
 
 /* ---------- FireParticles ---------- */
 class FireParticles{
@@ -466,6 +449,17 @@ class FireParticles{
   }
 }
 
+/* ---------- emoji texture for #170 ---------- */
+let emojiTex = null;
+function makeEmojiTex(p){
+  const g = p.createGraphics(1024, 512);
+  g.clear();
+  g.textAlign(g.CENTER, g.CENTER);
+  g.textSize(420);
+  g.text('🤝', g.width/2, g.height/2);
+  return g;
+}
+
 /* ---------- build atom ---------- */
 function buildAtomFromBlock(b){
   const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
@@ -490,7 +484,7 @@ function buildAtomFromBlock(b){
   const dens=clamp(weight/Math.max(1,size*4),0.6,1.4);
   const tightness=clamp((dens*0.75)+(1.15-0.55*0.25), 0.6,1.4);
 
-  let eccGlobal=clamp(0.3 + ((version&0xf)/16)*0.5 + ((nonce&0x3f)/63)*0.2 + diversity.eccBiasJ, 0.08,0.92);
+  let eccGlobal=clamp(0.3 + ((version&0xf)/16)*0.5 + ((nonce&0x3f)/63)*0.2 + diversity.eccBiasJ, 0.08, 0.92);
 
   const orbitSpread=(1.0+((version&0xf)-7.5)*0.01) * diversity.orbitSpreadJ;
   const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
@@ -521,7 +515,7 @@ function buildAtomFromBlock(b){
   }
 
   const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
-  const isPearl170 = height===170;        // special treatment
+  const isPearl170 = height===170;
   const is1337  = height===1337;
   const halving = (!isPearl170) && (height>0 && height%210000===0);
   const palindrome = isPalindromeHeight(height);
@@ -609,9 +603,6 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // Toggle #170 emoji overlay
-  $('#emoji170').style.display = atom.style.pearl170 ? 'block' : 'none';
-
   // palindrome helpers
   const eDir=[], eTurns=[];
   for(let i=0;i<atom.shells.length;i++){
@@ -658,8 +649,8 @@ function startSketch(blk){
       cnv.canvas.classList.add('p5canvas');
       cnv.canvas.addEventListener('contextmenu', e=>e.preventDefault());
       cnv.canvas.addEventListener('auxclick',  e=>e.preventDefault());
-      // IMPORTANT: allow transparency so emoji behind is visible
-      p.setAttributes('alpha', true);
+      // Opaque canvas (faster; emoji is drawn inside the canvas)
+      p.setAttributes('alpha', false);
       p.setAttributes('antialias', true);
 
       try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }
@@ -668,6 +659,8 @@ function startSketch(blk){
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
       fire = new FireParticles(p, 900);
+
+      if(!emojiTex) emojiTex = makeEmojiTex(p);
 
       const canvasEl = cnv.canvas;
       if(canvasEl){
@@ -823,7 +816,7 @@ function startSketch(blk){
         protonMode = 5; neutronMode = 5;
       }
 
-      // default nucleon palettes (related to electron but distinct)
+      // default nucleon palettes (distinct but related to electrons)
       let cP_A = shiftHue(atom.colors.electron, -35), cP_B = shiftHue(atom.colors.electron, -5);
       let cN_A = shiftHue(atom.colors.electron, +45),  cN_B = shiftHue(atom.colors.electron, +75);
 
@@ -844,7 +837,6 @@ function startSketch(blk){
         drawSoftGlow = true;
       }
       if(atom.style.pearl170){
-        // pearl: subtle per-nucleon pulsing
         sizePulse = 1.0 + 0.06*Math.sin(t*1.6);
       }
 
@@ -869,7 +861,7 @@ function startSketch(blk){
         p.push();
         let x=q.x, y=q.y, z=q.z;
 
-        // small positional swirl for 170 (kept light for perf)
+        // small positional swirl for 170 (perf-friendly)
         if(atom.style.pearl170){
           const swirl = 0.22 * Math.sin(t*0.9 + q.objSeed*6.28);
           const cs=Math.cos(swirl), sn=Math.sin(swirl);
@@ -961,14 +953,29 @@ function startSketch(blk){
       const t=p.millis()*0.001;
       const dt=Math.max(0.001, Math.min(0.05, p.deltaTime/1000));
 
-      // Background with ALPHA so the behind-layer emoji shows through slightly
+      // Background
       if(atom.style.halving){
         const k = 0.5 + 0.5*Math.sin(t*1.6);
         const bg = mixRGB([10,4,0],[255,120,20], k);
-        p.background(bg[0],bg[1],bg[2], 235);
+        p.background(bg[0],bg[1],bg[2]);
       } else {
-        p.background(0,0,0, 235);
+        p.background(0);
       }
+
+      // ---- 170 screen-space emoji (BEHIND 3D, ABOVE background) ----
+      if (atom.style.pearl170 && emojiTex) {
+        p.push();
+        p.resetMatrix();     // identity
+        p.ortho();           // 2D
+        p.tint(255, 165);    // ~65% opacity
+        const w = p.width * 0.33;                 // 1/3 screen width
+        const h = w * (emojiTex.height/emojiTex.width);
+        const x = (p.width - w) * 0.5;            // centered
+        const y = p.height * 0.12;                // upper third
+        p.image(emojiTex, x, y, w, h);
+        p.pop();
+      }
+      // ---------------------------------------------------------------
 
       // Camera
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
@@ -1032,7 +1039,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new46
+// new47
 // Boot
 loadLatest();
 </script>
