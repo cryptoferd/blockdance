@@ -9,6 +9,8 @@
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);
             font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
+  /* Stacking: bg (body black) -> emojiLayer (z:1) -> WEBGL (z:2) -> UI (z:30+) */
+  #emojiLayer{position:fixed;inset:0;z-index:1;display:block;pointer-events:none}
   canvas.p5canvas{position:fixed;inset:0;z-index:2;display:block;touch-action:none}
 
   .uiRoot{position:fixed;inset:0;z-index:30;opacity:1;visibility:visible;pointer-events:none}
@@ -66,6 +68,9 @@
 </style>
 </head>
 <body>
+
+<!-- Fixed 2D emoji layer (behind WEBGL atoms, above black background) -->
+<canvas id="emojiLayer"></canvas>
 
 <div class="uiRoot show" id="uiRoot">
   <div class="hud" id="hud">
@@ -158,8 +163,6 @@ void main(){
     pos += nrm * ripple * length(aPosition);
   }
 
-  // Fireball (m==9): no surface expansion (particles provide the effect)
-
   vPos=pos; vNormal=normalize(pos);
   gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
 }`;
@@ -251,7 +254,7 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==9){ // Fireball orb: translucent shell (particles do the fire)
+  } else if(m==9){ // Fireball translucent shell
     vec3 base = mix(colA, colB, 0.35);
     col = base*(0.28+0.72*ndl) + vec3(1.0)*rim*0.08;
   } else {
@@ -449,15 +452,102 @@ class FireParticles{
   }
 }
 
-/* ---------- emoji texture for #170 ---------- */
-let emojiTex = null;
-function makeEmojiTex(p){
-  const g = p.createGraphics(1024, 512);
-  g.clear();
-  g.textAlign(g.CENTER, g.CENTER);
-  g.textSize(420);
-  g.text('🤝', g.width/2, g.height/2);
-  return g;
+/* ---------- offscreen emoji paint for #170 ---------- */
+const emojiLayer = document.getElementById('emojiLayer');
+const eCtx = emojiLayer.getContext('2d');
+function resizeEmojiLayer(){
+  const dpr = Math.max(1, window.devicePixelRatio||1);
+  emojiLayer.width = Math.floor(innerWidth * dpr);
+  emojiLayer.height = Math.floor(innerHeight * dpr);
+  emojiLayer.style.width = innerWidth+'px';
+  emojiLayer.style.height = innerHeight+'px';
+  eCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+resizeEmojiLayer();
+window.addEventListener('resize', resizeEmojiLayer);
+
+function drawHandshakeOverlay(enabled){
+  eCtx.clearRect(0,0,emojiLayer.width,emojiLayer.height);
+  if(!enabled) return;
+  const W = innerWidth, H = innerHeight;
+  eCtx.save();
+  eCtx.globalAlpha = 0.65;            // ~65% opacity
+  eCtx.textAlign = 'center';
+  eCtx.textBaseline = 'middle';
+  // Size: ~1/3 screen width
+  const targetW = W * 0.33;
+  // Emoji roughly square; scale font so glyph width ~= targetW
+  eCtx.font = `${Math.floor(targetW)}px system-ui, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji`;
+  const x = W/2;
+  const y = H*0.18;                   // upper third-ish
+  eCtx.fillText('🤝', x, y);
+  eCtx.restore();
+}
+
+/* ---------- build atom ---------- */
+function prngFromHex(hex){
+  const c=(hex||'').replace(/[^0-9a-fA-F]/g,''); let acc=0;
+  for(let i=0;i<c.length;i+=2){ acc = (acc*131 + parseInt(c.substr(i,2),16))>>>0; }
+  return XS32(acc||1);
+}
+function paletteFromBlock(height, hash, merkle){
+  const rng = XS32((height*2654435761)>>>0);
+  const rHash = prngFromHex(hash||''); const rMerk = prngFromHex(merkle||'');
+
+  const golden = 137.50776405003785;
+  let baseHue = mod((height * golden) + rng()*180 + rHash()*60 - 30, 360);
+
+  const sepA = 120 + (rMerk()*30-15);
+  const sepB = 240 + (rHash()*40-20);
+
+  const sP = 0.88 + 0.10*rng(); const lP = 0.52 + 0.08*rMerk();
+  const sN = 0.90 + 0.08*rng(); const lN = 0.50 + 0.10*rHash();
+  const sE = 0.96;               const lE = 0.56 + 0.08*rng();
+  const sS = 0.90;               const lS = 0.55 + 0.10*rng();
+
+  const hE = baseHue;
+  const hP = mod(baseHue + sepA, 360);
+  const hN = mod(baseHue + sepB, 360);
+  const hS = mod(hE + 180 + (rng()*40-20), 360);
+
+  return {
+    proton:  hslToRgb(hP/360, sP, lP),
+    neutron: hslToRgb(hN/360, sN, lN),
+    electron:hslToRgb(hE/360, sE, lE),
+    shell:   hslToRgb(hS/360, sS, lS)
+  };
+}
+function diversityFromBlock(b){
+  const h=b.height|0, mr=b.merkle_root||'', id=b.id||b.hash||'';
+  const rA=prngFromHex(mr), rB=prngFromHex(id);
+  return {
+    famA: rA(), famB: rB(),
+    orbitSpreadJ: 1.0 + (rB()*0.16 - 0.08),
+    eccBiasJ:     (rA()*0.18 - 0.09),
+    sizeScaleJ:   1.0 + (rB()*0.20 - 0.10),
+    countJitter:  (byteAt(mr,5)%21)-10
+  };
+}
+function chooseSetModesFromBlock(b, diversity){
+  const nonce=b.nonce||0, bits=b.bits||0, h=b.height|0;
+  const famOrder = [[1,5,7],[3,6,9],[0,2,4,8]];
+  famOrder.sort((a,bk)=>((h+bits+nonce)%3)-1);
+  const eFam = famOrder[0], pFam = famOrder[1], nFam = famOrder[2];
+  const eMode = eFam[Math.floor(mod(diversity.famA*(eFam.length+1), eFam.length))];
+  let pMode   = pFam[Math.floor(mod(diversity.famB*0.73 + 0.11, 1)*pFam.length)];
+  let nMode   = nFam[Math.floor(mod(diversity.famB*0.41 + diversity.famA*0.33, 1)*nFam.length)];
+  if(pMode===eMode){ pMode = pFam[Math.floor(mod(diversity.famB*0.29 + 0.37,1)*pFam.length)]; }
+  if(nMode===eMode || nMode===pMode){ nMode = nFam[Math.floor(mod(diversity.famA*0.61 + 0.23,1)*nFam.length)]; }
+  const sD=lastByte(b.id||b.hash||'');
+  return { protons:pMode, neutrons:nMode, electrons:eMode, rings:(sD%3) };
+}
+const isPalindromeHeight = (h)=>{ const s=String(h); return s===s.split('').reverse().join(''); };
+
+function fillShells(e){
+  let shells=[],rem=Math.max(0,e|0),n=1;
+  while(rem>0&&shells.length<8){ const cap=2*n*n; const take=Math.min(rem,cap); shells.push(take); rem-=take; n++; }
+  if(rem>0) shells.push(rem);
+  return shells;
 }
 
 /* ---------- build atom ---------- */
@@ -603,6 +693,9 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
+  // emoji layer per-block
+  drawHandshakeOverlay(atom.style.pearl170);
+
   // palindrome helpers
   const eDir=[], eTurns=[];
   for(let i=0;i<atom.shells.length;i++){
@@ -649,8 +742,8 @@ function startSketch(blk){
       cnv.canvas.classList.add('p5canvas');
       cnv.canvas.addEventListener('contextmenu', e=>e.preventDefault());
       cnv.canvas.addEventListener('auxclick',  e=>e.preventDefault());
-      // Opaque canvas (faster; emoji is drawn inside the canvas)
-      p.setAttributes('alpha', false);
+      // Transparent WEBGL so the emoji layer is visible beneath
+      p.setAttributes('alpha', true);
       p.setAttributes('antialias', true);
 
       try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }
@@ -659,8 +752,6 @@ function startSketch(blk){
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
       fire = new FireParticles(p, 900);
-
-      if(!emojiTex) emojiTex = makeEmojiTex(p);
 
       const canvasEl = cnv.canvas;
       if(canvasEl){
@@ -716,7 +807,7 @@ function startSketch(blk){
       }
     };
 
-    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); };
+    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeEmojiLayer(); drawHandshakeOverlay(atom.style.pearl170); };
 
     p.mousePressed=(e)=>{ lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; interactionMode = (dragButton===p.RIGHT)?'panzoom':'rotate'; };
     p.mouseReleased=()=>{ interactionMode='none'; };
@@ -953,29 +1044,12 @@ function startSketch(blk){
       const t=p.millis()*0.001;
       const dt=Math.max(0.001, Math.min(0.05, p.deltaTime/1000));
 
-      // Background
-      if(atom.style.halving){
-        const k = 0.5 + 0.5*Math.sin(t*1.6);
-        const bg = mixRGB([10,4,0],[255,120,20], k);
-        p.background(bg[0],bg[1],bg[2]);
-      } else {
-        p.background(0);
-      }
+      // Transparent clear (so emojiLayer shows through)
+      p.clear();
 
-      // ---- 170 screen-space emoji (BEHIND 3D, ABOVE background) ----
-      if (atom.style.pearl170 && emojiTex) {
-        p.push();
-        p.resetMatrix();     // identity
-        p.ortho();           // 2D
-        p.tint(255, 165);    // ~65% opacity
-        const w = p.width * 0.33;                 // 1/3 screen width
-        const h = w * (emojiTex.height/emojiTex.width);
-        const x = (p.width - w) * 0.5;            // centered
-        const y = p.height * 0.12;                // upper third
-        p.image(emojiTex, x, y, w, h);
-        p.pop();
-      }
-      // ---------------------------------------------------------------
+      // For halving background pulse, tint the emoji layer’s backdrop subtly if desired,
+      // but we’ll keep it simple: leave body black, rings get gold pulse.
+      // (If you want the orange pulsing background again, we can paint it on emojiLayer.)
 
       // Camera
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
@@ -986,10 +1060,11 @@ function startSketch(blk){
       if(![cx,cy,cz].every(Number.isFinite)){ camTarget=[0,0,0]; }
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // idle coin-spin
+      // idle spin
       modelSpin += 0.16 * dt;
       p.push(); p.rotateY(modelSpin);
 
+      // Rings / Nucleus / Electrons / Fire
       drawRings(t);
       drawNucleus(t);
       drawElectrons(t);
@@ -1001,14 +1076,25 @@ function startSketch(blk){
     };
   };
 
-  const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='1'; document.body.appendChild(container);
+  const container=document.createElement('div'); container.style.position='fixed'; container.style.inset='0'; container.style.zIndex='2'; document.body.appendChild(container);
   p5Instance=new p5(sketch, container);
 }
 
 /* ---------- networking / buttons / boot ---------- */
 const API='https://mempool.space/api';
-async function fetchText(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();}
-async function fetchJSON(u){const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();}
+async function fetchText(u){
+  try{
+    const r=await fetch(u);
+    if(!r.ok) throw new Error(r.status+' '+u);
+    return (await r.text()).trim();
+  }catch(err){
+    console.warn('fetchText error:', err);
+    throw err;
+  }
+}
+async function fetchJSON(u){
+  const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();
+}
 
 const progress = $('#progress');
 function showProgress(msg){ progress.style.display='block'; progress.textContent=msg; }
@@ -1035,11 +1121,11 @@ async function loadLatest(){
 
 loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ showProgress('Error: '+e.message); }};
 latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ showProgress('Error: '+e.message); }};
-resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0]; modelSpin=0; interactionMode='none'; };
+resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0]; modelSpin=0; interactionMode='none'; drawHandshakeOverlay(false); };
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new47
+// new48
 // Boot
 loadLatest();
 </script>
