@@ -577,7 +577,7 @@ function buildAtomFromBlock(b){
   return { block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
     shader:{amp:animAmp,speed:animSpeed,blockPhase},
     setModes: baseSet,
-    style:{ eSizeScale:clamp((1.0*diversity.sizeScaleJ) * ((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90),0.7,2.0),
+    style:{ eSizeScale:clamp((1.0*diversity.sizeScaleJ) * ((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,2.0)),
       ringThick, ringAlpha, ringColor, halving, pearl170:isPearl170, is1337, palindrome,
       nucleusTight: tightness } };
 }
@@ -659,7 +659,6 @@ function startSketch(blk){
   drawHandshakeOverlay(atom.style.pearl170);
 
   // per-170 merge state
-  // id -> { partner, started, until, state:'merge'|'post', midStart:[x,y,z], postUntil:time }
   atom._merge = new Map();
   atom._lastCollCheck = 0;
 
@@ -981,14 +980,10 @@ function startSketch(blk){
 
       // -------- Pass 2: collision detection (only for #170) --------
       if(atom.style.pearl170){
-        // Clean expired records done implicitly (we handle in render)
-
-        // Throttle checks (every ~5 frames)
         if(t - atom._lastCollCheck > 0.08){
           atom._lastCollCheck = t;
 
-          // Spatial hash (coarse)
-          const cell = 12; // world units per cell
+          const cell = 12;
           const buckets = new Map();
           const put = (key, idx)=>{ const arr=buckets.get(key)||[]; arr.push(idx); buckets.set(key,arr); };
 
@@ -1002,8 +997,8 @@ function startSketch(blk){
             const dx=a[0]-b[0], dy=a[1]-b[1], dz=a[2]-b[2];
             return Math.sqrt(dx*dx+dy*dy+dz*dz);
           };
-          const MERGE_DIST = 9.0;    // distance to trigger merge
-          const MERGE_TIME = 2.0;    // total seconds in merge state
+          const MERGE_DIST = 9.0;
+          const MERGE_TIME = 2.0;
 
           for(const arr of buckets.values()){
             for(let x=0; x<arr.length; x++){
@@ -1018,14 +1013,13 @@ function startSketch(blk){
 
                 const d = dist(A.pt, B.pt);
                 if(d <= MERGE_DIST){
-                  // Record with starting mid for smooth-in
                   const midStart = [(A.pt[0]+B.pt[0])/2,(A.pt[1]+B.pt[1])/2,(A.pt[2]+B.pt[2])/2];
                   const until = t + MERGE_TIME;
                   const recAB = { partner: idB, started: t, until, state: 'merge', midStart, postUntil: 0 };
                   const recBA = { partner: idA, started: t, until, state: 'merge', midStart, postUntil: 0 };
                   atom._merge.set(idA, recAB);
                   atom._merge.set(idB, recBA);
-                  break; // A is merged; move on
+                  break;
                 }
               }
             }
@@ -1053,13 +1047,11 @@ function startSketch(blk){
             const mate = idxById.get(pid);
             if(!mate){ atom._merge.delete(id); continue; }
 
-            // smooth-in merge phases
             const uRaw = (t - rec.started) / (rec.until - rec.started);
             const u = Math.max(0, Math.min(1, uRaw));
-            const ease = 0.5 - 0.5 * Math.cos(Math.PI * u); // cosine ease 0..1
-            const joinT = 0.5; // fraction of merge time spent approaching midpoint
+            const ease = 0.5 - 0.5 * Math.cos(Math.PI * u);
+            const joinT = 0.5;
 
-            // Midpoint blends slightly toward current mid to avoid visible drift
             const liveMid = [(it.pt[0]+mate.pt[0])/2,(it.pt[1]+mate.pt[1])/2,(it.pt[2]+mate.pt[2])/2];
             const mid = [
               rec.midStart[0]*(1-0.35) + liveMid[0]*0.35,
@@ -1068,9 +1060,8 @@ function startSketch(blk){
             ];
 
             if(u < joinT){
-              // Phase A: two orbs smoothly move toward midpoint
-              const a = u / joinT;               // 0..1
-              const aEase = 1 - Math.cos(a*Math.PI*0.5); // ease-in
+              const a = u / joinT;
+              const aEase = 1 - Math.cos(a*Math.PI*0.5);
 
               const Apos = [
                 it.pt[0]*(1-aEase) + mid[0]*aEase,
@@ -1083,9 +1074,8 @@ function startSketch(blk){
                 mate.pt[2]*(1-aEase) + mid[2]*aEase
               ];
 
-              const rGrow = it.r * (1.0 + 0.2*aEase); // slight puff while approaching
+              const rGrow = it.r * (1.0 + 0.2*aEase);
 
-              // Draw both (to avoid leader flicker)
               p.push(); p.translate(Apos[0],Apos[1],Apos[2]);
               drawOrbMat(it.cA, it.cB, rGrow, t, 1.0, eMode, it.objSeed, electronDetail);
               p.pop();
@@ -1100,10 +1090,9 @@ function startSketch(blk){
               drawn.add(id); drawn.add(pid);
               continue;
             } else if(u < 1.0){
-              // Phase B: single merged orb at mid, grows to 2x by end of window
-              const v = (u - joinT) / (1 - joinT);      // 0..1
+              const v = (u - joinT) / (1 - joinT);
               const vEase = 0.5 - 0.5*Math.cos(Math.PI * v);
-              const rNow = it.r * (1.2 + 0.8*vEase);     // 1.2x -> 2.0x
+              const rNow = it.r * (1.2 + 0.8*vEase);
               drawCA = mixRGB(it.cA, mate.cA, 0.5);
               drawCB = mixRGB(it.cB, mate.cB, 0.5);
 
@@ -1115,9 +1104,15 @@ function startSketch(blk){
               drawn.add(id); drawn.add(pid);
               continue;
             } else {
-              // Transition to post-ease-back stage
-              rec.state='post';
-              rec.postUntil = t + 0.6;
+              // ---- FIX: move BOTH to 'post' state with shared postUntil ----
+              const mateRec = atom._merge.get(pid);
+              const postUntil = t + 0.6;
+              rec.state = 'post';
+              rec.postUntil = postUntil;
+              if (mateRec) {
+                mateRec.state = 'post';
+                mateRec.postUntil = postUntil;
+              }
               // Fall through to 'post' branch this frame
             }
           }
@@ -1130,11 +1125,10 @@ function startSketch(blk){
           const mate = idxById.get(pid);
           if(!mate){ atom._merge.delete(id); }
           else{
-            // leader draws both easing back to their CURRENT orbital positions
             const leader = (id < pid) ? id : pid;
             if(id === leader){
               const liveMid = [(it.pt[0]+mate.pt[0])/2,(it.pt[1]+mate.pt[1])/2,(it.pt[2]+mate.pt[2])/2];
-              const u = 1.0 - (recPost.postUntil - t)/0.6;         // 0..1
+              const u = 1.0 - (recPost.postUntil - t)/0.6;
               const easeOut = 1.0 - Math.pow(1.0 - Math.max(0,Math.min(1,u)), 3.0);
 
               const Apos = [
@@ -1148,7 +1142,7 @@ function startSketch(blk){
                 liveMid[2]*(1-easeOut) + mate.pt[2]*easeOut
               ];
 
-              const rNow = it.r * (2.0 - easeOut); // 2.0 -> 1.0
+              const rNow = it.r * (2.0 - easeOut);
               const glowStrength = Math.max(0, 0.6 * (1.0 - easeOut));
 
               p.push(); p.translate(Apos[0],Apos[1],Apos[2]);
@@ -1162,14 +1156,12 @@ function startSketch(blk){
               drawSoftGlowAt(p, Bpos[0],Bpos[1],Bpos[2], rNow*1.1, mate.cA, glowStrength);
 
               drawn.add(id); drawn.add(pid);
-              // cleanup when finished
               if(t >= recPost.postUntil){
                 atom._merge.delete(id);
                 atom._merge.delete(pid);
               }
               continue;
             } else {
-              // partner skips; leader renders both
               continue;
             }
           }
