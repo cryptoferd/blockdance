@@ -659,7 +659,8 @@ function startSketch(blk){
   drawHandshakeOverlay(atom.style.pearl170);
 
   // per-170 merge state
-  atom._merge = new Map();   // id -> { partner, started, until, state:'merge'|'post', lastMid, sepDir, postUntil }
+  // id -> { partner, started, until, state:'merge'|'post', midStart:[x,y,z], postUntil:time }
+  atom._merge = new Map();
   atom._lastCollCheck = 0;
 
   // palindrome helpers
@@ -980,16 +981,7 @@ function startSketch(blk){
 
       // -------- Pass 2: collision detection (only for #170) --------
       if(atom.style.pearl170){
-        // Clean expired records
-        for(const [id, rec] of atom._merge){
-          if(!rec) { atom._merge.delete(id); continue; }
-          if(rec.state==='merge' && t >= rec.until){
-            // will convert to 'post' in render stage
-          }
-          if(rec.state==='post' && t >= rec.postUntil){
-            atom._merge.delete(id);
-          }
-        }
+        // Clean expired records done implicitly (we handle in render)
 
         // Throttle checks (every ~5 frames)
         if(t - atom._lastCollCheck > 0.08){
@@ -1006,12 +998,12 @@ function startSketch(blk){
             put(k, idx);
           }
 
-          const near = (a,b)=> {
+          const dist = (a,b)=> {
             const dx=a[0]-b[0], dy=a[1]-b[1], dz=a[2]-b[2];
             return Math.sqrt(dx*dx+dy*dy+dz*dz);
           };
           const MERGE_DIST = 9.0;    // distance to trigger merge
-          const MERGE_TIME = 2.0;    // seconds merged
+          const MERGE_TIME = 2.0;    // total seconds in merge state
 
           for(const arr of buckets.values()){
             for(let x=0; x<arr.length; x++){
@@ -1024,11 +1016,13 @@ function startSketch(blk){
                 const idB = eID(B.i,B.j);
                 if(atom._merge.has(idB)) continue;
 
-                const d = near(A.pt, B.pt);
+                const d = dist(A.pt, B.pt);
                 if(d <= MERGE_DIST){
+                  // Record with starting mid for smooth-in
+                  const midStart = [(A.pt[0]+B.pt[0])/2,(A.pt[1]+B.pt[1])/2,(A.pt[2]+B.pt[2])/2];
                   const until = t + MERGE_TIME;
-                  const recAB = { partner: idB, started: t, until, state: 'merge', lastMid: null, sepDir: null, postUntil: 0 };
-                  const recBA = { partner: idA, started: t, until, state: 'merge', lastMid: null, sepDir: null, postUntil: 0 };
+                  const recAB = { partner: idB, started: t, until, state: 'merge', midStart, postUntil: 0 };
+                  const recBA = { partner: idA, started: t, until, state: 'merge', midStart, postUntil: 0 };
                   atom._merge.set(idA, recAB);
                   atom._merge.set(idB, recBA);
                   break; // A is merged; move on
@@ -1051,118 +1045,137 @@ function startSketch(blk){
         let drawPt = it.pt.slice();
         let drawR  = it.r;
         let drawCA = it.cA, drawCB = it.cB;
-        let leaderId = id;
 
         if(atom.style.pearl170){
           const rec = atom._merge.get(id);
-
           if(rec){
             const pid = rec.partner;
             const mate = idxById.get(pid);
             if(!mate){ atom._merge.delete(id); continue; }
 
-            leaderId = (id < pid) ? id : pid;
-            if(rec.state === 'merge'){
-              if(id !== leaderId){ /* partner draws */ }
-              if(t < rec.until && id === leaderId){
-                const mid = [
-                  (it.pt[0] + mate.pt[0]) * 0.5,
-                  (it.pt[1] + mate.pt[1]) * 0.5,
-                  (it.pt[2] + mate.pt[2]) * 0.5
-                ];
-                drawPt = mid;
-                const u = (t - rec.started) / (rec.until - rec.started);
-                const easeInOut = 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, u)));
-                drawR = it.r * (1.0 + easeInOut * 1.0); // up to 2x
-                drawCA = mixRGB(it.cA, mate.cA, 0.5);
-                drawCB = mixRGB(it.cB, mate.cB, 0.5);
+            // smooth-in merge phases
+            const uRaw = (t - rec.started) / (rec.until - rec.started);
+            const u = Math.max(0, Math.min(1, uRaw));
+            const ease = 0.5 - 0.5 * Math.cos(Math.PI * u); // cosine ease 0..1
+            const joinT = 0.5; // fraction of merge time spent approaching midpoint
 
-                p.push(); p.translate(drawPt[0],drawPt[1],drawPt[2]);
-                drawOrbMat(drawCA, drawCB, drawR, t, 1.0, eMode, it.objSeed, electronDetail);
-                p.pop();
-                const glowStrength = 0.6 + 0.6 * easeInOut;
-                drawSoftGlowAt(p, drawPt[0],drawPt[1],drawPt[2], drawR*1.2, drawCA, glowStrength);
+            // Midpoint blends slightly toward current mid to avoid visible drift
+            const liveMid = [(it.pt[0]+mate.pt[0])/2,(it.pt[1]+mate.pt[1])/2,(it.pt[2]+mate.pt[2])/2];
+            const mid = [
+              rec.midStart[0]*(1-0.35) + liveMid[0]*0.35,
+              rec.midStart[1]*(1-0.35) + liveMid[1]*0.35,
+              rec.midStart[2]*(1-0.35) + liveMid[2]*0.35,
+            ];
 
-                drawn.add(leaderId); drawn.add(pid);
-                continue;
-              } else if(t >= rec.until && id === leaderId){
-                // transition to post
-                const sep = [
-                  it.pt[0] - mate.pt[0],
-                  it.pt[1] - mate.pt[1],
-                  it.pt[2] - mate.pt[2]
-                ];
-                const L = Math.hypot(sep[0],sep[1],sep[2]) || 1;
-                const dir = [sep[0]/L, sep[1]/L, sep[2]/L];
-                const mid = [
-                  (it.pt[0] + mate.pt[0]) * 0.5,
-                  (it.pt[1] + mate.pt[1]) * 0.5,
-                  (it.pt[2] + mate.pt[2]) * 0.5
-                ];
+            if(u < joinT){
+              // Phase A: two orbs smoothly move toward midpoint
+              const a = u / joinT;               // 0..1
+              const aEase = 1 - Math.cos(a*Math.PI*0.5); // ease-in
 
-                rec.state='post';
-                rec.lastMid = mid;
-                rec.sepDir  = dir;
-                rec.postUntil = t + 0.6;
+              const Apos = [
+                it.pt[0]*(1-aEase) + mid[0]*aEase,
+                it.pt[1]*(1-aEase) + mid[1]*aEase,
+                it.pt[2]*(1-aEase) + mid[2]*aEase
+              ];
+              const Bpos = [
+                mate.pt[0]*(1-aEase) + mid[0]*aEase,
+                mate.pt[1]*(1-aEase) + mid[1]*aEase,
+                mate.pt[2]*(1-aEase) + mid[2]*aEase
+              ];
 
-                const recMate = atom._merge.get(pid);
-                if(recMate){
-                  recMate.state='post';
-                  recMate.lastMid = mid;
-                  recMate.sepDir  = [-dir[0], -dir[1], -dir[2]];
-                  recMate.postUntil = rec.postUntil;
-                }
-              }
+              const rGrow = it.r * (1.0 + 0.2*aEase); // slight puff while approaching
+
+              // Draw both (to avoid leader flicker)
+              p.push(); p.translate(Apos[0],Apos[1],Apos[2]);
+              drawOrbMat(it.cA, it.cB, rGrow, t, 1.0, eMode, it.objSeed, electronDetail);
+              p.pop();
+
+              p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]);
+              drawOrbMat(mate.cA, mate.cB, rGrow, t, 1.0, eMode, mate.objSeed, electronDetail);
+              p.pop();
+
+              const glowStrength = 0.4 * aEase;
+              drawSoftGlowAt(p, mid[0],mid[1],mid[2], rGrow*1.1, mixRGB(it.cA,mate.cA,0.5), glowStrength);
+
+              drawn.add(id); drawn.add(pid);
+              continue;
+            } else if(u < 1.0){
+              // Phase B: single merged orb at mid, grows to 2x by end of window
+              const v = (u - joinT) / (1 - joinT);      // 0..1
+              const vEase = 0.5 - 0.5*Math.cos(Math.PI * v);
+              const rNow = it.r * (1.2 + 0.8*vEase);     // 1.2x -> 2.0x
+              drawCA = mixRGB(it.cA, mate.cA, 0.5);
+              drawCB = mixRGB(it.cB, mate.cB, 0.5);
+
+              p.push(); p.translate(mid[0],mid[1],mid[2]);
+              drawOrbMat(drawCA, drawCB, rNow, t, 1.0, eMode, it.objSeed, electronDetail);
+              p.pop();
+              drawSoftGlowAt(p, mid[0],mid[1],mid[2], rNow*1.2, drawCA, 0.9);
+
+              drawn.add(id); drawn.add(pid);
+              continue;
+            } else {
+              // Transition to post-ease-back stage
+              rec.state='post';
+              rec.postUntil = t + 0.6;
+              // Fall through to 'post' branch this frame
             }
+          }
+        }
 
-            if(rec.state === 'post' && id === leaderId){
-              if(t < rec.postUntil){
-                const u = 1.0 - (rec.postUntil - t)/0.6;
-                const ease = 1.0 - Math.pow(1.0 - u, 3.0);
-                const spread = 8.0 * ease;
+        // ----- POST (ease back to orbit) -----
+        const recPost = atom.style.pearl170 ? atom._merge.get(id) : null;
+        if(recPost && recPost.state==='post'){
+          const pid = recPost.partner;
+          const mate = idxById.get(pid);
+          if(!mate){ atom._merge.delete(id); }
+          else{
+            // leader draws both easing back to their CURRENT orbital positions
+            const leader = (id < pid) ? id : pid;
+            if(id === leader){
+              const liveMid = [(it.pt[0]+mate.pt[0])/2,(it.pt[1]+mate.pt[1])/2,(it.pt[2]+mate.pt[2])/2];
+              const u = 1.0 - (recPost.postUntil - t)/0.6;         // 0..1
+              const easeOut = 1.0 - Math.pow(1.0 - Math.max(0,Math.min(1,u)), 3.0);
 
-                const Apos = [
-                  rec.lastMid[0] - rec.sepDir[0]*spread,
-                  rec.lastMid[1] - rec.sepDir[1]*spread,
-                  rec.lastMid[2] - rec.sepDir[2]*spread
-                ];
-                const Bpos = [
-                  rec.lastMid[0] + rec.sepDir[0]*spread,
-                  rec.lastMid[1] + rec.sepDir[1]*spread,
-                  rec.lastMid[2] + rec.sepDir[2]*spread
-                ];
+              const Apos = [
+                liveMid[0]*(1-easeOut) + it.pt[0]*easeOut,
+                liveMid[1]*(1-easeOut) + it.pt[1]*easeOut,
+                liveMid[2]*(1-easeOut) + it.pt[2]*easeOut
+              ];
+              const Bpos = [
+                liveMid[0]*(1-easeOut) + mate.pt[0]*easeOut,
+                liveMid[1]*(1-easeOut) + mate.pt[1]*easeOut,
+                liveMid[2]*(1-easeOut) + mate.pt[2]*easeOut
+              ];
 
-                const scaleNow = 2.0 - ease; // 2→1
-                const rA = it.r*scaleNow, rB = mate.r*scaleNow;
+              const rNow = it.r * (2.0 - easeOut); // 2.0 -> 1.0
+              const glowStrength = Math.max(0, 0.6 * (1.0 - easeOut));
 
-                const glowStrength = Math.max(0, 0.6 * (1.0 - u));
+              p.push(); p.translate(Apos[0],Apos[1],Apos[2]);
+              drawOrbMat(it.cA, it.cB, rNow, t, 1.0, eMode, it.objSeed, electronDetail);
+              p.pop();
+              drawSoftGlowAt(p, Apos[0],Apos[1],Apos[2], rNow*1.1, it.cA, glowStrength);
 
-                p.push(); p.translate(Apos[0],Apos[1],Apos[2]);
-                drawOrbMat(it.cA, it.cB, rA, t, 1.0, eMode, it.objSeed, electronDetail);
-                p.pop();
-                drawSoftGlowAt(p, Apos[0],Apos[1],Apos[2], rA*1.15, it.cA, glowStrength);
+              p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]);
+              drawOrbMat(mate.cA, mate.cB, rNow, t, 1.0, eMode, mate.objSeed, electronDetail);
+              p.pop();
+              drawSoftGlowAt(p, Bpos[0],Bpos[1],Bpos[2], rNow*1.1, mate.cA, glowStrength);
 
-                p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]);
-                drawOrbMat(mate.cA, mate.cB, rB, t, 1.0, eMode, mate.objSeed, electronDetail);
-                p.pop();
-                drawSoftGlowAt(p, Bpos[0],Bpos[1],Bpos[2], rB*1.15, mate.cA, glowStrength);
-
-                drawn.add(leaderId);
-                drawn.add(pid);
-                continue;
-              } else {
-                // cleanup happens in detection phase
+              drawn.add(id); drawn.add(pid);
+              // cleanup when finished
+              if(t >= recPost.postUntil){
+                atom._merge.delete(id);
+                atom._merge.delete(pid);
               }
-            }
-
-            if(id !== leaderId){
-              // partner will draw in merge/post
+              continue;
+            } else {
+              // partner skips; leader renders both
               continue;
             }
           }
         }
 
-        // Standard render (no merge/post)
+        // ----- Standard render (no merge/post) -----
         p.push(); p.translate(drawPt[0],drawPt[1],drawPt[2]);
         drawOrbMat(drawCA, drawCB, drawR, t, 1.0, eMode, it.objSeed, electronDetail);
         p.pop();
@@ -1268,7 +1281,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new51
+// new52
 // Boot
 loadLatest();
 </script>
