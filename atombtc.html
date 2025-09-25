@@ -52,6 +52,14 @@
         background:rgba(7,10,14,0.6);border:1px solid #24313b;border-radius:10px;padding:7px 10px;pointer-events:none;transition:opacity .4s ease}
   #hint.hide{opacity:0}
 
+  /* 170 overlay emoji */
+  #emoji170{
+    position:fixed; left:0; right:0;
+    top:12%; text-align:center; z-index:2; pointer-events:none;
+    font-size:33vw; line-height:0.9; opacity:0.65; filter:drop-shadow(0 0 18px rgba(255,255,255,0.12));
+    display:none;
+  }
+
   @media (max-width: 800px){
     .hud{
       left:8px; right:8px; top:8px;
@@ -61,6 +69,7 @@
     .hud .sep{display:none}
     #legend{left:8px; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
     details#blockPanel, #infoPanel{left:8px; right:8px; max-width:none}
+    #emoji170{ font-size:40vw; top:10%; }
   }
 </style>
 </head>
@@ -93,6 +102,7 @@
   <details id="infoPanel"  class="panel"></details>
 </div>
 
+<div id="emoji170">🤝</div>
 <div id="progress">…</div>
 <div id="hint">Press <b>E</b> (desktop) or <b>double-tap</b> the scene (mobile) to show / hide the UI</div>
 
@@ -158,7 +168,6 @@ void main(){
   }
 
   // Fireball (m==9): keep orb size (no surface expansion)
-  if(m==9){}
 
   vPos=pos; vNormal=normalize(pos);
   gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
@@ -295,29 +304,23 @@ function prngFromHex(hex){
   return XS32(acc||1);
 }
 function paletteFromBlock(height, hash, merkle){
-  // Brighter palette, bigger separations, per-atom jitter
   const rng = XS32((height*2654435761)>>>0);
   const rHash = prngFromHex(hash||''); const rMerk = prngFromHex(merkle||'');
 
   const golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng()*180 + rHash()*60 - 30, 360);
 
-  // large separations (~120° triadic/compl) + jitter
-  const sepA = 120 + (rMerk()*30-15);   // ±15°
-  const sepB = 240 + (rHash()*40-20);   // ±20°
+  const sepA = 120 + (rMerk()*30-15);
+  const sepB = 240 + (rHash()*40-20);
 
-  // Saturation and lightness tuned for vibrancy
   const sP = 0.88 + 0.10*rng(); const lP = 0.52 + 0.08*rMerk();
   const sN = 0.90 + 0.08*rng(); const lN = 0.50 + 0.10*rHash();
   const sE = 0.96;               const lE = 0.56 + 0.08*rng();
   const sS = 0.90;               const lS = 0.55 + 0.10*rng();
 
-  // Assign hues (electrons get base, others spread around it)
   const hE = baseHue;
   const hP = mod(baseHue + sepA, 360);
   const hN = mod(baseHue + sepB, 360);
-
-  // Shell/ring: contrast against electrons (complement w/ jitter)
   const hS = mod(hE + 180 + (rng()*40-20), 360);
 
   return {
@@ -331,17 +334,15 @@ function diversityFromBlock(b){
   const h=b.height|0, mr=b.merkle_root||'', id=b.id||b.hash||'';
   const rA=prngFromHex(mr), rB=prngFromHex(id);
   return {
-    // biases for style families (0..1)
     famA: rA(), famB: rB(),
-    // geometry/behavior jitter (small)
-    orbitSpreadJ: 1.0 + (rB()*0.16 - 0.08),   // ±8%
-    eccBiasJ:     (rA()*0.18 - 0.09),         // ±0.09 added pre-clamp
-    sizeScaleJ:   1.0 + (rB()*0.20 - 0.10),   // ±10%
-    countJitter:  (byteAt(mr,5)%21)-10        // ±10 electrons/protons jiggle
+    orbitSpreadJ: 1.0 + (rB()*0.16 - 0.08),
+    eccBiasJ:     (rA()*0.18 - 0.09),
+    sizeScaleJ:   1.0 + (rB()*0.20 - 0.10),
+    countJitter:  (byteAt(mr,5)%21)-10
   };
 }
 
-/* ---------- mode picking with diversity (keeps sets distinct) ---------- */
+/* ---------- mode picking (distinct sets) ---------- */
 const MODE_LIST=['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Fireball'];
 const FAMILY_BUCKETS = [
   [1,5,7],    // glossy / iridescent / metallic
@@ -349,32 +350,39 @@ const FAMILY_BUCKETS = [
   [0,2,4,8]   // stylized: marble / wireframe / toon / sky
 ];
 function pickFromWeighted(bucket, bias){
-  // rotate the bucket by bias to diversify
   const idx = Math.floor(mod(bias * (bucket.length+1), bucket.length));
   return bucket[idx];
 }
 function chooseSetModesFromBlock(b, diversity){
   const nonce=b.nonce||0, bits=b.bits||0, h=b.height|0;
-  // weight families by biases; we pick different families for sets to force contrast
   const famOrder = [...FAMILY_BUCKETS];
-  // simple shuffle seeded by height
   famOrder.sort((a,bk)=>((h+bits+nonce)%3)-1);
-
   const eFam = famOrder[0], pFam = famOrder[1], nFam = famOrder[2];
   const eMode = pickFromWeighted(eFam, diversity.famA);
   let pMode   = pickFromWeighted(pFam, diversity.famB*0.73 + 0.11);
   let nMode   = pickFromWeighted(nFam, diversity.famB*0.41 + diversity.famA*0.33);
-
-  // Ensure distinctness (fallbacks)
   if(pMode===eMode){ pMode = pickFromWeighted(pFam, diversity.famB*0.29 + 0.37); }
   if(nMode===eMode || nMode===pMode){ nMode = pickFromWeighted(nFam, diversity.famA*0.61 + 0.23); }
-
   const sD=lastByte(b.id||b.hash||'');
   return { protons:pMode, neutrons:nMode, electrons:eMode, rings:(sD%3) };
 }
 const isPalindromeHeight = (h)=>{ const s=String(h); return s===s.split('').reverse().join(''); };
 
-/* ---------- FireParticles (longer life, upward, translucent) ---------- */
+/* ---------- shells helper (exposed once) ---------- */
+window.fillShells = window.fillShells || function (e) {
+  let shells = [], rem = Math.max(0, e|0), n = 1;
+  while (rem > 0 && shells.length < 8) {
+    const cap = 2 * n * n;
+    const take = Math.min(rem, cap);
+    shells.push(take);
+    rem -= take;
+    n++;
+  }
+  if (rem > 0) shells.push(rem);
+  return shells;
+};
+
+/* ---------- FireParticles ---------- */
 class FireParticles{
   constructor(p, maxCount=900){
     this.p=p; this.max=maxCount;
@@ -455,19 +463,6 @@ class FireParticles{
     p.pop();
   }
 }
-// Quick fix: electron shell filling (2n² rule, clamped to ~8 shells)
-window.fillShells = window.fillShells || function (e) {
-  let shells = [], rem = Math.max(0, e|0), n = 1;
-  while (rem > 0 && shells.length < 8) {
-    const cap = 2 * n * n;
-    const take = Math.min(rem, cap);
-    shells.push(take);
-    rem -= take;
-    n++;
-  }
-  if (rem > 0) shells.push(rem);
-  return shells;
-};
 
 /* ---------- build atom ---------- */
 function buildAtomFromBlock(b){
@@ -477,14 +472,13 @@ function buildAtomFromBlock(b){
   const diversity = diversityFromBlock(b);
   const colors=paletteFromBlock(height, hash, merkleRoot);
 
-  // counts with slightly wider jitter (seeded)
   const baseE=(height%118)+1, eJitter=((byteAt(hash,5)%64)-32) + diversity.countJitter;
   const electrons=clamp(baseE+eJitter, 6, 200);
 
-  const protonBias=((byteAt(merkleRoot,9)%37)-18); // was ±15 → now ±18
+  const protonBias=((byteAt(merkleRoot,9)%37)-18);
   const Z=clamp(baseE+protonBias, 6, 180);
 
-  const neutronSkew=((byteAt(hash,2)%121)-60)/170; // slightly wider skew range
+  const neutronSkew=((byteAt(hash,2)%121)-60)/170;
   const N=clamp(Math.round(Z*(1.0+neutronSkew)) + (hexByteSum(merkleRoot)%23)-11, 6, 240);
 
   const shells=fillShells(electrons);
@@ -499,7 +493,6 @@ function buildAtomFromBlock(b){
   const orbitSpread=(1.0+((version&0xf)-7.5)*0.01) * diversity.orbitSpreadJ;
   const radii=shells.map((_,i)=>(NUCLEUS_R0*1.3+SHELL_STEP*(i+1))*orbitSpread);
 
-  // rings: use paletteFromBlock shell color; also keep old slight hue shift by last byte
   const hashLast=lastByte(hash);
   const ringThick=1.0, ringAlpha=230;
   const ringColor=shiftHue(colors.shell, (hashLast/255-0.5)*24);
@@ -525,9 +518,8 @@ function buildAtomFromBlock(b){
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset,objSeed});
   }
 
-  // shaders & styles
   const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
-  const isPearl170 = height===170;
+  const isPearl170 = height===170;        // special treatment
   const is1337  = height===1337;
   const halving = (!isPearl170) && (height>0 && height%210000===0);
   const palindrome = isPalindromeHeight(height);
@@ -554,7 +546,7 @@ function injectPanels(atom){
   const body=document.createElement('div'); body.id='blkBody';
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
   [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);});
-  if(atom.style.pearl170){ const c=document.createElement('span'); c.className='chip'; c.textContent='🫧 #170 Pearlescent'; chips.appendChild(c); }
+  if(atom.style.pearl170){ const c=document.createElement('span'); c.className='chip'; c.textContent='🤝 #170 Iridescent'; chips.appendChild(c); }
   else if(atom.style.is1337){ const c=document.createElement('span'); c.className='chip'; c.textContent='🟩 1337 Neon'; chips.appendChild(c); }
   else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
   if(atom.style.palindrome){ const c=document.createElement('span'); c.className='chip'; c.textContent='↔ Palindromic Ping-Pong'; chips.appendChild(c); }
@@ -594,11 +586,6 @@ let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
 let interactionMode='none';
 let modelSpin = 0;
 
-// ✅ Replace the second "const MODE_LIST = [...]" with this:
-if (!('MODE_LIST' in window)) {
-  window.MODE_LIST = ['Marble','Glass','Wireframe','Lava','Toon','Iridescent','Spikes','Metallic','Sky','Fireball'];
-}
-
 let overrides = { proton:null, neutron:null, electron:null };
 function populateSelectors(){
   const opts = MODE_LIST.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
@@ -619,6 +606,9 @@ function startSketch(blk){
 
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
+
+  // Toggle #170 emoji overlay
+  $('#emoji170').style.display = atom.style.pearl170 ? 'block' : 'none';
 
   // palindrome helpers
   const eDir=[], eTurns=[];
@@ -657,7 +647,7 @@ function startSketch(blk){
     if(!isFiniteVec(camTarget)) camTarget=[0,0,0];
   }
 
-  // --- Fire particle system (global to this sketch) ---
+  // Fire system
   let fire = new FireParticles(p5.prototype, 900);
 
   const sketch=(p)=>{
@@ -674,7 +664,6 @@ function startSketch(blk){
 
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
-      // bind fire system to real renderer p5 instance
       fire = new FireParticles(p, 900);
 
       const canvasEl = cnv.canvas;
@@ -711,7 +700,7 @@ function startSketch(blk){
             camDist = clamp(limited, minCamDist, maxCamDist);
             pinchPrev = d;
 
-            const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientY+t1.clientY)/2;
+            const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientX+t1.clientX)/2;
             if(twoPrevMid){
               const dx = midX - twoPrevMid[0]; const dy = midY - twoPrevMid[1];
               const {right, up} = camBasis(camYaw, camPitch);
@@ -758,8 +747,8 @@ function startSketch(blk){
 
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed,detail){
       const m=Math.max(0,Math.min(10,(mode|0)));
-      const a = (m===1) ? (alpha * 0.12)     // Glass: very thin
-              : (m===9) ? (alpha * 0.55)     // Fireball: translucent shell
+      const a = (m===1) ? (alpha * 0.12)
+              : (m===9) ? (alpha * 0.55)
               :           alpha;
 
       if(orbShader && shaderLinked){
@@ -770,9 +759,9 @@ function startSketch(blk){
           orbShader.setUniform('uTime', t);
           orbShader.setUniform('uAlpha', a);
           orbShader.setUniform('uModeF', m*1.0);
-          orbShader.setUniform('uPhase', atom.shader.blockPhase||0.0);
-          orbShader.setUniform('uAmp', atom.shader.amp||0.25);
-          orbShader.setUniform('uSpeed', atom.shader.speed||0.9);
+          orbShader.setUniform('uPhase', 0.0);
+          orbShader.setUniform('uAmp', 0.25);
+          orbShader.setUniform('uSpeed', 0.9);
           orbShader.setUniform('uObjSeed', seed||0.0);
           p.sphere(r, detail[0], detail[1]);
           p.resetShader();
@@ -817,7 +806,6 @@ function startSketch(blk){
       p.pop();
     }
 
-    // fire emit helper
     function emitFireAt(x,y,z, nx,ny,nz, cA, cB, isFire){
       if(!isFire) return;
       fire.spawn(x,y,z, nx,ny,nz, cA, cB);
@@ -827,7 +815,12 @@ function startSketch(blk){
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
 
-      // Make nucleons visually related to electrons but notably distinct (offset hues)
+      // 170 override: both iridescent + pulse
+      if(atom.style.pearl170){
+        protonMode = 5; neutronMode = 5;
+      }
+
+      // default nucleon palettes (related to electron but distinct)
       let cP_A = shiftHue(atom.colors.electron, -35), cP_B = shiftHue(atom.colors.electron, -5);
       let cN_A = shiftHue(atom.colors.electron, +45),  cN_B = shiftHue(atom.colors.electron, +75);
 
@@ -837,8 +830,9 @@ function startSketch(blk){
         cN_A = [255,160,40]; cN_B = [255,160,40];
       }
 
-      let sizePulse = 1.0;
       let drawSoftGlow = false;
+      let sizePulse = 1.0;
+
       if(atom.style.halving){
         protonMode = 7; neutronMode = 7;
         cP_A = [212,172,55]; cP_B = [255,220,120];
@@ -846,14 +840,12 @@ function startSketch(blk){
         sizePulse = 1.0 + 0.05*Math.sin(t*2.0);
         drawSoftGlow = true;
       }
-
       if(atom.style.pearl170){
-        protonMode  = 1; neutronMode = 1;
-        cP_A = [245,245,255]; cP_B = [235,235,255];
-        cN_A = [250,240,255]; cN_B = [235,235,250];
+        // pearl: subtle per-nucleon pulsing
+        sizePulse = 1.0 + 0.06*Math.sin(t*1.6);
       }
 
-      // Soft translucent glow for halving
+      // Halving soft glow (very translucent)
       if(drawSoftGlow){
         const gl = p._renderer.GL;
         p.push(); p.noStroke(); p.blendMode(p.ADD); gl.depthMask(false);
@@ -868,27 +860,31 @@ function startSketch(blk){
         gl.depthMask(true); p.blendMode(p.BLEND); p.pop();
       }
 
+      const nucleonDetailLocal = nucleonDetail;
+
       for(const q of atom.nucleusPoints){
         p.push();
         let x=q.x, y=q.y, z=q.z;
+
+        // small positional swirl for 170 (kept light for perf)
         if(atom.style.pearl170){
-          const swirl = 0.35 * Math.sin(t*0.6 + q.objSeed*6.28);
+          const swirl = 0.22 * Math.sin(t*0.9 + q.objSeed*6.28);
           const cs=Math.cos(swirl), sn=Math.sin(swirl);
           const rx = x*cs - z*sn, rz = x*sn + z*cs;
-          const breathe = 1.0 + 0.06*Math.sin(t*1.3 + q.objSeed*4.0 + (q.isProton?0.0:1.2));
-          x=rx*breathe; y=y*breathe; z=rz*breathe;
+          x=rx; z=rz;
         }
-        p.translate(x,y,z);
-        const nx = x/(vlen([x,y,z])||1), ny = y/(vlen([x,y,z])||1), nz = z/(vlen([x,y,z])||1);
 
+        p.translate(x,y,z);
+
+        const nx = x/(vlen([x,y,z])||1), ny = y/(vlen([x,y,z])||1), nz = z/(vlen([x,y,z])||1);
         const isFireP = (overrides.proton ?? atom.setModes.protons)===9;
         const isFireN = (overrides.neutron?? atom.setModes.neutrons)===9;
 
         if(q.isProton){
-          drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed, nucleonDetail);
+          drawOrbMat(cP_A,cP_B,NUCLEON_R*sizePulse,t,1.0,protonMode,q.objSeed, nucleonDetailLocal);
           emitFireAt(x,y,z, nx,ny,nz, cP_A,cP_B, isFireP);
         }else{
-          drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed, nucleonDetail);
+          drawOrbMat(cN_A,cN_B,NUCLEON_R*sizePulse,t,1.0,neutronMode,q.objSeed, nucleonDetailLocal);
           emitFireAt(x,y,z, nx,ny,nz, cN_A,cN_B, isFireN);
         }
         p.pop();
@@ -908,7 +904,8 @@ function startSketch(blk){
         sizeScale *= 1.0 + 0.08*Math.sin(t*2.0);
       }
       if(atom.style.pearl170){
-        eMode = 1; baseColA=[245,245,255]; baseColB=[230,235,255];
+        eMode = 5; // iridescent
+        sizeScale *= 1.0 + 0.10*Math.sin(t*1.8); // pulsing electrons
       }
 
       const isFireE = (overrides.electron ?? atom.setModes.electrons)===9;
@@ -923,7 +920,7 @@ function startSketch(blk){
           if(atom.style.pearl170){
             a *= 1.0 + 0.06*Math.sin(t*0.9 + m.objSeed*3.0);
             b *= 1.0 + 0.06*Math.cos(t*1.1 + m.objSeed*4.1);
-            pre *= 0.8;
+            pre *= 0.88;
           }
 
           const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
@@ -987,7 +984,6 @@ function startSketch(blk){
       drawNucleus(t);
       drawElectrons(t);
 
-      // update + draw fire particles
       fire.update(dt);
       fire.draw();
 
@@ -1033,7 +1029,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new44
+// new45
 // Boot
 loadLatest();
 </script>
