@@ -545,6 +545,7 @@ function buildAtomFromBlock(b){
   const ringThick=1.0, ringAlpha=230;
   const ringColor=shiftHue(colors.shell, (hashLast/255-0.5)*24);
 
+  // --- electrons (angles + meta) ---
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){ electronAngles[i]=[]; eMeta[i]=[];
     for(let j=0;j<shells[i];j++){
@@ -566,6 +567,17 @@ function buildAtomFromBlock(b){
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset,objSeed});
   }
 
+  // ---- SAFE size/weight handling to avoid NaNs ----
+  const safeSize   = Number.isFinite(size)   && size   > 0 ? size   : 1_000_000; // 1 MB fallback
+  const safeWeight = Number.isFinite(weight) && weight > 0 ? weight : safeSize * 4;
+
+  const activity   = safeWeight - 2.8e6;
+  const norm01     = clamp(activity / (4.0e6 - 2.8e6), 0, 1); // 0..1
+  const baseScale  = 0.90 + norm01 * (1.50 - 0.90);          // 0.9..1.5
+
+  // keep diversity jitter but clamp hard
+  const eSizeScale = clamp(diversity.sizeScaleJ * baseScale, 0.7, 2.0);
+
   const animAmp=0.35, animSpeed=0.9; const blockPhase=(byteAt(merkleRoot,7)/255)*Math.PI*2;
   const isPearl170 = height===170;
   const is1337  = height===1337;
@@ -577,7 +589,7 @@ function buildAtomFromBlock(b){
   return { block:b,height,Z,N,electrons,shells,radii,speeds,electronAngles,eMeta,nucleusPoints,colors,
     shader:{amp:animAmp,speed:animSpeed,blockPhase},
     setModes: baseSet,
-    style:{ eSizeScale:clamp((1.0*diversity.sizeScaleJ) * ((((b.weight||b.size*4)-2.8e6)/(4.0e6-2.8e6))*(1.50-0.90)+0.90,0.7,2.0)),
+    style:{ eSizeScale,
       ringThick, ringAlpha, ringColor, halving, pearl170:isPearl170, is1337, palindrome,
       nucleusTight: tightness } };
 }
@@ -803,6 +815,9 @@ function startSketch(blk){
               : (m===9) ? (alpha * 0.55)
               :           alpha;
 
+      // NEW: guard radius against NaN/Infinity/<=0
+      const rr = (Number.isFinite(r) && r > 0) ? r : 3.4;
+
       if(orbShader && shaderLinked){
         try{
           p.noStroke(); p.shader(orbShader);
@@ -815,7 +830,7 @@ function startSketch(blk){
           orbShader.setUniform('uAmp', 0.25);
           orbShader.setUniform('uSpeed', 0.9);
           orbShader.setUniform('uObjSeed', seed||0.0);
-          p.sphere(r, detail[0], detail[1]);
+          p.sphere(rr, detail[0], detail[1]);
           p.resetShader();
           return;
         }catch(e){
@@ -831,7 +846,7 @@ function startSketch(blk){
       p.ambientMaterial(cA[0], cA[1], cA[2], Math.round(255*a));
       p.specularMaterial(60,60,60);
       p.shininess(12);
-      p.sphere(r, Math.max(16, detail[0]-8), Math.max(10, detail[1]-6));
+      p.sphere(rr, Math.max(16, detail[0]-8), Math.max(10, detail[1]-6));
     }
 
     function drawRings(t){
@@ -971,8 +986,11 @@ function startSketch(blk){
           const cA=mixRGB(baseColA, baseColB, mixT);
           const cB=baseColB;
 
+          // Clamp electron radius to sane value
+          const rElectron = Math.max(0.8, ELECTRON_R * sizeScale);
+
           info.push({
-            i,j, pt, r: ELECTRON_R*sizeScale, cA, cB,
+            i,j, pt, r: rElectron, cA, cB,
             objSeed: m.objSeed, baseSpeed, m
           });
         }
@@ -1092,7 +1110,7 @@ function startSketch(blk){
             } else if(u < 1.0){
               const v = (u - joinT) / (1 - joinT);
               const vEase = 0.5 - 0.5*Math.cos(Math.PI * v);
-              const rNow = it.r * (1.2 + 0.8*vEase);
+              const rNow = it.r * (2.0 + 0.0*vEase); // already big
               drawCA = mixRGB(it.cA, mate.cA, 0.5);
               drawCB = mixRGB(it.cB, mate.cB, 0.5);
 
@@ -1104,7 +1122,7 @@ function startSketch(blk){
               drawn.add(id); drawn.add(pid);
               continue;
             } else {
-              // ---- FIX: move BOTH to 'post' state with shared postUntil ----
+              // ---- move BOTH to 'post' state with shared postUntil ----
               const mateRec = atom._merge.get(pid);
               const postUntil = t + 0.6;
               rec.state = 'post';
@@ -1273,7 +1291,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new52
+// new53
 // Boot
 loadLatest();
 </script>
