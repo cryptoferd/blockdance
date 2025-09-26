@@ -121,7 +121,7 @@ const TAU = Math.PI*2;
 const isFiniteVec = v => v.every(Number.isFinite);
 const smoothstep = (a,b,x)=>{const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t);};
 const hsv2rgb_js = (h,s,v)=>{ let i=Math.floor(h*6), f=h*6-i, p=v*(1-s), q=v*(1-f*s), t=v*(1-(1-f)*s), r,g,b;
-  switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;case 5:r=v;g=p;b=q;break;}
+  switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;case 5:r=v;g=p;b*q;break;}
   return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
 };
 const eID = (i,j) => `${i}:${j}`;
@@ -533,15 +533,14 @@ function buildAtomFromBlock(b){
 
   const shells=fillShells(electrons);
 
-  /* ---- Fee-rate–driven speed scale ---- */
+  /* ---- Fee-rate–driven speed scale (stronger mapping) ---- */
   let speedScale;
   if (b.__feeStats && b.__feeStats.count > 0) {
     const metric = (Number(b.__feeStats.p90) || Number(b.__feeStats.median) || Number(b.__feeStats.avg) || 1);
-    // sat/vB can range from ~1 to hundreds. Map log10(1+metric) in [0..~3] to [0.25..4.5].
-    const L = Math.log10(1 + Math.max(0, metric));
-    speedScale = clamp(0.25 + (L/3.0)*4.25, 0.25, 4.5);
+    const L = Math.log(1 + Math.max(0, metric)) / Math.log(1 + 500); // normalize vs 500 sat/vB
+    speedScale = clamp(0.25 + L * 6.25, 0.25, 6.5); // 0.25x .. 6.5x
   } else {
-    // Fallback to old heuristic
+    // Fallback to old heuristic if fee stats missing
     const prod=Math.max(1, txCount*Math.max(1,size)); const lg=Math.log10(prod);
     speedScale=clamp((lg-8.6)/(10.7-8.6)*(2.2-0.55)+0.55, 0.55, 2.2);
   }
@@ -571,7 +570,6 @@ function buildAtomFromBlock(b){
     } }
   const base=(timestamp%600)/600, noiseSeed=(nonce%997)/997;
 
-  // Per-shell base speed in radians per frame; scaled by fee-rate
   const speeds=shells.map((_,i)=> (0.004 + 0.015*((Math.sin((base+i*0.137+noiseSeed)*43758.5453)*0.5+0.5))) * speedScale);
 
   const totalNuc=Math.min(900,Z+N), nucleusPoints=[]; for(let i=0;i<totalNuc;i++){
@@ -635,7 +633,6 @@ function injectPanels(atom){
     ['Merkle root', shortHash(blk.merkle_root)]
   ];
 
-  // Fee-rate stats in panel (if present)
   if (blk.__feeStats && blk.__feeStats.count>0) {
     const fs = blk.__feeStats;
     const fmt = v => (v==null ? 'n/a' : (v.toFixed(2)+' sat/vB'));
@@ -680,7 +677,7 @@ selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Numbe
 selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); };
 selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); };
 
-/* ---- 170 merge state machine constants ---- */
+/* ---- 170 merge state machine constants (kept) ---- */
 const MERGE_DIST   = 9.0;
 const MERGE_DUR    = 0.45;
 const MERGED_HOLD  = 0.80;
@@ -872,7 +869,6 @@ function startSketch(blk){
     function drawRings(t){
       p.push();
       if(atom.style.pearl170){
-        // Swirling ROYGBIV (NO pulsing)
         const swirlSpeed = 0.25;
         const segsBase   = 96;
         for(let i=0;i<atom.shells.length;i++){
@@ -1043,14 +1039,11 @@ function startSketch(blk){
         }
       }
 
-      // No special merging here (logic omitted for brevity in this snippet block);
-      // your previous #170 merging logic remains below in the draw loop.
       const drawn = new Set();
       for(const it of info){
         const id = eID(it.i,it.j);
         if(drawn.has(id)) continue;
 
-        // Normal draw (merging code lives below — unchanged)
         p.push(); p.translate(it.pt[0],it.pt[1],it.pt[2]);
         drawOrbMat(it.cA, it.cB, it.r, t, 1.0, eMode, it.objSeed, electronDetail);
         p.pop();
@@ -1060,7 +1053,6 @@ function startSketch(blk){
         drawn.add(id);
       }
 
-      // Advance angles (includes palindrome flip if enabled)
       for(let i=0;i<atom.shells.length;i++){
         for(let j=0;j<atom.shells[i];j++){
           const m=atom.eMeta[i][j];
@@ -1132,20 +1124,16 @@ async function fetchJSON(u){
   const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();
 }
 
-/* --- NEW: gather per-tx fee rates (sat/vB) and summarize --- */
+/* --- CLEAN: gather per-tx fee rates (sat/vB) without console errors --- */
 async function fetchBlockFeeStats(blockHash){
   const perTxRates=[];
   let page=0;
   while(true){
     const url = `${API}/block/${blockHash}/txs/${page}`;
-    let arr;
-    try{
-      arr = await fetchJSON(url);
-    }catch(e){
-      // /txs/{n} returns 400 when out of range -> stop
-      if(String(e.message).startsWith('400')) break;
-      throw e;
-    }
+    const r = await fetch(url);
+    if (r.status === 400) break;          // out of range -> stop paging silently
+    if (!r.ok) throw new Error(r.status+' '+url);
+    const arr = await r.json();
     if(!Array.isArray(arr) || arr.length===0) break;
     for(const tx of arr){
       const fee = Number(tx.fee)||0;
@@ -1181,7 +1169,7 @@ async function loadBlockByHeight(height){
     showProgress('Fetching header…');
     const blk=await fetchJSON(API+'/block/'+hash);
 
-    // NEW: fetch fee rate stats and attach to block object
+    // fetch fee rate stats and attach to block object
     showProgress('Computing fee-rate stats… (paging transactions)');
     try{
       blk.__feeStats = await fetchBlockFeeStats(hash);
@@ -1209,7 +1197,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new65 (fee-rate scaled orbits)
+// new66 (fee-rate scaled orbits — stronger & clean pager)
 loadLatest();
 </script>
 </body>
