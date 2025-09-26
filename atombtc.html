@@ -9,6 +9,7 @@
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);
             font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
+  /* Stacking: bg (body black) -> emojiLayer (z:1) -> WEBGL (z:2) -> UI (z:30+) */
   #emojiLayer{position:fixed;inset:0;z-index:1;display:block;pointer-events:none}
   canvas.p5canvas{position:fixed;inset:0;z-index:2;display:block;touch-action:none}
 
@@ -55,8 +56,11 @@
   #hint.hide{opacity:0}
 
   @media (max-width: 800px){
-    .hud{ left:8px; right:8px; top:8px;
-      display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px; font-size:13px }
+    .hud{
+      left:8px; right:8px; top:8px;
+      display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px;
+      font-size:13px
+    }
     .hud .sep{display:none}
     #legend{left:8px; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
     details#blockPanel, #infoPanel{left:8px; right:8px; max-width:none}
@@ -65,6 +69,7 @@
 </head>
 <body>
 
+<!-- Fixed 2D emoji layer (behind WEBGL atoms, above black background) -->
 <canvas id="emojiLayer"></canvas>
 
 <div class="uiRoot show" id="uiRoot">
@@ -136,7 +141,7 @@ float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
 vec3 u=f*f*(3.0-2.0*f);
 float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
 float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
-float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
+float n0=mix(n00,n10,u.y), float n1=mix(n01,n11,u.y);
 return mix(n0,n1,u.z);}
 float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0.5;}return s;}
 void main(){
@@ -191,7 +196,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
 
-  if(m==1){ // Glass / pearlescent (FIXED: define reflectCol)
+  if(m==1){ // Glass / pearlescent
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
     float micro = fbm(normalize(vPos)*5.0 + vec3(0.0,t*0.12,0.0) + vec3(uObjSeed*1.7));
@@ -203,7 +208,7 @@ void main(){
     vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
     float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
     vec3 shellTint = mix(vec3(1.0), swirl, 0.15);
-    vec3 reflectCol = mix(vec3(0.98), swirl, 0.6); // <— added
+    vec3 reflectCol = mix(vec3(0.98), swirl, 0.6);
     col = shellTint*0.03 + reflectCol * (0.02 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
   } else if(m==0){ // Marble
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
@@ -271,10 +276,13 @@ function camBasis(yaw, pitch){
   const cp=Math.cos(pitch), sp=Math.sin(pitch);
   const forward=[ sy*cp, sp, cy*cp ];
   const upW=[0,1,0];
-  let right=[ forward[1]*upW[2] - forward[2]*upW[1], forward[2]*upW[0] - forward[0]*upW[2], forward[0]*upW[1] - forward[1]*upW[0] ];
+  let right=[ forward[1]*upW[2] - forward[2]*upW[1],
+              forward[2]*upW[0] - forward[0]*upW[2],
+              forward[0]*upW[1] - forward[1]*upW[0] ];
   const rl=Math.hypot(right[0],right[1],right[2])||1;
   right=[ right[0]/rl, right[1]/rl, right[2]/rl ];
-  let up=[ right[1]*forward[2] - right[2]*forward[1], right[2]*forward[0] - right[0]*forward[2] ];
+  let up=[ right[1]*forward[2] - right[2]*forward[1],
+           right[2]*forward[0] - right[0]*forward[2] ];
   const ul=Math.hypot(up[0],up[1],up[2])||1;
   up=[ up[0]/ul, up[1]/ul, up[2]/ul ];
   return {forward,right,up};
@@ -451,23 +459,28 @@ window.addEventListener('resize', resizeEmojiLayer);
 const HANDSHAKE_WIDTH_FRAC = 0.20;
 const HANDSHAKE_Y_FRAC     = 0.35;
 const HANDSHAKE_OPACITY    = 0.65;
+
 function drawHandshakeOverlay(enabled){
   eCtx.clearRect(0,0,emojiLayer.width,emojiLayer.height);
   if(!enabled) return;
   const W = innerWidth, H = innerHeight;
+
   eCtx.save();
   eCtx.globalAlpha = HANDSHAKE_OPACITY;
   eCtx.textAlign = 'center';
   eCtx.textBaseline = 'middle';
+
   const targetW = W * HANDSHAKE_WIDTH_FRAC;
   eCtx.font = `${Math.floor(targetW)}px system-ui, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji`;
+
   const x = W * 0.5;
   const y = H * HANDSHAKE_Y_FRAC;
+
   eCtx.fillText('🤝', x, y);
   eCtx.restore();
 }
 
-/* ---------- soft glow helper ---------- */
+/* ---------- soft glow helper (used also for late overlay) ---------- */
 function drawSoftGlowAt(p5, x,y,z, baseR, rgb, strength=1.0){
   const gl = p5._renderer.GL;
   p5.push();
@@ -617,7 +630,7 @@ function injectPanels(atom){
 }
 
 /* ---------- p5 + inputs + draw ---------- */
-let p5Instance=null, orbShader=null, shaderLinked=false;
+let p5Instance=null, orbShader=null, shaderLinked=true; // try shader every frame; fail per-frame on error
 let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
 let minCamDist=140, maxCamDist=20000;
 let lastX=0, lastY=0, dragButton=0;
@@ -637,7 +650,7 @@ selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Numbe
 selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); };
 selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); };
 
-/* ---- 170 merge constants ---- */
+/* ---- 170 merge constants (kept for 170 mode) ---- */
 const MERGE_DIST=9.0, MERGE_DUR=0.45, MERGED_HOLD=0.80, UNMERGE_DUR=0.60;
 
 /* ===== SPECIAL: 228940 helpers ===== */
@@ -693,9 +706,6 @@ function startSketch(blk){
 
   drawHandshakeOverlay(atom.style.pearl170);
 
-  atom._merge = new Map();
-  atom._lastCollCheck = 0;
-
   const eDir=[], eTurns=[];
   for(let i=0;i<atom.shells.length;i++){
     eDir[i]=[]; eTurns[i]=[];
@@ -708,6 +718,7 @@ function startSketch(blk){
   maxCamDist = 30000;
   const maxPan = Math.max(200, largestRadius * 2.2);
 
+  // detail LOD
   const totalElectrons = atom.electrons;
   const totalNucleons  = Math.min(900, atom.Z + atom.N);
   function detailFor(count, baseU, baseV){
@@ -721,17 +732,8 @@ function startSketch(blk){
   let nucleonDetail  = detailFor(totalNucleons,  44, 30);
   if(atom.style.pearl170){ electronDetail=[22,16]; nucleonDetail=[20,14]; }
 
-  function clampCamTarget(){
-    const L = Math.hypot(camTarget[0],camTarget[1],camTarget[2]);
-    const lim = maxPan;
-    if(!Number.isFinite(L) || L>lim){
-      const s = Number.isFinite(L)&&L>0 ? (lim/L) : 0;
-      camTarget[0]*=s; camTarget[1]*=s; camTarget[2]*=s;
-    }
-    if(!isFiniteVec(camTarget)) camTarget=[0,0,0];
-  }
-
-  let fire = new FireParticles(p5.prototype, 900);
+  // deferred glow overlay (for #228940)
+  let deferredGlow = null;
 
   const sketch=(p)=>{
     p.setup=()=>{
@@ -744,15 +746,14 @@ function startSketch(blk){
 
       try{
         orbShader=p.createShader(VERT,FRAG);
-        // extra safety: if p5 failed to link, the internal program can be falsy
-        shaderLinked = !!(orbShader && orbShader._glProgram);
+        shaderLinked=true; // always attempt; we catch per-frame errors
       }catch(e){
-        orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e);
+        console.warn('Shader creation failed:',e);
+        orbShader=null; shaderLinked=false;
       }
 
-      p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
-
-      fire = new FireParticles(p, 900);
+      p.ambientLight(120);
+      p.directionalLight(255,255,255,0.5,0.6,0.4);
 
       const canvasEl = cnv.canvas;
       if(canvasEl){
@@ -797,7 +798,6 @@ function startSketch(blk){
                           ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
                           ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
               camTarget[0]+=add[0]; camTarget[1]+=add[1]; camTarget[2]+=add[2];
-              clampCamTarget();
             }
             twoPrevMid=[midX,midY];
           }
@@ -823,8 +823,6 @@ function startSketch(blk){
                     ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
                     ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
         camTarget[0]+=add[0]; camTarget[1]+=add[1]; camTarget[2]+=add[2];
-        if(!isFiniteVec(add) || !isFiniteVec(camTarget)){ camTarget=[0,0,0]; }
-        clampCamTarget();
       }
     };
     p.mouseWheel=(e)=>{ const s = Math.exp(e.deltaY * 0.0012); camDist = clamp(camDist * s, minCamDist, maxCamDist); e.preventDefault(); };
@@ -836,8 +834,7 @@ function startSketch(blk){
               :           alpha;
       const rr = (Number.isFinite(r) && r > 0) ? r : 3.4;
 
-      // only use shader if it exists AND linked
-      if(orbShader && shaderLinked && orbShader._glProgram){
+      if(orbShader && shaderLinked){
         try{
           p.noStroke(); p.shader(orbShader);
           orbShader.setUniform('uColorA', cA.map(v=>v/255));
@@ -853,8 +850,8 @@ function startSketch(blk){
           p.resetShader();
           return;
         }catch(e){
-          console.warn('Shader draw error — fallback:',e);
-          shaderLinked=false; orbShader=null;
+          // Soft-disable for this frame only; next frame will try again
+          console.warn('Shader draw error—using fallback this frame:', e);
         }
       }
 
@@ -900,27 +897,26 @@ function startSketch(blk){
       p.pop();
     }
 
-    function emitFireAt(x,y,z, nx,ny,nz, cA, cB, isFire){ if(!isFire) return; fire.spawn(x,y,z, nx,ny,nz, cA, cB); }
-
     function drawNucleus(t){
+      // Reset deferred overlay each frame
+      deferredGlow = null;
+
       if(atom.style.specialCrosshair){
-        // Translucent red center — no depth write so bullets show through
-        const gl = p._renderer.GL;
+        // Draw a small red orb that DOES write depth (a tangible center),
+        // and queue a big halo overlay to draw AFTER everything (non-occluding).
         p.push();
         p.resetShader();
         p.noStroke();
         p.ambientLight(80);
         p.directionalLight(255,255,255,0.6,0.7,0.5);
-        gl.depthMask(false);
-        p.blendMode(p.BLEND);
-        p.ambientMaterial(255,60,60, 110);
+        p.ambientMaterial(255,60,60, 140);
         p.specularMaterial(255,160,160);
         p.shininess(40);
         p.sphere(NUCLEON_R, 26, 18);
-        gl.depthMask(true);
-        p.blendMode(p.BLEND);
         p.pop();
-        drawSoftGlowAt(p,0,0,0,NUCLEUS_R0*0.85,[255,60,60],0.7);
+
+        // queue glow for end-of-frame overlay
+        deferredGlow = { x:0,y:0,z:0, r:NUCLEUS_R0*0.85, color:[255,60,60], strength:0.7 };
         return;
       }
 
@@ -940,7 +936,7 @@ function startSketch(blk){
       let drawNucGlow = false, sizePulse = 1.0;
       if(atom.style.halving){ protonMode=7; neutronMode=7; cP_A=[212,172,55]; cP_B=[255,220,120]; cN_A=cP_A; cN_B=cP_B; sizePulse=1.0+0.05*Math.sin(t*2.0); drawNucGlow=true; }
       if(atom.style.pearl170){ sizePulse=1.0+0.06*Math.sin(t*1.6); }
-      if(drawNucGlow){ drawSoftGlowAt(p, 0,0,0, NUCLEUS_R0*1.05, [255,200,90], 1.0); }
+      if(drawNucGlow){ deferredGlow = { x:0,y:0,z:0, r:NUCLEUS_R0*1.05, color:[255,200,90], strength:1.0 }; }
 
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
@@ -974,7 +970,7 @@ function startSketch(blk){
             drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble);
             p.pop();
 
-            // second bullet 180° apart
+            // second bullet 180° apart (double the count)
             const th2 = th + Math.PI;
             const pt2=vadd(vmul(v,a*Math.cos(th2)), vmul(w,b*Math.sin(th2)));
             const d2 = vadd( vmul(v,-a*Math.sin(th2)), vmul(w, b*Math.cos(th2)) );
@@ -992,6 +988,7 @@ function startSketch(blk){
         return;
       }
 
+      // Normal atoms
       let eMode = (overrides.electron ?? atom.setModes.electrons);
       let sizeScale = atom.style.eSizeScale;
       let baseColA = atom.colors.electron, baseColB = atom.style.ringColor;
@@ -999,8 +996,6 @@ function startSketch(blk){
       if(atom.style.is1337){ eMode = 2; baseColA=[60,255,130]; baseColB=[60,255,130]; }
       if(atom.style.halving){ eMode = 7; baseColA=[210,215,220]; baseColB=[240,245,250]; sizeScale *= 1.0 + 0.08*Math.sin(t*2.0); }
       if(atom.style.pearl170){ eMode = 5; sizeScale *= 1.0 + 0.25*(0.5+0.5*Math.sin(t*9.0)); }
-
-      const isFireE = (overrides.electron ?? atom.setModes.electrons)===9;
 
       const info = [];
       for(let i=0;i<atom.shells.length;i++){
@@ -1036,13 +1031,14 @@ function startSketch(blk){
     p.draw=()=>{
       const t=p.millis()*0.001;
       const dt=Math.max(0.001, Math.min(0.05, p.deltaTime/1000));
+
       p.clear();
+
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
       p.perspective(fovy,aspect,near,far);
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
       const cy=camTarget[1]+camDist*Math.sin(camPitch);
       const cz=camTarget[2]+camDist*Math.cos(camPitch)*Math.cos(camYaw);
-      if(![cx,cy,cz].every(Number.isFinite)){ camTarget=[0,0,0]; }
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
       modelSpin += 0.16 * dt;
@@ -1053,6 +1049,14 @@ function startSketch(blk){
       drawRings(t);
       drawNucleus(t);
       drawElectrons(t);
+
+      // Draw any deferred glow LAST with depth testing DISABLED so it never hides bullets
+      if(deferredGlow){
+        const gl = p._renderer.GL;
+        gl.disable(gl.DEPTH_TEST);
+        drawSoftGlowAt(p, deferredGlow.x,deferredGlow.y,deferredGlow.z, deferredGlow.r, deferredGlow.color, deferredGlow.strength);
+        gl.enable(gl.DEPTH_TEST);
+      }
 
       p.pop();
     };
@@ -1107,8 +1111,9 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
+// boot
+// new62
 loadLatest();
-// new61
 </script>
 </body>
 </html>
