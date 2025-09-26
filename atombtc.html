@@ -120,6 +120,23 @@ const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*
 const TAU = Math.PI*2;
 const isFiniteVec = v => v.every(Number.isFinite);
 const smoothstep = (a,b,x)=>{const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t);};
+const hsv2rgb_js = (h,s,v)=>{ // h in [0,1)
+  let i = Math.floor(h*6);
+  let f = h*6 - i;
+  let p = v*(1-s);
+  let q = v*(1-f*s);
+  let t = v*(1-(1-f)*s);
+  let r,g,b;
+  switch(i%6){
+    case 0: r=v,g=t,b=p; break;
+    case 1: r=q,g=v,b=p; break;
+    case 2: r=p,g=v,b=t; break;
+    case 3: r=p,g=q,b=v; break;
+    case 4: r=t,g=p,b=v; break;
+    case 5: r=v,g=p,b=q; break;
+  }
+  return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+};
 
 /* helpers for 170 merge */
 const eID = (i,j) => `${i}:${j}`;
@@ -661,16 +678,6 @@ const MERGE_DIST   = 9.0;   // triggers merging
 const MERGE_DUR    = 0.45;  // seconds to move into mid
 const MERGED_HOLD  = 0.80;  // seconds to stay merged
 const UNMERGE_DUR  = 0.60;  // seconds to separate back
-// States: 'merging' -> 'merged' -> 'unmerging' -> (delete)
-
-/* record shape:
-{
-  partner: "i:j",
-  state: 'merging' | 'merged' | 'unmerging',
-  t0: time state started,
-  mid: [x,y,z],             // running mid for smoother behavior
-  color: [r,g,b],           // blended color for merged glow/orb
-}*/
 
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
@@ -864,24 +871,58 @@ function startSketch(blk){
 
     function drawRings(t){
       p.push();
-      for(let i=0;i<atom.shells.length;i++){
-        const r=atom.radii[i];
-        let col = atom.style.ringColor.slice();
-        let alpha = atom.style.ringAlpha, thick = atom.style.ringThick;
-        if(atom.style.is1337){
-          col = [60,255,130]; alpha=255; thick=1.4;
-        } else if(atom.style.halving){
-          const pulse = 0.5 + 0.5*Math.sin(t*2.0);
-          col = mixRGB([212,172,55],[255,220,120], 0.65);
-          alpha = Math.round(170 + 70*pulse);
-          thick = 1.0 + 0.6*pulse;
-        } else if(atom.style.pearl170){
-          col = [255,198,120]; alpha=230; thick=1.2;
+      if(atom.style.pearl170){
+        // ROYGBIV swirling, pulsing rings for #170
+        const swirlSpeed = 0.25;         // how fast colors rotate
+        const segsBase   = 96;           // segments per ring
+        for(let i=0;i<atom.shells.length;i++){
+          const r=atom.radii[i];
+          const pulse = 0.5 + 0.5*Math.sin(t*2.0 + i*0.7);
+          const thick = 1.2 + 0.8*pulse;
+          const alpha = Math.round(190 + 50*pulse);
+          const segs  = Math.max(64, Math.floor(segsBase + i*8));
+
+          // color shift over time & per-ring offset
+          const swirl = (t*swirlSpeed + i*0.12) % 1;
+
+          p.strokeWeight(thick);
+          p.noFill();
+
+          // draw short colored segments around the circle in the XY plane
+          for(let k=0;k<segs;k++){
+            const a0 = (k   /segs) * TAU;
+            const a1 = ((k+1)/segs) * TAU;
+
+            // hue across the arc + time swirl
+            const hue = (a0/TAU + swirl) % 1;
+            const rgb = hsv2rgb_js(hue, 1.0, 1.0); // vivid ROYGBIV
+
+            p.stroke(rgb[0], rgb[1], rgb[2], alpha);
+
+            const x0 = Math.cos(a0)*r, y0 = Math.sin(a0)*r;
+            const x1 = Math.cos(a1)*r, y1 = Math.sin(a1)*r;
+
+            p.line(x0, y0, 0,  x1, y1, 0);
+          }
         }
-        p.noFill();
-        p.stroke(col[0],col[1],col[2],alpha);
-        p.strokeWeight(thick);
-        p.circle(0,0,r*2);
+      } else {
+        for(let i=0;i<atom.shells.length;i++){
+          const r=atom.radii[i];
+          let col = atom.style.ringColor.slice();
+          let alpha = atom.style.ringAlpha, thick = atom.style.ringThick;
+          if(atom.style.is1337){
+            col = [60,255,130]; alpha=255; thick=1.4;
+          } else if(atom.style.halving){
+            const pulse = 0.5 + 0.5*Math.sin(t*2.0);
+            col = mixRGB([212,172,55],[255,220,120], 0.65);
+            alpha = Math.round(170 + 70*pulse);
+            thick = 1.0 + 0.6*pulse;
+          }
+          p.noFill();
+          p.stroke(col[0],col[1],col[2],alpha);
+          p.strokeWeight(thick);
+          p.circle(0,0,r*2);
+        }
       }
       p.pop();
     }
