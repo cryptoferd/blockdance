@@ -143,8 +143,6 @@ void main(){
   vec3 pos=aPosition;
   vec3 nrm=normalize(aPosition);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
-
-  // Spikes (m==6)
   if(m==6){
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float t=uTime*(1.0+uSpeed);
@@ -153,8 +151,6 @@ void main(){
     float amp=6.5*(0.65+0.35*uAmp);
     pos += nrm*(amp*spike*length(aPosition));
   }
-
-  // Glass ripple (m==1)
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -163,7 +159,6 @@ void main(){
     float ripple = (w1*0.6 + w2*0.4) * (0.012 + 0.008*j) * (0.7+0.3*uAmp) * 10.0;
     pos += nrm * ripple * length(aPosition);
   }
-
   vPos=pos; vNormal=normalize(pos);
   gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
 }`;
@@ -196,7 +191,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
 
-  if(m==1){ // Glass / pearlescent
+  if(m==1){ // Glass / pearlescent (FIXED: define reflectCol)
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
     float micro = fbm(normalize(vPos)*5.0 + vec3(0.0,t*0.12,0.0) + vec3(uObjSeed*1.7));
@@ -208,6 +203,7 @@ void main(){
     vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
     float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
     vec3 shellTint = mix(vec3(1.0), swirl, 0.15);
+    vec3 reflectCol = mix(vec3(0.98), swirl, 0.6); // <— added
     col = shellTint*0.03 + reflectCol * (0.02 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
   } else if(m==0){ // Marble
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
@@ -746,8 +742,13 @@ function startSketch(blk){
       p.setAttributes('alpha', true);
       p.setAttributes('antialias', true);
 
-      try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }
-      catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
+      try{
+        orbShader=p.createShader(VERT,FRAG);
+        // extra safety: if p5 failed to link, the internal program can be falsy
+        shaderLinked = !!(orbShader && orbShader._glProgram);
+      }catch(e){
+        orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e);
+      }
 
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
 
@@ -834,7 +835,9 @@ function startSketch(blk){
               : (m===9) ? (alpha * 0.55)
               :           alpha;
       const rr = (Number.isFinite(r) && r > 0) ? r : 3.4;
-      if(orbShader && shaderLinked){
+
+      // only use shader if it exists AND linked
+      if(orbShader && shaderLinked && orbShader._glProgram){
         try{
           p.noStroke(); p.shader(orbShader);
           orbShader.setUniform('uColorA', cA.map(v=>v/255));
@@ -854,6 +857,8 @@ function startSketch(blk){
           shaderLinked=false; orbShader=null;
         }
       }
+
+      // fallback: p5 materials
       p.resetShader(); p.noStroke();
       p.ambientLight(90);
       p.directionalLight(230,230,230, 0.6,0.7,0.5);
@@ -899,32 +904,28 @@ function startSketch(blk){
 
     function drawNucleus(t){
       if(atom.style.specialCrosshair){
-        // SPECIAL 228940 nucleus (transparent, no depth write)
+        // Translucent red center — no depth write so bullets show through
         const gl = p._renderer.GL;
         p.push();
         p.resetShader();
         p.noStroke();
         p.ambientLight(80);
         p.directionalLight(255,255,255,0.6,0.7,0.5);
-
-        gl.depthMask(false);                // <— don't write to depth buffer
-        p.blendMode(p.BLEND);               // normal alpha blending
-        p.ambientMaterial(255,60,60, 110);  // translucent red core (alpha ≈ 43%)
+        gl.depthMask(false);
+        p.blendMode(p.BLEND);
+        p.ambientMaterial(255,60,60, 110);
         p.specularMaterial(255,160,160);
         p.shininess(40);
         p.sphere(NUCLEON_R, 26, 18);
         gl.depthMask(true);
         p.blendMode(p.BLEND);
         p.pop();
-
-        // softer additive halo (already avoids depth writes)
         drawSoftGlowAt(p,0,0,0,NUCLEUS_R0*0.85,[255,60,60],0.7);
         return;
       }
 
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
-
       if(atom.style.pearl170){ protonMode = 5; neutronMode = 5; }
 
       let cP_A = shiftHue(atom.colors.electron, -35), cP_B = shiftHue(atom.colors.electron, -5);
@@ -959,20 +960,21 @@ function startSketch(blk){
             const m=atom.eMeta[i][j];
             let th=atom.electronAngles[i][j];
 
-            // original bullet
             let a=r*(1+m.e*0.35), b=r*(1-m.e*0.35), pre=t*m.pre+m.phase;
             let v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
             let pt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
-            let d = vadd( vmul(v,-a*Math.sin(th)), vmul(w, b[Math.cos(th)] ?? b*Math.cos(th) ));
-            let dN=vnorm(d);
-            let yaw=Math.atan2(dN[0], dN[2]);  let pitch=Math.asin(-dN[1]);
-            let tumble = t*3.0 + m.objSeed*10.0;
+
+            // direction vector for orientation
+            const d = vadd( vmul(v,-a*Math.sin(th)), vmul(w, b*Math.cos(th)) );
+            const dN=vnorm(d);
+            const yaw=Math.atan2(dN[0], dN[2]);  const pitch=Math.asin(-dN[1]);
+            const tumble = t*3.0 + m.objSeed*10.0;
 
             p.push(); p.translate(pt[0],pt[1],pt[2]); p.rotateY(yaw); p.rotateX(pitch);
             drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble);
             p.pop();
 
-            // second bullet 180° around
+            // second bullet 180° apart
             const th2 = th + Math.PI;
             const pt2=vadd(vmul(v,a*Math.cos(th2)), vmul(w,b*Math.sin(th2)));
             const d2 = vadd( vmul(v,-a*Math.sin(th2)), vmul(w, b*Math.cos(th2)) );
@@ -1017,17 +1019,12 @@ function startSketch(blk){
         }
       }
 
-      // (merge logic for #170 retained but omitted here for brevity)
-
       for(const it of info){
         p.push(); p.translate(it.pt[0],it.pt[1],it.pt[2]);
         drawOrbMat(it.cA, it.cB, it.r, t, 1.0, eMode, it.objSeed, electronDetail);
         p.pop();
-        const R=Math.hypot(it.pt[0],it.pt[1],it.pt[2])||1;
-        // optional fire effect toggle
       }
 
-      // advance angles
       for(let i=0;i<atom.shells.length;i++){
         for(let j=0;j<atom.shells[i];j++){
           const m=atom.eMeta[i][j];
@@ -1056,9 +1053,6 @@ function startSketch(blk){
       drawRings(t);
       drawNucleus(t);
       drawElectrons(t);
-
-      // fire system still available for other styles
-      // fire.update(dt); fire.draw();
 
       p.pop();
     };
@@ -1114,7 +1108,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
 loadLatest();
-// new60
+// new61
 </script>
 </body>
 </html>
