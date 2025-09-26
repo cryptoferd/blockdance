@@ -149,7 +149,6 @@ void main(){
   vec3 nrm=normalize(aPosition);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
 
-  // Spikes (m==6)
   if(m==6){
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float t=uTime*(1.0+uSpeed);
@@ -159,7 +158,6 @@ void main(){
     pos += nrm*(amp*spike*length(aPosition));
   }
 
-  // Glass ripple (m==1)
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -188,7 +186,7 @@ float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
 float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
 float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
 return mix(n0,n1,u.z);}
-float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.02;a*=0.5;}return s;}
+float fbm(vec3 p){float s=0.0;a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.02;a*=0.5;}return s;}
 vec3 hsv2rgb(vec3 c){vec3 p=abs(fract(c.xxx+vec3(0.,0.6666667,0.3333333))*6.-3.);return c.z*mix(vec3(1.0),clamp(p-1.0,0.0,1.0),c.y);}
 void main(){
   vec3 n=normalize(vNormal);
@@ -201,7 +199,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
 
-  if(m==1){ // Glass / pearlescent
+  if(m==1){
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
     float micro = fbm(normalize(vPos)*5.0 + vec3(0.0,t*0.12,0.0) + vec3(uObjSeed*1.7));
@@ -215,42 +213,42 @@ void main(){
     float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
     vec3 shellTint = mix(vec3(1.0), swirl, 0.15);
     col = shellTint*0.03 + reflectCol * (0.02 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
-  } else if(m==0){ // Marble
+  } else if(m==0){
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.38+0.62*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==2){ // Wireframe
+  } else if(m==2){
     float k=9.0+2.0*fract(uObjSeed*7.0);
     vec3 q=normalize(vPos);
     float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
     float edge=smoothstep(0.92,0.985,g);
     vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
     col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
-  } else if(m==3){ // Lava
+  } else if(m==3){
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3));
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
     col=mix(cool,hot,veins)*(0.38+0.62*ndl) + vec3(1.0)*rim*0.08;
-  } else if(m==4){ // Toon
+  } else if(m==4){
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
     col=base*(0.24+s) + vec3(1.0)*step(0.8,rim)*0.18;
-  } else if(m==5){ // Iridescent
+  } else if(m==5){
     float h=fract(0.5+0.35*dot(normalize(vPos),vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h, 0.95, 1.0));
     col=mix(iri,mix(colA,colB,0.4),0.25)*(0.32+0.68*ndl) + vec3(1.0)*rim*0.18;
-  } else if(m==6){ // Spikes
+  } else if(m==6){
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7));
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
     vec3 hi=base*1.8, lo=base*0.45;
     col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
-  } else if(m==7){ // Metallic
+  } else if(m==7){
     float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.22+0.60*ndl) + vec3(1.0)*spec*0.95 + vec3(1.0)*rim*0.12;
-  } else if(m==8){ // Sky
+  } else if(m==8){
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
     p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
@@ -260,7 +258,7 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==9){ // Fireball translucent shell
+  } else if(m==9){
     vec3 base = mix(colA, colB, 0.35);
     col = base*(0.28+0.72*ndl) + vec3(1.0)*rim*0.08;
   } else {
@@ -581,7 +579,7 @@ function buildAtomFromBlock(b){
   const is1337  = height===1337;
   const halving = (!isPearl170) && (height>0 && height%210000===0);
   const palindrome = isPalindromeHeight(height);
-  const specialCrosshair = height===228940; // ===== SPECIAL: 228940 flag =====
+  const specialCrosshair = height===228940;
 
   const baseSet = chooseSetModesFromBlockProxy(b, diversity);
 
@@ -590,7 +588,7 @@ function buildAtomFromBlock(b){
     setModes: baseSet,
     style:{ eSizeScale,
       ringThick, ringAlpha, ringColor, halving, pearl170:isPearl170, is1337, palindrome,
-      specialCrosshair,             /* <<<<<< added */
+      specialCrosshair,
       nucleusTight: tightness } };
 }
 
@@ -681,31 +679,39 @@ function drawCrosshairRings(p, outerR){
 function drawBulletPrimitive(p, brass, steel, scale=1, detail=[18,12], tumble=0){
   // Radii & lengths
   const bodyR = 1.8*scale;
-  const baseR = bodyR*1.05;           // disc 5% larger than cylinder
-  const baseH = 0.6*scale;
+  const baseR = bodyR*1.05;         // disc 5% larger than cylinder
+  const baseH = 0.6*scale;          // very thin
   const bodyH = 6.5*scale;
   const tipR  = bodyR;
 
   p.push();
-  // lighting
-  p.ambientLight(80);
+  // global lighting for the piece
+  p.ambientLight(100);
   p.directionalLight(255,255,255, 0.6,0.7,0.5);
 
   // Tumble around local axis
   p.rotateZ(tumble);
 
-  // Base disc (brass)
-  p.specularMaterial(brass[0], brass[1], brass[2]); p.shininess(36);
+  // Base disc (brass): give diffuse + specular
+  p.ambientMaterial(brass[0], brass[1], brass[2]);  // diffuse base color
+  p.specularMaterial(255, 230, 160);                // warm highlight
+  p.shininess(36);
+  // cylinder axis is Y in p5.js; disc centered on origin
   p.cylinder(baseR, baseH, detail[0], detail[1]);
 
-  // Body cylinder (brass) stands on disc
-  p.translate(0,0, baseH*0.5 + bodyH*0.5);
-  p.specularMaterial(brass[0], brass[1], brass[2]); p.shininess(40);
+  // Body cylinder (brass) sits on top of base along +Y
+  p.translate(0, baseH*0.5 + bodyH*0.5, 0);
+  p.ambientMaterial(brass[0], brass[1], brass[2]);
+  p.specularMaterial(255, 230, 160);
+  p.shininess(42);
   p.cylinder(bodyR, bodyH, detail[0], detail[1]);
 
-  // Tip (steel) as rounded hemisphere (sphere cap approximation)
-  p.translate(0,0, bodyH*0.5);
-  p.specularMaterial(steel[0], steel[1], steel[2]); p.shininess(80);
+  // Tip (steel) rounded cap
+  p.translate(0, bodyH*0.5, 0);
+  p.ambientMaterial(steel[0], steel[1], steel[2]);  // steel diffuse
+  p.specularMaterial(255,255,255);                  // bright highlight
+  p.shininess(90);
+  // Sphere for a smooth rounded nose (hemisphere approximation works visually)
   p.sphere(tipR, Math.max(16,detail[0]), Math.max(12,detail[1]));
   p.pop();
 }
@@ -888,7 +894,6 @@ function startSketch(blk){
     }
 
     function drawRings(t){
-      // ===== SPECIAL: 228940 crosshair rings =====
       if(atom.style.specialCrosshair){
         const outer = atom.radii.length? atom.radii[atom.radii.length-1] : SHELL_STEP*4;
         drawCrosshairRings(p, outer);
@@ -923,13 +928,13 @@ function startSketch(blk){
     function emitFireAt(x,y,z, nx,ny,nz, cA, cB, isFire){ if(!isFire) return; fire.spawn(x,y,z, nx,ny,nz, cA, cB); }
 
     function drawNucleus(t){
-      // ===== SPECIAL: 228940 single glowing red nucleus =====
       if(atom.style.specialCrosshair){
         const red=[255,60,60];
         p.push();
         p.noStroke(); p.ambientLight(80); p.directionalLight(255,255,255,0.6,0.7,0.5);
-        p.specularMaterial(255,90,90); p.shininess(60);
-        p.sphere(NUCLEON_R, 26, 18);   // size = normal proton
+        p.ambientMaterial(255,60,60);
+        p.specularMaterial(255,160,160); p.shininess(60);
+        p.sphere(NUCLEON_R, 26, 18);
         p.pop();
         drawSoftGlowAt(p,0,0,0,NUCLEUS_R0*0.9,[255,60,60],1.2);
         return;
@@ -964,7 +969,6 @@ function startSketch(blk){
     }
 
     function drawElectrons(t){
-      // ===== SPECIAL: 228940 bullets instead of spheres =====
       if(atom.style.specialCrosshair){
         const brass=[205,173,63], steel=[180,185,192];
         const scale = Math.max(0.85, atom.style.eSizeScale*0.9);
@@ -975,13 +979,12 @@ function startSketch(blk){
             const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35), pre=t*m.pre+m.phase;
             const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
             const pt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
-            // Tangent direction for orientation
             const d = vadd( vmul(v,-a*Math.sin(th)), vmul(w, b*Math.cos(th)) );
             const dN=vnorm(d);
             const yaw=Math.atan2(dN[0], dN[2]);  const pitch=Math.asin(-dN[1]);
-            const tumble = t*3.0 + m.objSeed*10.0; // extra spin
+            const tumble = t*3.0 + m.objSeed*10.0;
             p.push(); p.translate(pt[0],pt[1],pt[2]); p.rotateY(yaw); p.rotateX(pitch);
-            drawBulletPrimitive(p, brass, steel, scale, [16,12], tumble);
+            drawBulletPrimitive(p, brass, steel, scale, [18,14], tumble);
             p.pop();
             atom.electronAngles[i][j]+=baseSpeed*m.spMul;
           }
@@ -1016,7 +1019,6 @@ function startSketch(blk){
         }
       }
 
-      /* 170 collision & draw logic (unchanged from your working version) */
       if(atom.style.pearl170){
         if(t - atom._lastCollCheck > 0.06){
           atom._lastCollCheck = t;
@@ -1202,6 +1204,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.g
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
 // Boot
 loadLatest();
+// new56
 </script>
 </body>
 </html>
