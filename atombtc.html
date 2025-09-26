@@ -963,7 +963,7 @@ function startSketch(blk){
             let a=r*(1+m.e*0.35), b=r*(1-m.e*0.35), pre=t*m.pre+m.phase;
             let v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
             let pt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
-            let d = vadd( vmul(v,-a*Math.sin(th)), vmul(w, b[Math.cos(th)] ?? b*Math.cos(th) ); // safe compute
+            let d = vadd( vmul(v,-a*Math.sin(th)), vmul(w, b[Math.cos(th)] ?? b*Math.cos(th) );
             let dN=vnorm(d);
             let yaw=Math.atan2(dN[0], dN[2]);  let pitch=Math.asin(-dN[1]);
             let tumble = t*3.0 + m.objSeed*10.0;
