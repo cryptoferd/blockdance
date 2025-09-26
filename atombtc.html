@@ -9,7 +9,6 @@
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);
             font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
-  /* Stacking: bg (body black) -> emojiLayer (z:1) -> WEBGL (z:2) -> UI (z:30+) */
   #emojiLayer{position:fixed;inset:0;z-index:1;display:block;pointer-events:none}
   canvas.p5canvas{position:fixed;inset:0;z-index:2;display:block;touch-action:none}
 
@@ -56,11 +55,8 @@
   #hint.hide{opacity:0}
 
   @media (max-width: 800px){
-    .hud{
-      left:8px; right:8px; top:8px;
-      display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px;
-      font-size:13px
-    }
+    .hud{ left:8px; right:8px; top:8px;
+      display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px; font-size:13px }
     .hud .sep{display:none}
     #legend{left:8px; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
     details#blockPanel, #infoPanel{left:8px; right:8px; max-width:none}
@@ -69,7 +65,6 @@
 </head>
 <body>
 
-<!-- Fixed 2D emoji layer (behind WEBGL atoms, above black background) -->
 <canvas id="emojiLayer"></canvas>
 
 <div class="uiRoot show" id="uiRoot">
@@ -141,7 +136,7 @@ float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
 vec3 u=f*f*(3.0-2.0*f);
 float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
 float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
-float n0=mix(n00,n10,u.y), float n1=mix(n01,n11,u.y);
+float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);   // <-- FIXED declaration
 return mix(n0,n1,u.z);}
 float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0.5;}return s;}
 void main(){
@@ -186,7 +181,7 @@ float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
 float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
 float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
 return mix(n0,n1,u.z);}
-float fbm(vec3 p){float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.02; a*=0.5; } return s;} // <-- FIXED
+float fbm(vec3 p){float s=0.0, a=0.5; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.02; a*=0.5; } return s;}
 vec3 hsv2rgb(vec3 c){vec3 p=abs(fract(c.xxx+vec3(0.,0.6666667,0.3333333))*6.-3.);return c.z*mix(vec3(1.0),clamp(p-1.0,0.0,1.0),c.y);}
 void main(){
   vec3 n=normalize(vNormal);
@@ -650,11 +645,8 @@ selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Numbe
 selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); };
 selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); };
 
-/* ---- 170 merge state machine constants ---- */
-const MERGE_DIST   = 9.0;
-const MERGE_DUR    = 0.45;
-const MERGED_HOLD  = 0.80;
-const UNMERGE_DUR  = 0.60;
+/* ---- 170 merge constants ---- */
+const MERGE_DIST=9.0, MERGE_DUR=0.45, MERGED_HOLD=0.80, UNMERGE_DUR=0.60;
 
 /* ===== SPECIAL: 228940 helpers ===== */
 function drawCrosshairRings(p, outerR){
@@ -670,41 +662,34 @@ function drawCrosshairRings(p, outerR){
   p.pop();
 }
 function drawBulletPrimitive(p, brass, steel, scale=1, detail=[18,12], tumble=0){
-  /* Ensure we are NOT using the orb shader */
   p.resetShader();
   p.noStroke();
 
-  // Radii & lengths
   const bodyR = 1.8*scale;
-  const baseR = bodyR*1.05;         // disc 5% larger than cylinder
-  const baseH = 0.6*scale;          // very thin
+  const baseR = bodyR*1.05;
+  const baseH = 0.6*scale;
   const bodyH = 6.5*scale;
   const tipR  = bodyR;
 
   p.push();
-  // global lighting for the piece
   p.ambientLight(100);
-  p.directionalLight(255,255,255, 0.6,0.7,0.5);
+  p.directionalLight(255,255,255,0.6,0.7,0.5);
 
-  // Tumble around local axis
   p.rotateZ(tumble);
 
-  // Base disc (brass): diffuse + specular
-  p.ambientMaterial(brass[0], brass[1], brass[2]);
-  p.specularMaterial(255, 230, 160);
+  p.ambientMaterial(205,173,63);
+  p.specularMaterial(255,230,160);
   p.shininess(36);
   p.cylinder(baseR, baseH, detail[0], detail[1]);
 
-  // Body cylinder (brass) sits on top of base along +Y
   p.translate(0, baseH*0.5 + bodyH*0.5, 0);
-  p.ambientMaterial(brass[0], brass[1], brass[2]);
-  p.specularMaterial(255, 230, 160);
+  p.ambientMaterial(205,173,63);
+  p.specularMaterial(255,230,160);
   p.shininess(42);
   p.cylinder(bodyR, bodyH, detail[0], detail[1]);
 
-  // Tip (steel) rounded cap
   p.translate(0, bodyH*0.5, 0);
-  p.ambientMaterial(steel[0], steel[1], steel[2]);
+  p.ambientMaterial(180,185,192);
   p.specularMaterial(255,255,255);
   p.shininess(90);
   p.sphere(tipR, Math.max(16,detail[0]), Math.max(12,detail[1]));
@@ -967,23 +952,37 @@ function startSketch(blk){
 
     function drawElectrons(t){
       if(atom.style.specialCrosshair){
-        const brass=[205,173,63], steel=[180,185,192];
         const scale = Math.max(0.85, atom.style.eSizeScale*0.9);
 
         for(let i=0;i<atom.shells.length;i++){
           const r=atom.radii[i], baseSpeed=atom.speeds[i];
           for(let j=0;j<atom.shells[i];j++){
-            const m=atom.eMeta[i][j]; let th=atom.electronAngles[i][j];
-            const a=r*(1+m.e*0.35), b=r*(1-m.e*0.35), pre=t*m.pre+m.phase;
-            const v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
-            const pt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
-            const d = vadd( vmul(v,-a*Math.sin(th)), vmul(w, b*Math.cos(th)) );
-            const dN=vnorm(d);
-            const yaw=Math.atan2(dN[0], dN[2]);  const pitch=Math.asin(-dN[1]);
-            const tumble = t*3.0 + m.objSeed*10.0;
+            const m=atom.eMeta[i][j];
+            let th=atom.electronAngles[i][j];
+
+            // original bullet
+            let a=r*(1+m.e*0.35), b=r*(1-m.e*0.35), pre=t*m.pre+m.phase;
+            let v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
+            let pt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
+            let d = vadd( vmul(v,-a*Math.sin(th)), vmul(w, b*Math.cos(th)) );
+            let dN=vnorm(d);
+            let yaw=Math.atan2(dN[0], dN[2]);  let pitch=Math.asin(-dN[1]);
+            let tumble = t*3.0 + m.objSeed*10.0;
 
             p.push(); p.translate(pt[0],pt[1],pt[2]); p.rotateY(yaw); p.rotateX(pitch);
-            drawBulletPrimitive(p, brass, steel, scale, [18,14], tumble);
+            drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble);
+            p.pop();
+
+            // SECOND bullet 180° around the same orbit (doubles count visually)
+            const th2 = th + Math.PI;
+            const pt2=vadd(vmul(v,a*Math.cos(th2)), vmul(w,b*Math.sin(th2)));
+            const d2 = vadd( vmul(v,-a*Math.sin(th2)), vmul(w, b*Math.cos(th2)) );
+            const dN2=vnorm(d2);
+            const yaw2=Math.atan2(dN2[0], dN2[2]);  const pitch2=Math.asin(-dN2[1]);
+            const tumble2 = tumble + 1.7;
+
+            p.push(); p.translate(pt2[0],pt2[1],pt2[2]); p.rotateY(yaw2); p.rotateX(pitch2);
+            drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble2);
             p.pop();
 
             atom.electronAngles[i][j]+=baseSpeed*m.spMul;
@@ -1202,9 +1201,8 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// Boot
-// new57
 loadLatest();
+// new58
 </script>
 </body>
 </html>
