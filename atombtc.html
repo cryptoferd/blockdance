@@ -120,25 +120,10 @@ const mixRGB=(a,b,t)=>[Math.round(a[0]*(1-t)+b[0]*t),Math.round(a[1]*(1-t)+b[1]*
 const TAU = Math.PI*2;
 const isFiniteVec = v => v.every(Number.isFinite);
 const smoothstep = (a,b,x)=>{const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t);};
-const hsv2rgb_js = (h,s,v)=>{ // h in [0,1)
-  let i = Math.floor(h*6);
-  let f = h*6 - i;
-  let p = v*(1-s);
-  let q = v*(1-f*s);
-  let t = v*(1-(1-f)*s);
-  let r,g,b;
-  switch(i%6){
-    case 0: r=v,g=t,b=p; break;
-    case 1: r=q,g=v,b=p; break;
-    case 2: r=p,g=v,b=t; break;
-    case 3: r=p,g=q,b=v; break;
-    case 4: r=t,g=p,b=v; break;
-    case 5: r=v,g=p,b=q; break;
-  }
+const hsv2rgb_js = (h,s,v)=>{ let i=Math.floor(h*6), f=h*6-i, p=v*(1-s), q=v*(1-f*s), t=v*(1-(1-f)*s), r,g,b;
+  switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;case 5:r=v;g=p;b=q;break;}
   return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
 };
-
-/* helpers for 170 merge */
 const eID = (i,j) => `${i}:${j}`;
 
 /* ---------- shaders ---------- */
@@ -346,7 +331,7 @@ function paletteFromBlock(height, hash, merkle){
   };
 }
 function diversityFromBlock(b){
-  const h=b.height|0, mr=b.merkle_root||'', id=b.id||b.hash||'';
+  const h=b.height|0, mr=b.merkle_root||'', id=b.id||b.hash||';
   const rA=prngFromHex(mr), rB=prngFromHex(id);
   return {
     famA: rA(), famB: rB(),
@@ -397,7 +382,7 @@ class FireParticles{
   }
   spawn(x,y,z, nx,ny,nz, colorA, colorB){
     if(Math.random()>0.22) return;
-    const worldUp = [0,-1,0]; // p5 WEBGL "up" is -Y
+    const worldUp = [0,-1,0];
     const k=2;
     for(let i=0;i<k;i++){
       const id = this.idx; this.idx=(this.idx+1)%this.max;
@@ -416,7 +401,7 @@ class FireParticles{
       this.vel[id][0]=vx; this.vel[id][1]=vy; this.vel[id][2]=vz;
       this.col[id]=base;
       this.size[id]=1.8+Math.random()*1.8;
-      this.maxL[id]=1.8+Math.random()*1.1;   // slower fade
+      this.maxL[id]=1.8+Math.random()*1.1;
       this.life[id]=this.maxL[id];
     }
   }
@@ -433,7 +418,7 @@ class FireParticles{
       this.pos[i][1]+=this.vel[i][1]*dt;
       this.pos[i][2]+=this.vel[i][2]*dt;
       this.size[i] *= (1.0 + 0.42*dt);
-      this.life[i]-=dt*0.5; // take longer to dissipate
+      this.life[i]-=dt*0.5;
     }
   }
   draw(){
@@ -480,9 +465,9 @@ resizeEmojiLayer();
 window.addEventListener('resize', resizeEmojiLayer);
 
 /* Handshake overlay controls */
-const HANDSHAKE_WIDTH_FRAC = 0.20; // width fraction
-const HANDSHAKE_Y_FRAC     = 0.35; // vertical position fraction
-const HANDSHAKE_OPACITY    = 0.65; // opacity
+const HANDSHAKE_WIDTH_FRAC = 0.20;
+const HANDSHAKE_Y_FRAC     = 0.35;
+const HANDSHAKE_OPACITY    = 0.65;
 
 function drawHandshakeOverlay(enabled){
   eCtx.clearRect(0,0,emojiLayer.width,emojiLayer.height);
@@ -504,7 +489,7 @@ function drawHandshakeOverlay(enabled){
   eCtx.restore();
 }
 
-/* ---------- soft glow helper (used for halving nucleus & 170 merged electrons) ---------- */
+/* ---------- soft glow helper ---------- */
 function drawSoftGlowAt(p5, x,y,z, baseR, rgb, strength=1.0){
   const gl = p5._renderer.GL;
   p5.push();
@@ -562,7 +547,6 @@ function buildAtomFromBlock(b){
   const ringThick=1.0, ringAlpha=230;
   const ringColor=shiftHue(colors.shell, (hashLast/255-0.5)*24);
 
-  // --- electrons (angles + meta) ---
   const electronAngles=[], eMeta=[];
   for(let i=0;i<shells.length;i++){ electronAngles[i]=[]; eMeta[i]=[];
     for(let j=0;j<shells[i];j++){
@@ -584,8 +568,7 @@ function buildAtomFromBlock(b){
     nucleusPoints.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),isProton,hueOffset,objSeed});
   }
 
-  // ---- SAFE size/weight handling to avoid NaNs ----
-  const safeSize   = Number.isFinite(size)   && size   > 0 ? size   : 1_000_000; // 1 MB fallback
+  const safeSize   = Number.isFinite(size)   && size   > 0 ? size   : 1_000_000;
   const safeWeight = Number.isFinite(weight) && weight > 0 ? weight : safeSize * 4;
 
   const activity   = safeWeight - 2.8e6;
@@ -674,10 +657,10 @@ selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Numbe
 selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); };
 
 /* ---- 170 merge state machine constants ---- */
-const MERGE_DIST   = 9.0;   // triggers merging
-const MERGE_DUR    = 0.45;  // seconds to move into mid
-const MERGED_HOLD  = 0.80;  // seconds to stay merged
-const UNMERGE_DUR  = 0.60;  // seconds to separate back
+const MERGE_DIST   = 9.0;
+const MERGE_DUR    = 0.45;
+const MERGED_HOLD  = 0.80;
+const UNMERGE_DUR  = 0.60;
 
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
@@ -688,14 +671,11 @@ function startSketch(blk){
   const atom=buildAtomFromBlock(blk);
   injectPanels(atom);
 
-  // 2D overlay per-170
   drawHandshakeOverlay(atom.style.pearl170);
 
-  // per-170 merge state
   atom._merge = new Map();
   atom._lastCollCheck = 0;
 
-  // palindrome helpers
   const eDir=[], eTurns=[];
   for(let i=0;i<atom.shells.length;i++){
     eDir[i]=[]; eTurns[i]=[];
@@ -708,7 +688,6 @@ function startSketch(blk){
   maxCamDist = 30000;
   const maxPan = Math.max(200, largestRadius * 2.2);
 
-  // perf-aware detail
   const totalElectrons = atom.electrons;
   const totalNucleons  = Math.min(900, atom.Z + atom.N);
   function detailFor(count, baseU, baseV){
@@ -732,7 +711,6 @@ function startSketch(blk){
     if(!isFiniteVec(camTarget)) camTarget=[0,0,0];
   }
 
-  // Fire system
   let fire = new FireParticles(p5.prototype, 900);
 
   const sketch=(p)=>{
@@ -835,7 +813,6 @@ function startSketch(blk){
       const a = (m===1) ? (alpha * 0.12)
               : (m===9) ? (alpha * 0.55)
               :           alpha;
-
       const rr = (Number.isFinite(r) && r > 0) ? r : 3.4;
 
       if(orbShader && shaderLinked){
@@ -859,7 +836,6 @@ function startSketch(blk){
         }
       }
 
-      // Fallback
       p.resetShader(); p.noStroke();
       p.ambientLight(90);
       p.directionalLight(230,230,230, 0.6,0.7,0.5);
@@ -872,30 +848,25 @@ function startSketch(blk){
     function drawRings(t){
       p.push();
       if(atom.style.pearl170){
-        // ROYGBIV swirling, pulsing rings for #170
-        const swirlSpeed = 0.25;         // how fast colors rotate
-        const segsBase   = 96;           // segments per ring
+        // Swirling ROYGBIV (NO pulsing: fixed thickness/alpha)
+        const swirlSpeed = 0.25;
+        const segsBase   = 96;
         for(let i=0;i<atom.shells.length;i++){
           const r=atom.radii[i];
-          const pulse = 0.5 + 0.5*Math.sin(t*2.0 + i*0.7);
-          const thick = 1.2 + 0.8*pulse;
-          const alpha = Math.round(190 + 50*pulse);
+          const thick = 1.6;                 // fixed
+          const alpha = 210;                  // fixed
           const segs  = Math.max(64, Math.floor(segsBase + i*8));
-
-          // color shift over time & per-ring offset
           const swirl = (t*swirlSpeed + i*0.12) % 1;
 
           p.strokeWeight(thick);
           p.noFill();
 
-          // draw short colored segments around the circle in the XY plane
           for(let k=0;k<segs;k++){
             const a0 = (k   /segs) * TAU;
             const a1 = ((k+1)/segs) * TAU;
 
-            // hue across the arc + time swirl
             const hue = (a0/TAU + swirl) % 1;
-            const rgb = hsv2rgb_js(hue, 1.0, 1.0); // vivid ROYGBIV
+            const rgb = hsv2rgb_js(hue, 1.0, 1.0);
 
             p.stroke(rgb[0], rgb[1], rgb[2], alpha);
 
@@ -1010,14 +981,13 @@ function startSketch(blk){
         sizeScale *= 1.0 + 0.08*Math.sin(t*2.0);
       }
       if(atom.style.pearl170){
-        eMode = 5; // iridescent electrons
-        sizeScale *= 1.0 + 0.25 * (0.5 + 0.5 * Math.sin(t*9.0)); // rapid pulse
+        eMode = 5;
+        sizeScale *= 1.0 + 0.25 * (0.5 + 0.5 * Math.sin(t*9.0));
       }
 
       const isFireE = (overrides.electron ?? atom.setModes.electrons)===9;
 
-      // -------- Pass 1: compute positions and info --------
-      const info = []; // {i,j, pt:[x,y,z], r, cA, cB, objSeed, baseSpeed, m}
+      const info = [];
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -1049,7 +1019,6 @@ function startSketch(blk){
         }
       }
 
-      // -------- Pass 2: collision detection (170 only) --------
       if(atom.style.pearl170){
         if(t - atom._lastCollCheck > 0.06){
           atom._lastCollCheck = t;
@@ -1095,13 +1064,11 @@ function startSketch(blk){
         }
       }
 
-      // Index lookup
       const idxById = new Map();
       for(const it of info) idxById.set(eID(it.i,it.j), it);
 
       const drawn = new Set();
 
-      // -------- Pass 3: render with merge state machine --------
       for(const it of info){
         const id = eID(it.i,it.j);
         if(drawn.has(id)) continue;
@@ -1109,7 +1076,6 @@ function startSketch(blk){
         const rec = atom.style.pearl170 ? atom._merge.get(id) : null;
 
         if(!rec){
-          // ----- No merge: draw normally
           p.push(); p.translate(it.pt[0],it.pt[1],it.pt[2]);
           drawOrbMat(it.cA, it.cB, it.r, t, 1.0, eMode, it.objSeed, electronDetail);
           p.pop();
@@ -1121,18 +1087,10 @@ function startSketch(blk){
         }
 
         const mate = idxById.get(rec.partner);
-        if(!mate){
-          // partner missing; cleanup
-          atom._merge.delete(id);
-          continue;
-        }
+        if(!mate){ atom._merge.delete(id); continue; }
         const mateRec = atom._merge.get(rec.partner);
-        if(!mateRec){
-          atom._merge.delete(id);
-          continue;
-        }
+        if(!mateRec){ atom._merge.delete(id); continue; }
 
-        // leadership so we don't double-draw the same pair in single-sphere phases
         const leader = (id < rec.partner) ? id : rec.partner;
         const isLeader = (id === leader);
 
@@ -1140,11 +1098,9 @@ function startSketch(blk){
         const dtState = now - rec.t0;
 
         if(rec.state === 'merging'){
-          // u: 0..1 into the midpoint
           const u = clamp(dtState / MERGE_DUR, 0, 1);
           const ease = 0.5 - 0.5 * Math.cos(Math.PI * u);
 
-          // move both towards mid (render both)
           const Apos = [
             it.pt[0]*(1-ease) + rec.mid[0]*ease,
             it.pt[1]*(1-ease) + rec.mid[1]*ease,
@@ -1167,13 +1123,11 @@ function startSketch(blk){
           drawOrbMat(mate.cA, mate.cB, rGrowB, t, 1.0, eMode, mate.objSeed, electronDetail);
           p.pop();
 
-          // soft glow growing
           drawSoftGlowAt(p, rec.mid[0],rec.mid[1],rec.mid[2], (rGrowA+rGrowB)*0.6, rec.color, 0.6*ease);
 
           drawn.add(id); drawn.add(rec.partner);
 
           if(u>=1){
-            // switch both to merged
             rec.state='merged'; rec.t0=now;
             mateRec.state='merged'; mateRec.t0=now;
           }
@@ -1181,10 +1135,8 @@ function startSketch(blk){
         }
 
         if(rec.state === 'merged'){
-          // render one big orb at mid (leader only)
           if(isLeader){
-            const hold = clamp(dtState / MERGED_HOLD, 0, 1);
-            const rNow = Math.max(it.r, mate.r) * 2.0; // doubled
+            const rNow = Math.max(it.r, mate.r) * 2.0;
             p.push(); p.translate(rec.mid[0],rec.mid[1],rec.mid[2]);
             drawOrbMat(rec.color, rec.color, rNow, t, 1.0, eMode, it.objSeed, electronDetail);
             p.pop();
@@ -1192,20 +1144,17 @@ function startSketch(blk){
 
             drawn.add(id); drawn.add(rec.partner);
 
-            if(hold>=1){
-              // go to unmerging
+            if(dtState >= MERGED_HOLD){
               rec.state='unmerging'; rec.t0=now;
               mateRec.state='unmerging'; mateRec.t0=now;
             }
           }else{
-            // follower waits; mark as drawn to avoid double render
             drawn.add(id);
           }
           continue;
         }
 
         if(rec.state === 'unmerging'){
-          // v: 0..1 back to their instantaneous orbit points
           const v = clamp(dtState / UNMERGE_DUR, 0, 1);
           const easeOut = smoothstep(0,1,v);
 
@@ -1238,18 +1187,15 @@ function startSketch(blk){
           drawn.add(id); drawn.add(rec.partner);
 
           if(v>=1){
-            // clean up both
             atom._merge.delete(id);
             atom._merge.delete(rec.partner);
           }
           continue;
         }
 
-        // Fallback: if unknown state, cleanup
         atom._merge.delete(id);
       }
 
-      // Advance angles for everyone
       for(let i=0;i<atom.shells.length;i++){
         for(let j=0;j<atom.shells[i];j++){
           const m=atom.eMeta[i][j];
@@ -1271,7 +1217,6 @@ function startSketch(blk){
 
       p.clear();
 
-      // Camera
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
       p.perspective(fovy,aspect,near,far);
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
@@ -1280,11 +1225,9 @@ function startSketch(blk){
       if(![cx,cy,cz].every(Number.isFinite)){ camTarget=[0,0,0]; }
       p.camera(cx,cy,cz, camTarget[0],camTarget[1],camTarget[2], 0,1,0);
 
-      // idle spin
       modelSpin += 0.16 * dt;
       p.push(); p.rotateY(modelSpin);
 
-      // Halving background pulse (more vibrant)
       if(atom.style.halving){
         const pulse = 0.5 + 0.5*Math.sin(t*1.6);
         const bg = mixRGB([25,8,0],[255,110,0], pulse*0.85);
@@ -1353,7 +1296,7 @@ resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitc
 
 document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
 setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
-// new54
+// new55
 // Boot
 loadLatest();
 </script>
