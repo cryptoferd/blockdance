@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — full render (nucleus + electrons)</title>
+<title>Bitcoin Block Atom — p5.js + WebGL</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
@@ -22,6 +22,7 @@
        background:#121820;color:var(--text);padding:6px 8px}
   .hud button{cursor:pointer}
   .hud .sep{width:1px;height:24px;background:#283543;margin:0 6px}
+  .hidden{display:none!important}
 
   .panel{position:fixed;font-size:12px;color:var(--muted);padding:8px 10px;background:var(--panel);
          border:1px solid var(--border);border-radius:12px;max-width:min(580px,calc(100vw - 24px));backdrop-filter:blur(6px)}
@@ -74,13 +75,26 @@
     <button id="loadBtn">Load</button>
     <button id="latestBtn">Latest</button>
     <button id="resetBtn" title="Reset view to original">Reset View</button>
+
     <span class="sep"></span>
-    <span>Protons</span>
-    <select id="selProton"></select>
-    <span>Neutrons</span>
-    <select id="selNeutron"></select>
-    <span>Electrons</span>
-    <select id="selElectron"></select>
+
+    <!-- NEW: Single “View” selector to control clutter -->
+    <label>View:</label>
+    <select id="viewProfile">
+      <option value="atom-rings">Atom + Rings (default)</option>
+      <option value="minimal">Minimal (just canvas)</option>
+      <option value="atom-only">Atom only (no rings)</option>
+      <option value="everything">Everything (all panels)</option>
+      <option value="debug">Debug (block + info always open)</option>
+    </select>
+
+    <span class="sep advanced"></span>
+    <span class="advanced">Protons</span>
+    <select id="selProton" class="advanced"></select>
+    <span class="advanced">Neutrons</span>
+    <select id="selNeutron" class="advanced"></select>
+    <span class="advanced">Electrons</span>
+    <select id="selElectron" class="advanced"></select>
   </div>
 
   <div class="panel" id="legend">
@@ -121,7 +135,7 @@ const hsv2rgb_js = (h,s,v)=>{ let i=Math.floor(h*6), f=h*6-i, p=v*(1-s), q=v*(1-
 };
 const eID = (i,j) => `${i}:${j}`;
 
-/* ---------- shaders ---------- */
+/* ---------- shaders (same as before) ---------- */
 const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix,uProjectionMatrix;
@@ -136,14 +150,13 @@ float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
 vec3 u=f*f*(3.0-2.0*f);
 float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
 float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
-float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);   // <-- FIXED declaration
+float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
 return mix(n0,n1,u.z);}
 float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0.5;}return s;}
 void main(){
   vec3 pos=aPosition;
   vec3 nrm=normalize(aPosition);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
-
   if(m==6){
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float t=uTime*(1.0+uSpeed);
@@ -152,7 +165,6 @@ void main(){
     float amp=6.5*(0.65+0.35*uAmp);
     pos += nrm*(amp*spike*length(aPosition));
   }
-
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -161,11 +173,9 @@ void main(){
     float ripple = (w1*0.6 + w2*0.4) * (0.012 + 0.008*j) * 10.0 * (0.7+0.3*uAmp);
     pos += nrm * ripple * length(aPosition);
   }
-
   vPos=pos; vNormal=normalize(pos);
   gl_Position=uProjectionMatrix*(uModelViewMatrix*vec4(pos,1.0));
 }`;
-
 const FRAG=`precision mediump float; precision mediump int;
 varying vec3 vPos,vNormal;
 uniform vec3 uColorA,uColorB;
@@ -189,11 +199,9 @@ void main(){
   vec3 L1=normalize(vec3(0.6,0.7,0.5)), L2=normalize(vec3(-0.4,0.65,-0.2));
   float ndl=max(dot(n,L1),0.0)*0.65 + max(dot(n,L2),0.0)*0.35;
   float rim=pow(1.0-max(dot(n,V),0.0),2.0);
-
   vec3 colA=uColorA, colB=uColorB, col;
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
-
   if(m==1){
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
@@ -203,11 +211,10 @@ void main(){
     float hue = fract(phase*0.14);
     vec3 swirl = hsv2rgb(vec3(hue, 0.55, 1.0));
     float fres = pow(1.0 - NoV, 4.0);
-    vec3 reflectCol = mix(vec3(0.98), swirl, 0.6);
     vec3 H1 = normalize(L1 + V), H2 = normalize(L2 + V);
     float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
     vec3 shellTint = mix(vec3(1.0), swirl, 0.15);
-    col = shellTint*0.03 + reflectCol * (0.02 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
+    col = shellTint*0.03 + mix(vec3(0.98), swirl, 0.6) * (0.02 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
   } else if(m==0){
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
@@ -223,23 +230,18 @@ void main(){
     col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
   } else if(m==3){
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3));
-    float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
-    col=mix(cool,hot,veins)*(0.38+0.62*ndl) + vec3(1.0)*rim*0.08;
+    col=mix(cool,hot, smoothstep(0.55,0.8,f))*(0.38+0.62*ndl) + vec3(1.0)*rim*0.08;
   } else if(m==4){
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
-    vec3 base=mix(colA,colB,0.5);
-    col=base*(0.24+s) + vec3(1.0)*step(0.8,rim)*0.18;
+    col=mix(colA,colB,0.5)*(0.24+s) + vec3(1.0)*step(0.8,rim)*0.18;
   } else if(m==5){
     float h=fract(0.5+0.35*dot(normalize(vPos),vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h, 0.95, 1.0));
     col=mix(iri,mix(colA,colB,0.4),0.25)*(0.32+0.68*ndl) + vec3(1.0)*rim*0.18;
   } else if(m==6){
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7));
-    float spike=smoothstep(0.62,0.90,s);
-    vec3 base=mix(colA,colB,0.5);
-    vec3 hi=base*1.8, lo=base*0.45;
-    col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
+    col=mix(mix(colA,colB,0.5)*0.45, mix(colA,colB,0.5)*1.8, smoothstep(0.62,0.90,s))*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
   } else if(m==7){
     float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.22+0.60*ndl) + vec3(1.0)*spec*0.95 + vec3(1.0)*rim*0.12;
@@ -249,13 +251,9 @@ void main(){
     p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
     float base=fbm(p*3.0+vec3(uObjSeed*2.3,uObjSeed*1.1,uObjSeed*3.7));
     float puff=fbm(p*6.0+vec3(0.0,t*0.2,0.0)+vec3(uObjSeed*3.9));
-    float clouds=smoothstep(0.55,0.85,base*0.6+puff*0.7);
-    vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
-    vec3 baseCol=mix(sky,cloud,clouds);
-    col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
+    col=mix(vec3(0.53,0.75,0.98),vec3(1.0), smoothstep(0.55,0.85,base*0.6+puff*0.7))*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
   } else if(m==9){
-    vec3 base = mix(colA, colB, 0.35);
-    col = base*(0.28+0.72*ndl) + vec3(1.0)*rim*0.08;
+    col=mix(colA, colB, 0.35)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.08;
   } else {
     col=mix(colA,colB,0.5)*(0.38+0.62*ndl) + vec3(1.0)*rim*0.12;
   }
@@ -292,23 +290,18 @@ function prngFromHex(hex){
 function paletteFromBlock(height, hash, merkle){
   const rng = XS32((height*2654435761)>>>0);
   const rHash = prngFromHex(hash||''); const rMerk = prngFromHex(merkle||'');
-
   const golden = 137.50776405003785;
   let baseHue = mod((height * golden) + rng()*180 + rHash()*60 - 30, 360);
-
   const sepA = 120 + (rMerk()*30-15);
   const sepB = 240 + (rHash()*40-20);
-
   const sP = 0.88 + 0.10*rng(); const lP = 0.52 + 0.08*rMerk();
   const sN = 0.90 + 0.08*rng(); const lN = 0.50 + 0.10*rHash();
   const sE = 0.96;               const lE = 0.56 + 0.08*rng();
   const sS = 0.90;               const lS = 0.55 + 0.10*rng();
-
   const hE = baseHue;
   const hP = mod(baseHue + sepA, 360);
   const hN = mod(baseHue + sepB, 360);
   const hS = mod(hE + 180 + (rng()*40-20), 360);
-
   return {
     proton:  hslToRgb(hP/360, sP, lP),
     neutron: hslToRgb(hN/360, sN, lN),
@@ -354,7 +347,7 @@ function fillShells(e){
   return shells;
 }
 
-/* ---------- FireParticles ---------- */
+/* ---------- FireParticles (unchanged) ---------- */
 class FireParticles{
   constructor(p, maxCount=900){
     this.p=p; this.max=maxCount;
@@ -436,7 +429,7 @@ class FireParticles{
   }
 }
 
-/* ---------- offscreen emoji paint for #170 ---------- */
+/* ---------- emoji (🤝) overlay for #170 ---------- */
 const emojiLayer = document.getElementById('emojiLayer');
 const eCtx = emojiLayer.getContext('2d');
 function resizeEmojiLayer(){
@@ -448,72 +441,51 @@ function resizeEmojiLayer(){
   eCtx.setTransform(dpr,0,0,dpr,0,0);
 }
 resizeEmojiLayer();
-window.addEventListener('resize', resizeEmojiLayer);
+addEventListener('resize', resizeEmojiLayer);
 
-/* Handshake overlay controls */
 const HANDSHAKE_WIDTH_FRAC = 0.20;
 const HANDSHAKE_Y_FRAC     = 0.35;
 const HANDSHAKE_OPACITY    = 0.65;
-
 function drawHandshakeOverlay(enabled){
   eCtx.clearRect(0,0,emojiLayer.width,emojiLayer.height);
   if(!enabled) return;
   const W = innerWidth, H = innerHeight;
-
   eCtx.save();
   eCtx.globalAlpha = HANDSHAKE_OPACITY;
   eCtx.textAlign = 'center';
   eCtx.textBaseline = 'middle';
-
   const targetW = W * HANDSHAKE_WIDTH_FRAC;
   eCtx.font = `${Math.floor(targetW)}px system-ui, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji`;
-
-  const x = W * 0.5;
-  const y = H * HANDSHAKE_Y_FRAC;
-
-  eCtx.fillText('🤝', x, y);
+  eCtx.fillText('🤝', W*0.5, H*HANDSHAKE_Y_FRAC);
   eCtx.restore();
 }
 
 /* ---------- soft glow helper ---------- */
 function drawSoftGlowAt(p5, x,y,z, baseR, rgb, strength=1.0){
   const gl = p5._renderer.GL;
-  p5.push();
-  p5.noStroke();
-  p5.blendMode(p5.ADD);
-  gl.depthMask(false);
+  p5.push(); p5.noStroke(); p5.blendMode(p5.ADD); gl.depthMask(false);
   const layers = 5;
   for(let i=0;i<layers;i++){
     const k = (i+1)/layers;
     const rad = baseR * (1.0 + 0.55*k);
     const al  = Math.round(32 * (1.0 - k) * strength);
-    p5.push();
-    p5.translate(x,y,z);
-    p5.fill(rgb[0], rgb[1], rgb[2], al);
-    p5.sphere(rad, 12, 8);
-    p5.pop();
+    p5.push(); p5.translate(x,y,z); p5.fill(rgb[0], rgb[1], rgb[2], al); p5.sphere(rad, 12, 8); p5.pop();
   }
-  gl.depthMask(true);
-  p5.blendMode(p5.BLEND);
-  p5.pop();
+  gl.depthMask(true); p5.blendMode(p5.BLEND); p5.pop();
 }
 
-/* ---------- build atom ---------- */
+/* ---------- build atom (same logic) ---------- */
 function chooseSetModesFromBlockProxy(b, diversity){ return chooseSetModesFromBlock(b, diversity); }
-
 function buildAtomFromBlock(b){
   const height=b.height, txCount=(b.tx_count!=null?b.tx_count:1), timestamp=(b.timestamp!=null?b.timestamp:0);
   const bits=(b.bits!=null?b.bits:0), nonce=(b.nonce!=null?b.nonce:0), merkleRoot=(b.merkle_root||""), weight=(b.weight!=null?b.weight:0), size=(b.size!=null?b.size:0), version=(b.version!=null?b.version:0), hash=(b.id||b.hash||"");
-
   const diversity = diversityFromBlock(b);
   const colors=paletteFromBlock(height, hash, merkleRoot);
 
   const baseE=(height%118)+1, eJitter=((byteAt(hash,5)%64)-32) + diversity.countJitter;
   const electrons=clamp(baseE+eJitter, 6, 200);
-
   const protonBias=((byteAt(merkleRoot,9)%37)-18);
   const Z=clamp(baseE+protonBias, 6, 180);
-
   const neutronSkew=((byteAt(hash,2)%121)-60)/170;
   const N=clamp(Math.round(Z*(1.0+neutronSkew)) + (hexByteSum(merkleRoot)%23)-11, 6, 240);
 
@@ -523,7 +495,6 @@ function buildAtomFromBlock(b){
 
   const dens=clamp(weight/Math.max(1,size*4),0.6,1.4);
   const tightness=clamp((dens*0.75)+(1.15-0.55*0.25), 0.6,1.4);
-
   let eccGlobal=clamp(0.3 + ((version&0xf)/16)*0.5 + ((nonce&0x3f)/63)*0.2 + diversity.eccBiasJ, 0.08, 0.92);
 
   const orbitSpread=(1.0+((version&0xf)-7.5)*0.01) * diversity.orbitSpreadJ;
@@ -556,7 +527,6 @@ function buildAtomFromBlock(b){
 
   const safeSize   = Number.isFinite(size)   && size   > 0 ? size   : 1_000_000;
   const safeWeight = Number.isFinite(weight) && weight > 0 ? weight : safeSize * 4;
-
   const activity   = safeWeight - 2.8e6;
   const norm01     = clamp(activity / (4.0e6 - 2.8e6), 0, 1);
   const baseScale  = 0.90 + norm01 * (1.50 - 0.90);
@@ -582,7 +552,7 @@ function buildAtomFromBlock(b){
 
 /* ---------- panels ---------- */
 function injectPanels(atom){
-  const det=document.getElementById('blockPanel'); det.innerHTML='';
+  const det=$('#blockPanel'); det.innerHTML='';
   const sum=document.createElement('summary');
   const sLeft=document.createElement('span'); sLeft.textContent='▼ Block Details';
   const sRight=document.createElement('span'); sRight.style.color='#d7ecff'; sRight.style.fontWeight='500';
@@ -591,7 +561,9 @@ function injectPanels(atom){
 
   const body=document.createElement('div'); body.id='blkBody';
   const chips=document.createElement('div'); chips.style.marginBottom='6px';
-  [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);});
+  [['Electrons',atom.electrons],['Protons',atom.Z],['Neutrons',atom.N]].forEach(([k,v])=>{
+    const c=document.createElement('span'); c.className='chip'; c.textContent=`${k}: ${v}`; chips.appendChild(c);
+  });
   if(atom.style.pearl170){ const c=document.createElement('span'); c.className='chip'; c.textContent='🤝 #170 Iridescent + Pulse + Merge'; chips.appendChild(c); }
   else if(atom.style.is1337){ const c=document.createElement('span'); c.className='chip'; c.textContent='🟩 1337 Neon'; chips.appendChild(c); }
   else if(atom.style.halving){ const c=document.createElement('span'); c.className='chip'; c.textContent='Halving Mode'; chips.appendChild(c); }
@@ -610,12 +582,14 @@ function injectPanels(atom){
     ['Time', (blk.timestamp? new Date(blk.timestamp*1000).toLocaleString():'n/a')],
     ['Merkle root', shortHash(blk.merkle_root)]
   ];
-  rows.forEach(([k,v])=>{ const tr=document.createElement('tr'); const td1=document.createElement('td'); td1.textContent=k; const td2=document.createElement('td');
+  rows.forEach(([k,v])=>{
+    const tr=document.createElement('tr'); const td1=document.createElement('td'); td1.textContent=k; const td2=document.createElement('td');
     if(k==='Merkle root'){ const code=document.createElement('code'); code.textContent=String(v); td2.appendChild(code);} else td2.textContent=String(v);
-    tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr); });
+    tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr);
+  });
   body.appendChild(tbl); det.appendChild(body);
 
-  const info=document.getElementById('infoPanel'); info.innerHTML='';
+  const info=$('#infoPanel'); info.innerHTML='';
   const s2=document.createElement('summary'); const badge=document.createElement('span'); badge.className='badge'; badge.textContent='?';
   s2.appendChild(badge); s2.appendChild(document.createTextNode(' Info / How it works')); info.appendChild(s2);
   const ib=document.createElement('div'); ib.style.padding='10px 12px';
@@ -627,8 +601,8 @@ function injectPanels(atom){
 /* ---------- p5 + inputs + draw ---------- */
 let p5Instance=null, orbShader=null, shaderLinked=false;
 let camDist=560, camYaw=0.2, camPitch=-0.1, camTarget=[0,0,0];
-let minCamDist=140, maxCamDist=20000;  // <-- single declaration only (no duplicates)
-let lastX=0, lastY=0, dragButton=0;
+let minCamDist=140, maxCamDist=20000;   // single declaration
+let lastX=0, lastY=0;
 let pinchPrev=null, twoPrevMid=null, lastTapTime=0, lastTapXY=[0,0];
 let interactionMode='none';
 let modelSpin = 0;
@@ -645,10 +619,10 @@ selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Numbe
 selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); };
 selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); };
 
-/* ---- 170 merge constants ---- */
+/* ---- merge constants (#170) ---- */
 const MERGE_DIST=9.0, MERGE_DUR=0.45, MERGED_HOLD=0.80, UNMERGE_DUR=0.60;
 
-/* ===== SPECIAL: 228940 helpers ===== */
+/* ---- Crosshair + bullet helpers (228940) ---- */
 function drawCrosshairRings(p, outerR){
   const red=[230,25,25], alpha=255, thick=2.2;
   const innerR = outerR*0.68;
@@ -662,40 +636,74 @@ function drawCrosshairRings(p, outerR){
   p.pop();
 }
 function drawBulletPrimitive(p, brass, steel, scale=1, detail=[18,12], tumble=0){
-  p.resetShader();
-  p.noStroke();
-
-  const bodyR = 1.8*scale;
-  const baseR = bodyR*1.05;
-  const baseH = 0.6*scale;
-  const bodyH = 6.5*scale;
-  const tipR  = bodyR;
-
+  p.resetShader(); p.noStroke();
+  const bodyR=1.8*scale, baseR=bodyR*1.05, baseH=0.6*scale, bodyH=6.5*scale, tipR=bodyR;
   p.push();
-  p.ambientLight(100);
-  p.directionalLight(255,255,255,0.6,0.7,0.5);
-
+  p.ambientLight(100); p.directionalLight(255,255,255,0.6,0.7,0.5);
   p.rotateZ(tumble);
-
-  p.ambientMaterial(205,173,63);
-  p.specularMaterial(255,230,160);
-  p.shininess(36);
+  p.ambientMaterial(205,173,63); p.specularMaterial(255,230,160); p.shininess(36);
   p.cylinder(baseR, baseH, detail[0], detail[1]);
-
   p.translate(0, baseH*0.5 + bodyH*0.5, 0);
-  p.ambientMaterial(205,173,63);
-  p.specularMaterial(255,230,160);
-  p.shininess(42);
+  p.ambientMaterial(205,173,63); p.specularMaterial(255,230,160); p.shininess(42);
   p.cylinder(bodyR, bodyH, detail[0], detail[1]);
-
   p.translate(0, bodyH*0.5, 0);
-  p.ambientMaterial(180,185,192);
-  p.specularMaterial(255,255,255);
-  p.shininess(90);
+  p.ambientMaterial(180,185,192); p.specularMaterial(255,255,255); p.shininess(90);
   p.sphere(tipR, Math.max(16,detail[0]), Math.max(12,detail[1]));
   p.pop();
 }
 
+/* ---- UI profile control ---- */
+const viewProfile = $('#viewProfile');
+function applyUIProfile(mode){
+  const adv = document.querySelectorAll('.advanced');
+  const legend = $('#legend'), info = $('#infoPanel'), block = $('#blockPanel');
+  // defaults
+  legend.classList.remove('hidden');
+  info.classList.remove('hidden');
+  block.classList.remove('hidden');
+  adv.forEach(e=>e.classList.remove('hidden'));
+  info.open = false; block.open = false;
+
+  switch(mode){
+    case 'minimal':
+      legend.classList.add('hidden');
+      info.classList.add('hidden');
+      block.classList.add('hidden');
+      adv.forEach(e=>e.classList.add('hidden'));
+      break;
+    case 'atom-only':
+      legend.classList.remove('hidden');
+      info.classList.add('hidden');
+      block.classList.add('hidden');
+      adv.forEach(e=>e.classList.add('hidden'));
+      _renderFlags.showRings = false;
+      break;
+    case 'atom-rings':
+      legend.classList.remove('hidden');
+      info.classList.add('hidden');
+      block.classList.add('hidden');
+      adv.forEach(e=>e.classList.add('hidden'));
+      _renderFlags.showRings = true;
+      break;
+    case 'everything':
+      legend.classList.remove('hidden');
+      info.classList.remove('hidden');
+      block.classList.remove('hidden');
+      adv.forEach(e=>e.classList.remove('hidden'));
+      break;
+    case 'debug':
+      legend.classList.remove('hidden');
+      info.classList.remove('hidden');
+      block.classList.remove('hidden');
+      adv.forEach(e=>e.classList.remove('hidden'));
+      info.open = true; block.open = true;
+      break;
+  }
+}
+// rendering toggles
+const _renderFlags = { showRings: true };
+
+/* ---------- startSketch ---------- */
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
 
@@ -756,137 +764,84 @@ function startSketch(blk){
       p.setAttributes('alpha', true);
       p.setAttributes('antialias', true);
 
-      // --- MOBILE FIX: friendlier GL / DPR on phones ---
-      const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-      if (isMobile) {
+      // Mobile: lighter settings for stability/perf
+      if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
         p.pixelDensity(1);
         p.setAttributes('antialias', false);
-        p.setAttributes('alpha', false); // opaque canvas avoids iOS clear glitches
+        p.setAttributes('alpha', false);
       }
 
       try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }
       catch(e){ orbShader=null; shaderLinked=false; console.warn('Shader creation failed:',e); }
 
       p.ambientLight(120); p.directionalLight(255,255,255,0.5,0.6,0.4);
-
       fire = new FireParticles(p, 900);
-
-      const canvasEl = cnv.canvas;
-
-      // If mobile, prefer p5's touch callbacks instead of DOM listeners.
-      if (!/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-        // Desktop / non-mobile touch handling (existing)
-        if(canvasEl){
-          canvasEl.addEventListener('touchstart',(e)=>{
-            if(e.touches.length===1){
-              interactionMode='rotate';
-              const t=e.touches[0]; const now=performance.now();
-              const dist=Math.hypot(t.clientX-lastTapXY[0], t.clientY-lastTapXY[1]);
-              if(now-lastTapTime<280 && dist<12){ $('#uiRoot').classList.toggle('show'); lastTapTime=0; }
-              else { lastTapTime=now; lastTapXY=[t.clientX,t.clientY]; }
-              lastX=t.clientX; lastY=t.clientY;
-            } else if(e.touches.length===2){
-              interactionMode='panzoom';
-              const t0=e.touches[0], t1=e.touches[1];
-              pinchPrev=Math.max(1, Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY));
-              twoPrevMid=[(t0.clientX+t1.clientX)/2, (t0.clientY+t1.clientY)/2];
-            }
-            e.preventDefault();
-          }, {passive:false});
-
-          canvasEl.addEventListener('touchmove',(e)=>{
-            if(interactionMode==='rotate' && e.touches.length===1){
-              const t=e.touches[0], dx=t.clientX-lastX, dy=t.clientY-lastY; lastX=t.clientX; lastY=t.clientY;
-              camYaw+=dx*0.005; camPitch=clamp(camPitch+dy*0.005,-Math.PI/2+0.02,Math.PI/2-0.02);
-            } else if(interactionMode==='panzoom' && e.touches.length===2){
-              const t0=e.touches[0], t1=e.touches[1];
-              let d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY); d=Math.max(1,d);
-              if(pinchPrev==null) pinchPrev=d;
-              const rawScale = d / pinchPrev;
-              const saneScale = isFinite(rawScale) ? clamp(rawScale, 0.2, 5.0) : 1.0;
-              const next = camDist / Math.pow(saneScale, 0.85);
-              const limited = clamp(next, camDist*0.6, camDist*1.6);
-              camDist = clamp(limited, minCamDist, maxCamDist);
-              pinchPrev = d;
-
-              const midX=(t0.clientX+t1.clientX)/2, midY=(t0.clientY+t1.clientY)/2;
-              if(twoPrevMid){
-                const dx = midX - twoPrevMid[0]; const dy = midY - twoPrevMid[1];
-                const {right, up} = camBasis(camYaw, camPitch);
-                const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height;
-                const add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
-                            ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
-                            ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
-                camTarget[0]+=add[0]; camTarget[1]+=add[1]; camTarget[2]+=add[2];
-                clampCamTarget();
-              }
-              twoPrevMid=[midX,midY];
-            }
-            e.preventDefault();
-          }, {passive:false});
-
-          canvasEl.addEventListener('touchend',()=>{ interactionMode='none'; pinchPrev=null; twoPrevMid=null; }, {passive:true});
-        }
-      }
-
-      // --- MOBILE FIX: p5 touch fallback for phones ---
-      if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-        p.touchStarted = () => {
-          if (p.touches && p.touches.length === 1) {
-            interactionMode = 'rotate';
-            lastX = p.touches[0].x; lastY = p.touches[0].y;
-          } else if (p.touches && p.touches.length === 2) {
-            interactionMode = 'panzoom';
-            const [t0, t1] = p.touches;
-            pinchPrev = Math.max(1, Math.hypot(t0.x - t1.x, t0.y - t1.y));
-            twoPrevMid = [(t0.x + t1.x)/2, (t0.y + t1.y)/2];
-          }
-          return false;
-        };
-        p.touchMoved = () => {
-          if (interactionMode === 'rotate' && p.touches.length === 1) {
-            const t = p.touches[0];
-            const dx = t.x - lastX, dy = t.y - lastY;
-            lastX = t.x; lastY = t.y;
-            camYaw += dx * 0.005;
-            camPitch = clamp(camPitch + dy * 0.005, -Math.PI/2 + 0.02, Math.PI/2 - 0.02);
-          } else if (interactionMode === 'panzoom' && p.touches.length === 2) {
-            const [t0, t1] = p.touches;
-            const d = Math.max(1, Math.hypot(t0.x - t1.x, t0.y - t1.y));
-            if (!pinchPrev) pinchPrev = d;
-            const scale = clamp(d / pinchPrev, 0.2, 5.0);
-            const next = camDist / Math.pow(scale, 0.85);
-            const limited = clamp(next, camDist*0.6, camDist*1.6);
-            camDist = clamp(limited, minCamDist, maxCamDist);
-            pinchPrev = d;
-
-            const midX=(t0.x+t1.x)/2, midY=(t0.y+t1.y)/2;
-            if(twoPrevMid){
-              const dx = midX - twoPrevMid[0]; const dy = midY - twoPrevMid[1];
-              const {right, up} = camBasis(camYaw, camPitch);
-              const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height;
-              const add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
-                          ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
-                          ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
-              camTarget[0]+=add[0]; camTarget[1]+=add[1]; camTarget[2]+=add[2];
-              clampCamTarget();
-            }
-            twoPrevMid=[midX,midY];
-          }
-          return false;
-        };
-        p.touchEnded = () => {
-          interactionMode = 'none';
-          pinchPrev = null; twoPrevMid=null;
-          return false;
-        };
-      }
-
     };
 
-    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeEmojiLayer(); drawHandshakeOverlay(atom.style.pearl170); };
+    // --- Unified MOBILE gestures: use p5 touch callbacks everywhere ---
+    p.doubleClicked = ()=>false; // avoid default
+    p.touchStarted = () => {
+      const now = performance.now();
+      if (p.touches && p.touches.length === 1) {
+        // double-tap UI toggle
+        const t = p.touches[0];
+        const dist = Math.hypot(t.x - lastTapXY[0], t.y - lastTapXY[1]);
+        if (now - lastTapTime < 280 && dist < 16) {
+          $('#uiRoot').classList.toggle('show');
+          lastTapTime = 0;
+        } else {
+          lastTapTime = now; lastTapXY = [t.x, t.y];
+        }
+        interactionMode = 'rotate';
+        lastX = t.x; lastY = t.y;
+      } else if (p.touches && p.touches.length === 2) {
+        interactionMode = 'panzoom';
+        const [t0, t1] = p.touches;
+        pinchPrev = Math.max(1, Math.hypot(t0.x - t1.x, t0.y - t1.y));
+        twoPrevMid = [(t0.x + t1.x)/2, (t0.y + t1.y)/2];
+      }
+      return false;
+    };
+    p.touchMoved = () => {
+      if (!p.touches || p.touches.length===0) return false;
+      if (interactionMode === 'rotate' && p.touches.length === 1) {
+        const t = p.touches[0];
+        const dx = t.x - lastX, dy = t.y - lastY;
+        lastX = t.x; lastY = t.y;
+        camYaw += dx * 0.005;
+        camPitch = clamp(camPitch + dy * 0.005, -Math.PI/2 + 0.02, Math.PI/2 - 0.02);
+      } else if (interactionMode === 'panzoom' && p.touches.length === 2) {
+        const [t0, t1] = p.touches;
+        const d = Math.max(1, Math.hypot(t0.x - t1.x, t0.y - t1.y));
+        if (!pinchPrev) pinchPrev = d;
+        const scale = clamp(d / pinchPrev, 0.2, 5.0);
+        const next = camDist / Math.pow(scale, 0.85);
+        const limited = clamp(next, camDist*0.6, camDist*1.6);
+        camDist = clamp(limited, minCamDist, maxCamDist);
+        pinchPrev = d;
 
-    p.mousePressed=(e)=>{ lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; interactionMode = (dragButton===p.RIGHT)?'panzoom':'rotate'; };
+        const midX=(t0.x+t1.x)/2, midY=(t0.y+t1.y)/2;
+        if(twoPrevMid){
+          const dx = midX - twoPrevMid[0]; const dy = midY - twoPrevMid[1];
+          const {right, up} = camBasis(camYaw, camPitch);
+          const panScale = (camDist * Math.tan(p.radians(55) * 0.5)) * 1.5 / p.height;
+          const add=[ ( dx * panScale) * right[0] + (-dy * panScale) * up[0],
+                      ( dx * panScale) * right[1] + (-dy * panScale) * up[1],
+                      ( dx * panScale) * right[2] + (-dy * panScale) * up[2] ];
+          camTarget[0]+=add[0]; camTarget[1]+=add[1]; camTarget[2]+=add[2];
+          clampCamTarget();
+        }
+        twoPrevMid=[midX,midY];
+      }
+      return false;
+    };
+    p.touchEnded = () => {
+      interactionMode='none'; pinchPrev=null; twoPrevMid=null;
+      return false;
+    };
+
+    // Desktop mouse controls still active
+    p.mousePressed=(e)=>{ lastX=p.mouseX; lastY=p.mouseY; interactionMode = (e.button===2)?'panzoom':'rotate'; };
     p.mouseReleased=()=>{ interactionMode='none'; };
     p.mouseDragged=()=>{
       const dx=p.mouseX-lastX, dy=p.mouseY-lastY; lastX=p.mouseX; lastY=p.mouseY;
@@ -907,9 +862,7 @@ function startSketch(blk){
 
     function drawOrbMat(cA,cB,r,t,alpha,mode,seed,detail){
       const m=Math.max(0,Math.min(10,(mode|0)));
-      const a = (m===1) ? (alpha * 0.12)
-              : (m===9) ? (alpha * 0.55)
-              :           alpha;
+      const a = (m===1) ? (alpha * 0.12) : (m===9 ? (alpha * 0.55) : alpha);
       const rr = (Number.isFinite(r) && r > 0) ? r : 3.4;
       if(orbShader && shaderLinked){
         try{
@@ -941,6 +894,7 @@ function startSketch(blk){
     }
 
     function drawRings(t){
+      if(!_renderFlags.showRings) return;
       if(atom.style.specialCrosshair){
         const outer = atom.radii.length? atom.radii[atom.radii.length-1] : SHELL_STEP*4;
         drawCrosshairRings(p, outer);
@@ -977,21 +931,16 @@ function startSketch(blk){
     function drawNucleus(t){
       if(atom.style.specialCrosshair){
         const red=[255,60,60];
-        p.push();
-        p.resetShader();
-        p.noStroke();
+        p.push(); p.resetShader(); p.noStroke();
         p.ambientLight(80); p.directionalLight(255,255,255,0.6,0.7,0.5);
-        p.ambientMaterial(255,60,60);
-        p.specularMaterial(255,160,160); p.shininess(60);
-        p.sphere(NUCLEON_R, 26, 18);
-        p.pop();
+        p.ambientMaterial(255,60,60); p.specularMaterial(255,160,160); p.shininess(60);
+        p.sphere(NUCLEON_R, 26, 18); p.pop();
         drawSoftGlowAt(p,0,0,0,NUCLEUS_R0*0.9,[255,60,60],1.2);
         return;
       }
 
       let protonMode  = (overrides.proton  ?? atom.setModes.protons);
       let neutronMode = (overrides.neutron ?? atom.setModes.neutrons);
-
       if(atom.style.pearl170){ protonMode = 5; neutronMode = 5; }
 
       let cP_A = shiftHue(atom.colors.electron, -35), cP_B = shiftHue(atom.colors.electron, -5);
@@ -1003,7 +952,7 @@ function startSketch(blk){
         cN_A = [255,160,40]; cN_B = [255,160,40];
       }
 
-      let drawNucGlow = false, sizePulse = 1.0;
+      let drawNucGlow=false, sizePulse=1.0;
       if(atom.style.halving){ protonMode=7; neutronMode=7; cP_A=[212,172,55]; cP_B=[255,220,120]; cN_A=cP_A; cN_B=cP_B; sizePulse=1.0+0.05*Math.sin(t*2.0); drawNucGlow=true; }
       if(atom.style.pearl170){ sizePulse=1.0+0.06*Math.sin(t*1.6); }
       if(drawNucGlow){ drawSoftGlowAt(p, 0,0,0, NUCLEUS_R0*1.05, [255,200,90], 1.0); }
@@ -1020,14 +969,11 @@ function startSketch(blk){
     function drawElectrons(t){
       if(atom.style.specialCrosshair){
         const scale = Math.max(0.85, atom.style.eSizeScale*0.9);
-
         for(let i=0;i<atom.shells.length;i++){
           const r=atom.radii[i], baseSpeed=atom.speeds[i];
           for(let j=0;j<atom.shells[i];j++){
             const m=atom.eMeta[i][j];
             let th=atom.electronAngles[i][j];
-
-            // original bullet
             let a=r*(1+m.e*0.35), b=r*(1-m.e*0.35), pre=t*m.pre+m.phase;
             let v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
             let pt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
@@ -1035,23 +981,15 @@ function startSketch(blk){
             let dN=vnorm(d);
             let yaw=Math.atan2(dN[0], dN[2]);  let pitch=Math.asin(-dN[1]);
             let tumble = t*3.0 + m.objSeed*10.0;
-
             p.push(); p.translate(pt[0],pt[1],pt[2]); p.rotateY(yaw); p.rotateX(pitch);
-            drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble);
-            p.pop();
-
-            // duplicate bullet opposite phase
+            drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble); p.pop();
             const th2 = th + Math.PI;
             const pt2=vadd(vmul(v,a*Math.cos(th2)), vmul(w,b*Math.sin(th2)));
             const d2 = vadd( vmul(v,-a*Math.sin(th2)), vmul(w, b*Math.cos(th2)) );
             const dN2=vnorm(d2);
             const yaw2=Math.atan2(dN2[0], dN2[2]);  const pitch2=Math.asin(-dN2[1]);
-            const tumble2 = tumble + 1.7;
-
             p.push(); p.translate(pt2[0],pt2[1],pt2[2]); p.rotateY(yaw2); p.rotateX(pitch2);
-            drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble2);
-            p.pop();
-
+            drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble+1.7); p.pop();
             atom.electronAngles[i][j]+=baseSpeed*m.spMul;
           }
         }
@@ -1061,11 +999,9 @@ function startSketch(blk){
       let eMode = (overrides.electron ?? atom.setModes.electrons);
       let sizeScale = atom.style.eSizeScale;
       let baseColA = atom.colors.electron, baseColB = atom.style.ringColor;
-
       if(atom.style.is1337){ eMode = 2; baseColA=[60,255,130]; baseColB=[60,255,130]; }
       if(atom.style.halving){ eMode = 7; baseColA=[210,215,220]; baseColB=[240,245,250]; sizeScale *= 1.0 + 0.08*Math.sin(t*2.0); }
       if(atom.style.pearl170){ eMode = 5; sizeScale *= 1.0 + 0.25*(0.5+0.5*Math.sin(t*9.0)); }
-
       const isFireE = (overrides.electron ?? atom.setModes.electrons)===9;
 
       const info = [];
@@ -1086,8 +1022,8 @@ function startSketch(blk){
       }
 
       if(atom.style.pearl170){
-        if(t - atom._lastCollCheck > 0.06){
-          atom._lastCollCheck = t;
+        if(p.millis()*0.001 - atom._lastCollCheck > 0.06){
+          atom._lastCollCheck = p.millis()*0.001;
           const cell = 12, buckets = new Map();
           const bucketKey=(p)=>`${Math.round(p[0]/cell)}|${Math.round(p[1]/cell)}|${Math.round(p[2]/cell)}`;
           for(let idx=0; idx<info.length; idx++){ const k=bucketKey(info[idx].pt); if(!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(idx); }
@@ -1100,8 +1036,8 @@ function startSketch(blk){
                 if(dist2(A.pt,B.pt)<=MD2){
                   const mid=[(A.pt[0]+B.pt[0])/2,(A.pt[1]+B.pt[1])/2,(A.pt[2]+B.pt[2])/2];
                   const color=mixRGB(A.cA,B.cA,0.5);
-                  atom._merge.set(idA,{partner:idB,state:'merging',t0:t,mid,color});
-                  atom._merge.set(idB,{partner:idA,state:'merging',t0:t,mid,color});
+                  atom._merge.set(idA,{partner:idB,state:'merging',t0:p.millis()*0.001,mid,color});
+                  atom._merge.set(idB,{partner:idA,state:'merging',t0:p.millis()*0.001,mid,color});
                   break;
                 }
               }
@@ -1119,7 +1055,7 @@ function startSketch(blk){
 
         if(!rec){
           p.push(); p.translate(it.pt[0],it.pt[1],it.pt[2]);
-          drawOrbMat(it.cA, it.cB, it.r, t, 1.0, eMode, it.objSeed, electronDetail);
+          drawOrbMat(it.cA, it.cB, it.r, p.millis()*0.001, 1.0, eMode, it.objSeed, electronDetail);
           p.pop();
           const R=Math.hypot(it.pt[0],it.pt[1],it.pt[2])||1;
           emitFireAt(it.pt[0],it.pt[1],it.pt[2], it.pt[0]/R,it.pt[1]/R,it.pt[2]/R, it.cA,it.cB, isFireE);
@@ -1129,15 +1065,15 @@ function startSketch(blk){
         const mate = idxById.get(rec.partner); if(!mate){ atom._merge.delete(id); continue; }
         const mateRec = atom._merge.get(rec.partner); if(!mateRec){ atom._merge.delete(id); continue; }
         const leader = (id < rec.partner) ? id : rec.partner; const isLeader=(id===leader);
-        const now=t, dtState=now-rec.t0;
+        const now=p.millis()*0.001, dtState=now-rec.t0;
 
         if(rec.state==='merging'){
           const u=clamp(dtState/MERGE_DUR,0,1), ease=0.5-0.5*Math.cos(Math.PI*u);
           const Apos=[ it.pt[0]*(1-ease)+rec.mid[0]*ease, it.pt[1]*(1-ease)+rec.mid[1]*ease, it.pt[2]*(1-ease)+rec.mid[2]*ease ];
           const Bpos=[ mate.pt[0]*(1-ease)+rec.mid[0]*ease, mate.pt[1]*(1-ease)+rec.mid[1]*ease, mate.pt[2]*(1-ease)+rec.mid[2]*ease ];
           const rGrowA=it.r*(1.0+0.25*ease), rGrowB=mate.r*(1.0+0.25*ease);
-          p.push(); p.translate(Apos[0],Apos[1],Apos[2]); drawOrbMat(it.cA,it.cB,rGrowA,t,1.0,eMode,it.objSeed,electronDetail); p.pop();
-          p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]); drawOrbMat(mate.cA,mate.cB,rGrowB,t,1.0,eMode,mate.objSeed,electronDetail); p.pop();
+          p.push(); p.translate(Apos[0],Apos[1],Apos[2]); drawOrbMat(it.cA,it.cB,rGrowA,now,1.0,eMode,it.objSeed,electronDetail); p.pop();
+          p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]); drawOrbMat(mate.cA,mate.cB,rGrowB,now,1.0,eMode,mate.objSeed,electronDetail); p.pop();
           drawSoftGlowAt(p, rec.mid[0],rec.mid[1],rec.mid[2], (rGrowA+rGrowB)*0.6, rec.color, 0.6*ease);
           drawn.add(id); drawn.add(rec.partner);
           if(u>=1){ rec.state='merged'; rec.t0=now; mateRec.state='merged'; mateRec.t0=now; }
@@ -1147,7 +1083,7 @@ function startSketch(blk){
         if(rec.state==='merged'){
           if(isLeader){
             const rNow=Math.max(it.r, mate.r)*2.0;
-            p.push(); p.translate(rec.mid[0],rec.mid[1],rec.mid[2]); drawOrbMat(rec.color,rec.color,rNow,t,1.0,eMode,it.objSeed,electronDetail); p.pop();
+            p.push(); p.translate(rec.mid[0],rec.mid[1],rec.mid[2]); drawOrbMat(rec.color,rec.color,rNow,now,1.0,eMode,it.objSeed,electronDetail); p.pop();
             drawSoftGlowAt(p, rec.mid[0],rec.mid[1],rec.mid[2], rNow*1.15, rec.color, 0.9);
             drawn.add(id); drawn.add(rec.partner);
             if(dtState>=MERGED_HOLD){ rec.state='unmerging'; rec.t0=now; mateRec.state='unmerging'; mateRec.t0=now; }
@@ -1160,14 +1096,13 @@ function startSketch(blk){
           const Apos=[ mid[0]*(1-easeOut)+it.pt[0]*easeOut, mid[1]*(1-easeOut)+it.pt[1]*easeOut, mid[2]*(1-easeOut)+it.pt[2]*easeOut ];
           const Bpos=[ mid[0]*(1-easeOut)+mate.pt[0]*easeOut, mid[1]*(1-easeOut)+mate.pt[1]*easeOut, mid[2]*(1-easeOut)+mate.pt[2]*easeOut ];
           const rNowA=it.r*(2.0-1.0*easeOut), rNowB=mate.r*(2.0-1.0*easeOut);
-          p.push(); p.translate(Apos[0],Apos[1],Apos[2]); drawOrbMat(it.cA,it.cB,rNowA,t,1.0,eMode,it.objSeed,electronDetail); p.pop();
-          p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]); drawOrbMat(mate.cA,mate.cB,rNowB,t,1.0,eMode,mate.objSeed,electronDetail); p.pop();
+          p.push(); p.translate(Apos[0],Apos[1],Apos[2]); drawOrbMat(it.cA,it.cB,rNowA,now,1.0,eMode,it.objSeed,electronDetail); p.pop();
+          p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]); drawOrbMat(mate.cA,mate.cB,rNowB,now,1.0,eMode,mate.objSeed,electronDetail); p.pop();
           const glowStrength=Math.max(0,0.6*(1.0-easeOut)); drawSoftGlowAt(p,(Apos[0]+Bpos[0])/2,(Apos[1]+Bpos[1])/2,(Apos[2]+Bpos[2])/2, Math.max(rNowA,rNowB)*1.1, rec.color, glowStrength);
           drawn.add(id); drawn.add(rec.partner);
           if(v>=1){ atom._merge.delete(id); atom._merge.delete(rec.partner); }
           continue;
         }
-
         atom._merge.delete(id);
       }
 
@@ -1185,13 +1120,12 @@ function startSketch(blk){
       }
     }
 
+    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeEmojiLayer(); drawHandshakeOverlay(atom.style.pearl170); };
+
     p.draw=()=>{
       const t=p.millis()*0.001;
       const dt=Math.max(0.001, Math.min(0.05, p.deltaTime/1000));
-
-      // --- MOBILE FIX: safe background clear (avoid clear() on iOS WebGL) ---
-      p.background(0);
-
+      p.background(0); // safe clear for mobile
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
       p.perspective(fovy,aspect,near,far);
       const cx=camTarget[0]+camDist*Math.cos(camPitch)*Math.sin(camYaw);
@@ -1203,7 +1137,6 @@ function startSketch(blk){
       modelSpin += 0.16 * dt;
       p.push(); p.rotateY(modelSpin);
 
-      // Override background for halving style after the safe clear
       if(atom.style.halving){
         const pulse = 0.5 + 0.5*Math.sin(t*1.6);
         const bg = mixRGB([25,8,0],[255,110,0], pulse*0.85);
@@ -1228,18 +1161,9 @@ function startSketch(blk){
 /* ---------- networking / buttons / boot ---------- */
 const API='https://mempool.space/api';
 async function fetchText(u){
-  try{
-    const r=await fetch(u);
-    if(!r.ok) throw new Error(r.status+' '+u);
-    return (await r.text()).trim();
-  }catch(err){
-    console.warn('fetchText error:', err);
-    throw err;
-  }
+  const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return (await r.text()).trim();
 }
-async function fetchJSON(u){
-  const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();
-}
+async function fetchJSON(u){ const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json(); }
 
 const progress = $('#progress');
 function showProgress(msg){ progress.style.display='block'; progress.textContent=msg; }
@@ -1254,6 +1178,8 @@ async function loadBlockByHeight(height){
     hideProgress();
     selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
     startSketch(blk);
+    // Re-apply profile after (re)start
+    applyUIProfile(viewProfile.value);
   }catch(e){ showProgress('Error: '+e.message); }
 }
 async function loadLatest(){
@@ -1264,12 +1190,17 @@ async function loadLatest(){
   }catch(e){ showProgress('Error: '+e.message+'\nTry entering a known height (e.g. 840000) and press Load.'); }
 }
 
-loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} try{ await loadBlockByHeight(h);}catch(e){ showProgress('Error: '+e.message); }};
-latestBtn.onclick=async()=>{ try{ await loadLatest(); }catch(e){ showProgress('Error: '+e.message); }};
+/* ---- UI interactions ---- */
+loadBtn.onclick=async()=>{const h=Number(heightInput.value); if(!h){alert('Enter a block height'); return;} await loadBlockByHeight(h); };
+latestBtn.onclick=async()=>{ await loadLatest(); };
 resetBtn.onclick=()=>{ camDist=Math.max(minCamDist*1.6,560); camYaw=0.2; camPitch=-0.1; camTarget=[0,0,0]; modelSpin=0; interactionMode='none'; drawHandshakeOverlay(false); };
 
-document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') document.getElementById('uiRoot').classList.toggle('show'); });
-setTimeout(()=>document.getElementById('hint').classList.add('hide'),15000);
+document.addEventListener('keydown',e=>{ if(e.key==='e'||e.key==='E') $('#uiRoot').classList.toggle('show'); });
+viewProfile.addEventListener('change', ()=>applyUIProfile(viewProfile.value));
+
+/* ---- default startup ---- */
+applyUIProfile(/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'atom-rings' : 'everything');
+setTimeout(()=>$('#hint').classList.add('hide'),15000);
 loadLatest();
 </script>
 </body>
