@@ -318,7 +318,7 @@ function paletteFromBlock(height, hash, merkle){
   };
 }
 function diversityFromBlock(b){
-  const h=b.height|0, mr=b.merkle_root||'', id=b.id||b.hash||';
+  const h=b.height|0, mr=b.merkle_root||'', id=b.id||b.hash||'';
   const rA=prngFromHex(mr), rB=prngFromHex(id);
   return {
     famA: rA(), famB: rB(),
