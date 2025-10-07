@@ -3,15 +3,14 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Bitcoin Block Atom — Bitmap BG fixed</title>
+<title>Bitcoin Block Atom — full render + Bitmap BG</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%2300c2ff'/%3E%3C/svg%3E">
 <style>
   :root { --panel:rgba(10,14,18,0.94); --border:#1e2a33; --text:#d9ecff; --muted:#9cc6eb; }
   html,body{margin:0;height:100%;background:#000;color:var(--text);
             font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;overscroll-behavior:none}
-  /* 2D layer sits under WEBGL */
-  #emojiLayer{position:fixed;inset:0;z-index:1;display:block;pointer-events:none; background:transparent}
-  canvas.p5canvas{position:fixed;inset:0;z-index:2;display:block;touch-action:none; background:transparent !important}
+  #emojiLayer{position:fixed;inset:0;z-index:1;display:block;pointer-events:none;background:transparent}
+  canvas.p5canvas{position:fixed;inset:0;z-index:2;display:block;touch-action:none;background:transparent}
 
   .uiRoot{position:fixed;inset:0;z-index:30;opacity:1;visibility:visible;pointer-events:none}
   .uiRoot.show{opacity:1;visibility:visible}
@@ -55,10 +54,15 @@
         background:rgba(7,10,14,0.6);border:1px solid #24313b;border-radius:10px;padding:7px 10px;pointer-events:none;transition:opacity .4s ease}
   #hint.hide{opacity:0}
 
+  /* Mobile: replace heavy HUD with a simple “View” dropdown */
+  #mobileBar{display:none; position:fixed; left:8px; right:8px; top:8px; z-index:32;
+             background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:8px; }
+  #mobileBar select{width:100%; font:inherit; background:#121820; color:var(--text); border:1px solid var(--border);
+                    border-radius:8px; padding:8px}
+
   @media (max-width: 800px){
-    .hud{ left:8px; right:8px; top:8px;
-      display:grid; grid-template-columns: 1fr auto auto auto; grid-auto-rows:minmax(36px,auto); gap:8px; font-size:13px }
-    .hud .sep{display:none}
+    .hud{ display:none; }  /* hide clutter */
+    #mobileBar{ display:block; }
     #legend{left:8px; top:auto; bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
     details#blockPanel, #infoPanel{left:8px; right:8px; max-width:none}
   }
@@ -66,8 +70,21 @@
 </head>
 <body>
 
+<!-- 2D layer: Bitmap + overlays -->
 <canvas id="emojiLayer"></canvas>
 
+<!-- Mobile compact bar -->
+<div id="mobileBar">
+  <select id="mobileView">
+    <option value="legend">View: Controls</option>
+    <option value="block">View: Block Details</option>
+    <option value="info">View: Info / How it works</option>
+    <option value="none">View: None</option>
+    <option value="all">View: All</option>
+  </select>
+</div>
+
+<!-- Desktop / large UI -->
 <div class="uiRoot show" id="uiRoot">
   <div class="hud" id="hud">
     <label>Height:</label>
@@ -117,12 +134,12 @@ const TAU = Math.PI*2;
 const isFiniteVec = v => v.every(Number.isFinite);
 const smoothstep = (a,b,x)=>{const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t);};
 const hsv2rgb_js = (h,s,v)=>{ let i=Math.floor(h*6), f=h*6-i, p=v*(1-s), q=v*(1-f*s), t=v*(1-(1-f)*s), r,g,b;
-  switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g*q;b=v;break;case 4:r=t;g*p;b=v;break;case 5:r=v;g*p;b=q;break;}
+  switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;case 5:r=v;g=p;b=q;break;}
   return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
 };
 const eID = (i,j) => `${i}:${j}`;
 
-/* ---------- shaders (same as before) ---------- */
+/* ---------- shaders ---------- */
 const VERT=`precision mediump float; precision mediump int;
 attribute vec3 aPosition;
 uniform mat4 uModelViewMatrix,uProjectionMatrix;
@@ -137,7 +154,7 @@ float n011=hash(i+vec3(0,1,1)), n111=hash(i+vec3(1,1,1));
 vec3 u=f*f*(3.0-2.0*f);
 float n00=mix(n000,n100,u.x), n10=mix(n010,n110,u.x);
 float n01=mix(n001,n101,u.x), n11=mix(n011,n111,u.x);
-float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);
+float n0=mix(n00,n10,u.y), n1=mix(n01,n11,u.y);   // fixed declaration
 return mix(n0,n1,u.z);}
 float fbm(vec3 p){float s=0.0,a=0.5;for(int i=0;i<5;i++){s+=a*n3(p);p*=2.03;a*=0.5;}return s;}
 void main(){
@@ -145,6 +162,7 @@ void main(){
   vec3 nrm=normalize(aPosition);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
 
+  // Spikes mode surface displacement
   if(m==6){
     vec3 seed=vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7);
     float t=uTime*(1.0+uSpeed);
@@ -154,6 +172,7 @@ void main(){
     pos += nrm*(amp*spike*length(aPosition));
   }
 
+  // Glass ripples
   if(m==1){
     float t=uTime*(0.5*(1.0+0.6*uSpeed));
     float w1 = sin( dot(nrm, vec3(0.8,0.2,0.5))*22.0 + t*2.2 + uObjSeed*11.7 );
@@ -195,7 +214,7 @@ void main(){
   float t=uTime*(0.6+uSpeed);
   int m=int(floor(clamp(uModeF,0.0,10.0)+0.5));
 
-  if(m==1){
+  if(m==1){ // Glass
     float NoV = max(dot(n,V), 0.0);
     float baseThick = 0.14 + 0.05*sin(t*0.35 + uObjSeed*5.3);
     float micro = fbm(normalize(vPos)*5.0 + vec3(0.0,t*0.12,0.0) + vec3(uObjSeed*1.7));
@@ -209,42 +228,50 @@ void main(){
     float spec = 0.18*pow(max(dot(n,H1),0.0), 80.0) + 0.15*pow(max(dot(n,H2),0.0), 80.0);
     vec3 shellTint = mix(vec3(1.0), swirl, 0.15);
     col = shellTint*0.03 + reflectCol * (0.02 + 0.06*ndl + 0.22*fres) + vec3(1.0)*spec + vec3(1.0)*rim*0.06;
-  } else if(m==0){
+
+  } else if(m==0){ // Marble
     float s=fbm(normalize(vPos)*3.2 + vec3(0.0,t*0.25+uPhase,0.0) + vec3(uObjSeed,uObjSeed*1.7,uObjSeed*2.3));
     float veins=sin((vPos.x+vPos.y+vPos.z)*8.0 + s*6.0 + uPhase + uObjSeed*3.14);
     float mm=smoothstep(-0.2,0.7,veins);
     vec3 base=mix(colA,colB,mm);
     col=base*(0.38+0.62*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==2){
+
+  } else if(m==2){ // Wireframe-ish
     float k=9.0+2.0*fract(uObjSeed*7.0);
     vec3 q=normalize(vPos);
     float g=max(max(abs(sin(q.x*k)),abs(sin(q.y*k))),abs(sin(q.z*k)));
     float edge=smoothstep(0.92,0.985,g);
     vec3 base=mix(colA,colB,0.5)*(0.15+0.45*ndl);
     col=base + vec3(0.2,1.0,0.2)*edge*0.95 + vec3(1.0)*rim*0.12;
-  } else if(m==3){
+
+  } else if(m==3){ // Lava
     float f=fbm(normalize(vPos)*4.0 + vec3(0.0,t*0.7,0.0) + vec3(uObjSeed,uObjSeed*2.1,uObjSeed*3.3));
     float veins=smoothstep(0.55,0.8,f);
     vec3 hot=vec3(1.0,0.35,0.0), cool=vec3(0.05,0.02,0.02);
     col=mix(cool,hot,veins)*(0.38+0.62*ndl) + vec3(1.0)*rim*0.08;
-  } else if(m==4){
+
+  } else if(m==4){ // Toon
     float s=step(0.25,ndl)*0.45 + step(0.55,ndl)*0.3 + step(0.8,ndl)*0.25;
     vec3 base=mix(colA,colB,0.5);
     col=base*(0.24+s) + vec3(1.0)*step(0.8,rim)*0.18;
-  } else if(m==5){
+
+  } else if(m==5){ // Iridescent
     float h=fract(0.5+0.35*dot(normalize(vPos),vec3(0.3,0.8,0.5))+0.15*sin(t+uPhase+uObjSeed));
     vec3 iri=hsv2rgb(vec3(h, 0.95, 1.0));
     col=mix(iri,mix(colA,colB,0.4),0.25)*(0.32+0.68*ndl) + vec3(1.0)*rim*0.18;
-  } else if(m==6){
+
+  } else if(m==6){ // Spikes
     float s=fbm(normalize(vPos)*7.0 + vec3(0.0,t*1.25,0.0) + vec3(uObjSeed,uObjSeed*1.9,uObjSeed*2.7));
     float spike=smoothstep(0.62,0.90,s);
     vec3 base=mix(colA,colB,0.5);
     vec3 hi=base*1.8, lo=base*0.45;
     col=mix(lo,hi,spike)*(0.28+0.72*ndl) + vec3(1.0)*rim*0.14;
-  } else if(m==7){
+
+  } else if(m==7){ // Metallic
     float spec=pow(max(dot(normalize(vNormal),normalize(vec3(0.6,0.7,0.5)+vec3(-0.4,0.65,-0.2))),0.0),34.0);
     col=mix(colA,colB,0.5)*(0.22+0.60*ndl) + vec3(1.0)*spec*0.95 + vec3(1.0)*rim*0.12;
-  } else if(m==8){
+
+  } else if(m==8){ // Sky
     vec3 p=normalize(vPos);
     float ang=t*0.35+uPhase*0.3; mat2 R=mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
     p.xy = vec3(R*vec2(p.x,p.y),0.0).xy;
@@ -254,12 +281,15 @@ void main(){
     vec3 sky=vec3(0.53,0.75,0.98), cloud=vec3(1.0);
     vec3 baseCol=mix(sky,cloud,clouds);
     col=baseCol*(0.35+0.65*ndl) + vec3(1.0)*rim*0.12;
-  } else if(m==9){
+
+  } else if(m==9){ // Fireball
     vec3 base = mix(colA, colB, 0.35);
     col = base*(0.28+0.72*ndl) + vec3(1.0)*rim*0.08;
-  } else {
+
+  } else { // Default lambert
     col=mix(colA,colB,0.5)*(0.38+0.62*ndl) + vec3(1.0)*rim*0.12;
   }
+
   gl_FragColor=vec4(clamp(col,0.0,1.0),uAlpha);
 }`;
 
@@ -437,16 +467,10 @@ class FireParticles{
   }
 }
 
-/* ---------- 2D layer management (Bitmap cache + overlays every frame) ---------- */
+/* ---------- 2D emoji/bitmap layer ---------- */
 const emojiLayer = document.getElementById('emojiLayer');
 const eCtx = emojiLayer.getContext('2d');
 let dpr = Math.max(1, window.devicePixelRatio||1);
-
-/* offscreen cache for the bitmap district */
-let bitmapCache = document.createElement('canvas');
-let bitmapCtx = bitmapCache.getContext('2d');
-let lastBitmapTxs = null;   // store tx list to rebuild on resize
-let lastIsHalving = false, lastIsPearl170 = false;
 
 function resizeEmojiLayer(){
   dpr = Math.max(1, window.devicePixelRatio||1);
@@ -455,135 +479,164 @@ function resizeEmojiLayer(){
   emojiLayer.style.width = innerWidth+'px';
   emojiLayer.style.height = innerHeight+'px';
   eCtx.setTransform(dpr,0,0,dpr,0,0);
-
-  // resize cache to CSS pixels (we will paint with device scaling via eCtx transform)
-  bitmapCache.width = innerWidth;
-  bitmapCache.height = innerHeight;
-
-  // rebuild bitmap cache if we have txs already
-  if (lastBitmapTxs) buildBitmapCache(lastBitmapTxs);
 }
 resizeEmojiLayer();
-window.addEventListener('resize', resizeEmojiLayer);
+window.addEventListener('resize', ()=>{ resizeEmojiLayer(); buildBitmapCache(lastBitmapTxs||[]); });
 
-function clearEmojiLayer(){
-  eCtx.clearRect(0,0,emojiLayer.width,emojiLayer.height);
-}
-
-/* overlay parameters */
+/* Handshake overlay controls */
 const HANDSHAKE_WIDTH_FRAC = 0.20;
 const HANDSHAKE_Y_FRAC     = 0.35;
 const HANDSHAKE_OPACITY    = 0.65;
 
-/* halving pulse overlay color */
-const HALVING_OVERLAY_RGB = [255,110,0];
+/* Bitmap background cache & draw */
+const bitmapCache = document.createElement('canvas');
+const bitmapCtx = bitmapCache.getContext('2d');
 
-/* draw the whole 2D layer each frame from cache + overlays */
-function drawEmojiFrame(timeSec){
-  // redraw cached bitmap into display canvas
-  eCtx.save();
-  eCtx.setTransform(dpr,0,0,dpr,0,0);       // draw in CSS px
-  eCtx.clearRect(0,0,innerWidth,innerHeight);
-  if (bitmapCache.width && bitmapCache.height) {
-    eCtx.drawImage(bitmapCache, 0, 0, innerWidth, innerHeight);
+let lastIsHalving=false, lastIsPearl170=false;
+const HALVING_OVERLAY_RGB=[255,150,40];
+
+function buildBitmapCache(txs){
+  bitmapCache.width = innerWidth;
+  bitmapCache.height = innerHeight;
+  bitmapCtx.setTransform(1,0,0,1,0,0);
+  bitmapCtx.clearRect(0,0,bitmapCache.width,bitmapCache.height);
+
+  const weights = txs.map(tx => (tx.vsize ?? tx.weight ?? tx.size ?? 1));
+  const total = weights.reduce((a,b)=>a+b,0) || 1;
+
+  let x=0,y=0,w=bitmapCache.width,h=bitmapCache.height, horizontal=true;
+  const orange = 'rgb(255,130,0)';
+  const border = '#120a05';
+
+  for(let i=0;i<weights.length;i++){
+    const frac = weights[i] / total;
+    if(horizontal){
+      const ww = Math.max(1, Math.round(w*frac));
+      bitmapCtx.fillStyle = orange;
+      bitmapCtx.fillRect(x,y,ww,h);
+      bitmapCtx.strokeStyle = border;
+      bitmapCtx.lineWidth = 1;
+      bitmapCtx.strokeRect(x+0.5,y+0.5,ww-1,h-1);
+      x += ww;
+    } else {
+      const hh = Math.max(1, Math.round(h*frac));
+      bitmapCtx.fillStyle = orange;
+      bitmapCtx.fillRect(x,y,w,hh);
+      bitmapCtx.strokeStyle = border;
+      bitmapCtx.lineWidth = 1;
+      bitmapCtx.strokeRect(x+0.5,y+0.5,w-1,hh-1);
+      y += hh;
+    }
+    horizontal = !horizontal;
   }
-  // halving pulse (translucent overlay; does NOT erase bitmap)
+}
+
+function drawEmojiFrame(timeSec){
+  eCtx.save();
+  eCtx.setTransform(dpr,0,0,dpr,0,0);
+  eCtx.clearRect(0,0,innerWidth,innerHeight);
+
+  // 50% opacity bitmap
+  if (bitmapCache.width && bitmapCache.height) {
+    eCtx.globalAlpha = 0.5;
+    eCtx.drawImage(bitmapCache, 0, 0, innerWidth, innerHeight);
+    eCtx.globalAlpha = 1.0;
+  }
+
+  // halving pulse overlay (soft)
   if (lastIsHalving){
     const pulse = 0.5 + 0.5*Math.sin(timeSec*1.6);
-    const a = 0.10 + 0.18*pulse; // 10–28% alpha
+    const a = 0.10 + 0.18*pulse;
     eCtx.fillStyle = `rgba(${HALVING_OVERLAY_RGB[0]},${HALVING_OVERLAY_RGB[1]},${HALVING_OVERLAY_RGB[2]},${a.toFixed(3)})`;
     eCtx.fillRect(0,0,innerWidth,innerHeight);
   }
-  // 🤝 overlay if pearl170
+
+  // 🤝 overlay for #170
   if (lastIsPearl170){
-    eCtx.globalAlpha = HANDSHAKE_OPACITY;
     eCtx.textAlign = 'center';
     eCtx.textBaseline = 'middle';
+    eCtx.globalAlpha = HANDSHAKE_OPACITY;
     eCtx.font = `${Math.floor(innerWidth * HANDSHAKE_WIDTH_FRAC)}px system-ui, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji`;
     eCtx.fillText('🤝', innerWidth * 0.5, innerHeight * HANDSHAKE_Y_FRAC);
   }
   eCtx.restore();
 }
 
-/* ---------- Bitmap (district) generation into offscreen cache ---------- */
-const DISTRICT_BG = '#1b0d00';
-const PARCEL_COLOR = '#ff7a00';
-const GAP = 1;
-
-function layoutSliceDice(items, x, y, w, h, horizFirst=true, out=[]){
-  const total = items.reduce((s,it)=>s+it.w,0) || 1;
-  if(items.length===0){ return out; }
-  if(items.length===1){ out.push({x,y,w,h, item:items[0]}); return out; }
-  let acc=0, cut=0, half=total/2;
-  for(let i=0;i<items.length;i++){ acc+=items[i].w; if(acc>=half){ cut=i+1; break; } }
-  cut = Math.max(1, Math.min(items.length-1, cut));
-  const A = items.slice(0,cut), B = items.slice(cut);
-  const wA = A.reduce((s,i)=>s+i.w,0), wB = total - wA;
-
-  if(horizFirst){
-    const hA = Math.round(h * (wA/total));
-    layoutSliceDice(A, x, y, w, hA, !horizFirst, out);
-    layoutSliceDice(B, x, y + hA, w, h - hA, !horizFirst, out);
-  }else{
-    const wSplit = Math.round(w * (wA/total));
-    layoutSliceDice(A, x, y, wSplit, h, !horizFirst, out);
-    layoutSliceDice(B, x + wSplit, y, w - wSplit, h, !horizFirst, out);
+/* ---------- drawing helpers ---------- */
+function drawSoftGlowAt(p5, x,y,z, baseR, rgb, strength=1.0){
+  const gl = p5._renderer.GL;
+  p5.push();
+  p5.noStroke();
+  p5.blendMode(p5.ADD);
+  gl.depthMask(false);
+  const layers = 5;
+  for(let i=0;i<layers;i++){
+    const k = (i+1)/layers;
+    const rad = baseR * (1.0 + 0.55*k);
+    const al  = Math.round(32 * (1.0 - k) * strength);
+    p5.push();
+    p5.translate(x,y,z);
+    p5.fill(rgb[0], rgb[1], rgb[2], al);
+    p5.sphere(rad, 12, 8);
+    p5.pop();
   }
-  return out;
+  gl.depthMask(true);
+  p5.blendMode(p5.BLEND);
+  p5.pop();
 }
 
-function buildBitmapCache(txs){
-  const items = txs.map(t => ({
-    id: t.txid || t.id,
-    w: Math.max(1, Number(t.weight || (t.vsize ? t.vsize*4 : 0)) || 1)
-  }));
-  const W = bitmapCache.width, H = bitmapCache.height;
-  bitmapCtx.clearRect(0,0,W,H);
-  bitmapCtx.fillStyle = DISTRICT_BG;
-  bitmapCtx.fillRect(0,0,W,H);
+/* ---- 170 merge constants ---- */
+const MERGE_DIST=9.0, MERGE_DUR=0.45, MERGED_HOLD=0.80, UNMERGE_DUR=0.60;
 
-  const rects = layoutSliceDice(items, 0, 0, W, H, true);
-  bitmapCtx.fillStyle = PARCEL_COLOR;
-  for(const r of rects){
-    const x = r.x + GAP, y = r.y + GAP;
-    const w = Math.max(0, r.w - GAP*2);
-    const h = Math.max(0, r.h - GAP*2);
-    if(w<=0 || h<=0) continue;
-    bitmapCtx.fillRect(x,y,w,h);
-  }
+/* ===== SPECIAL: 228940 helpers (crosshair + bullets) ===== */
+function drawCrosshairRings(p, outerR){
+  const red=[230,25,25], alpha=255, thick=2.2;
+  const innerR = outerR*0.68;
+  p.push(); p.noFill(); p.strokeWeight(thick); p.stroke(red[0],red[1],red[2],alpha);
+  p.circle(0,0,outerR*2); p.circle(0,0,innerR*2);
+  const tickOut=outerR*1.05, tickIn=outerR*0.82;
+  p.line(0,-tickOut,0, 0,-tickIn,0);
+  p.line(0, tickOut,0, 0, tickIn,0);
+  p.line(-tickOut,0,0, -tickIn,0,0);
+  p.line( tickOut,0,0,  tickIn,0,0);
+  p.pop();
+}
+function drawBulletPrimitive(p, brass, steel, scale=1, detail=[18,12], tumble=0){
+  p.resetShader();
+  p.noStroke();
+
+  const bodyR = 1.8*scale;
+  const baseR = bodyR*1.05;
+  const baseH = 0.6*scale;
+  const bodyH = 6.5*scale;
+  const tipR  = bodyR;
+
+  p.push();
+  p.ambientLight(100);
+  p.directionalLight(255,255,255,0.6,0.7,0.5);
+
+  p.rotateZ(tumble);
+
+  p.ambientMaterial(205,173,63);
+  p.specularMaterial(255,230,160);
+  p.shininess(36);
+  p.cylinder(baseR, baseH, detail[0], detail[1]);
+
+  p.translate(0, baseH*0.5 + bodyH*0.5, 0);
+  p.ambientMaterial(205,173,63);
+  p.specularMaterial(255,230,160);
+  p.shininess(42);
+  p.cylinder(bodyR, bodyH, detail[0], detail[1]);
+
+  p.translate(0, bodyH*0.5, 0);
+  p.ambientMaterial(180,185,192);
+  p.specularMaterial(255,255,255);
+  p.shininess(90);
+  p.sphere(tipR, Math.max(16,detail[0]), Math.max(12,detail[1]));
+  p.pop();
 }
 
-async function fetchAllBlockTxs(blockHash){
-  let idx = 0, all = [];
-  while(true){
-    const url = `${API}/block/${blockHash}/txs/${idx}`;
-    const page = await fetchJSON(url).catch(()=>[]);
-    if(!Array.isArray(page) || page.length===0) break;
-    all = all.concat(page);
-    idx += page.length;
-    if(all.length > 5000) break; // safety
-  }
-  return all;
-}
-
-async function prepareBitmapForBlock(blockHash, isHalving, isPearl170){
-  try{
-    const txs = await fetchAllBlockTxs(blockHash);
-    lastBitmapTxs = txs;
-    buildBitmapCache(txs);
-    lastIsHalving = !!isHalving;
-    lastIsPearl170 = !!isPearl170;
-  }catch(e){
-    console.warn('Bitmap background failed:', e);
-    // still keep overlays states
-    lastIsHalving = !!isHalving;
-    lastIsPearl170 = !!isPearl170;
-    // empty cache (transparent)
-    bitmapCtx.clearRect(0,0,bitmapCache.width,bitmapCache.height);
-  }
-}
-
-/* ---------- build atom (unchanged core) ---------- */
+/* ---------- build atom ---------- */
 function chooseSetModesFromBlockProxy(b, diversity){ return chooseSetModesFromBlock(b, diversity); }
 
 function buildAtomFromBlock(b){
@@ -730,59 +783,25 @@ selProton.onchange = e => { overrides.proton   = (e.target.value===''?null:Numbe
 selNeutron.onchange= e => { overrides.neutron  = (e.target.value===''?null:Number(e.target.value)); };
 selElectron.onchange= e => { overrides.electron = (e.target.value===''?null:Number(e.target.value)); };
 
-/* ---- 170 merge constants ---- */
-const MERGE_DIST=9.0, MERGE_DUR=0.45, MERGED_HOLD=0.80, UNMERGE_DUR=0.60;
-
-/* ===== SPECIAL: 228940 helpers ===== */
-function drawCrosshairRings(p, outerR){
-  const red=[230,25,25], alpha=255, thick=2.2;
-  const innerR = outerR*0.68;
-  p.push(); p.noFill(); p.strokeWeight(thick); p.stroke(red[0],red[1],red[2],alpha);
-  p.circle(0,0,outerR*2); p.circle(0,0,innerR*2);
-  const tickOut=outerR*1.05, tickIn=outerR*0.82;
-  p.line(0,-tickOut,0, 0,-tickIn,0);
-  p.line(0, tickOut,0, 0, tickIn,0);
-  p.line(-tickOut,0,0, -tickIn,0,0);
-  p.line( tickOut,0,0,  tickIn,0,0);
-  p.pop();
+/* Mobile “View” dropdown logic */
+const mobileView = $('#mobileView');
+function applyMobileView(){
+  const v = mobileView?.value || 'legend';
+  const legend = $('#legend'), block = $('#blockPanel'), info = $('#infoPanel');
+  const show = (el, ok)=>{ if(!el) return; el.style.display = ok ? '' : 'none'; };
+  if(window.matchMedia('(max-width: 800px)').matches){
+    show(legend, v==='legend' || v==='all');
+    show(block,  v==='block'  || v==='all');
+    show(info,   v==='info'   || v==='all');
+  } else {
+    // desktop: always show
+    show(legend, true); show(block, true); show(info, true);
+  }
 }
-function drawBulletPrimitive(p, brass, steel, scale=1, detail=[18,12], tumble=0){
-  p.resetShader();
-  p.noStroke();
-  const bodyR = 1.8*scale;
-  const baseR = bodyR*1.05;
-  const baseH = 0.6*scale;
-  const bodyH = 6.5*scale;
-  const tipR  = bodyR;
+mobileView?.addEventListener('change', applyMobileView);
+window.addEventListener('resize', applyMobileView);
 
-  p.push();
-  p.ambientLight(100);
-  p.directionalLight(255,255,255,0.6,0.7,0.5);
-  p.rotateZ(tumble);
-
-  p.ambientMaterial(205,173,63);
-  p.specularMaterial(255,230,160);
-  p.shininess(36);
-  p.cylinder(baseR, baseH, detail[0], detail[1]);
-
-  p.translate(0, baseH*0.5 + bodyH*0.5, 0);
-  p.ambientMaterial(205,173,63);
-  p.specularMaterial(255,230,160);
-  p.shininess(42);
-  p.cylinder(bodyR, bodyH, detail[0], detail[1]);
-
-  p.translate(0, bodyH*0.5, 0);
-  p.ambientMaterial(180,185,192);
-  p.specularMaterial(255,255,255);
-  p.shininess(90);
-  p.sphere(tipR, Math.max(16,detail[0]), Math.max(12,detail[1]));
-  p.pop();
-}
-
-/* track overlay modes */
-let currentIsPearl170 = false;
-let currentIsHalving = false;
-
+/* ---- start sketch ---- */
 function startSketch(blk){
   if(p5Instance){ p5Instance.remove(); p5Instance=null; }
 
@@ -790,10 +809,10 @@ function startSketch(blk){
   modelSpin = 0; interactionMode='none';
 
   const atom=buildAtomFromBlock(blk);
-  currentIsPearl170 = !!atom.style.pearl170;
-  currentIsHalving  = !!atom.style.halving;
-
   injectPanels(atom);
+  lastIsHalving = (!!atom.style.halving);
+  lastIsPearl170 = (!!atom.style.pearl170);
+  applyMobileView();
 
   atom._merge = new Map();
   atom._lastCollCheck = 0;
@@ -841,7 +860,7 @@ function startSketch(blk){
       cnv.canvas.classList.add('p5canvas');
       cnv.canvas.addEventListener('contextmenu', e=>e.preventDefault());
       cnv.canvas.addEventListener('auxclick',  e=>e.preventDefault());
-      p.setAttributes('alpha', true);       // allow transparent clear
+      p.setAttributes('alpha', true);
       p.setAttributes('antialias', true);
 
       try{ orbShader=p.createShader(VERT,FRAG); shaderLinked=true; }
@@ -905,7 +924,11 @@ function startSketch(blk){
       }
     };
 
-    p.windowResized=()=>{ p.resizeCanvas(p.windowWidth,p.windowHeight); resizeEmojiLayer(); };
+    p.windowResized=()=>{
+      p.resizeCanvas(p.windowWidth,p.windowHeight);
+      resizeEmojiLayer(); buildBitmapCache(lastBitmapTxs||[]);
+      applyMobileView();
+    };
 
     p.mousePressed=(e)=>{ lastX=p.mouseX; lastY=p.mouseY; dragButton=p.mouseButton; interactionMode = (dragButton===p.RIGHT)?'panzoom':'rotate'; };
     p.mouseReleased=()=>{ interactionMode='none'; };
@@ -1006,6 +1029,7 @@ function startSketch(blk){
         p.specularMaterial(255,160,160); p.shininess(60);
         p.sphere(NUCLEON_R, 26, 18);
         p.pop();
+        drawSoftGlowAt(p,0,0,0,NUCLEUS_R0*0.9,[255,60,60],1.2);
         return;
       }
 
@@ -1024,8 +1048,9 @@ function startSketch(blk){
       }
 
       let drawNucGlow = false, sizePulse = 1.0;
-      if(atom.style.halving){ protonMode=7; neutronMode=7; cP_A=[212,172,55]; cP_B=[255,220,120]; cN_A=cP_A; cN_B=cP_B; sizePulse=1.0+0.05*Math.sin(t*2.0); drawNucGlow=false; }
+      if(atom.style.halving){ protonMode=7; neutronMode=7; cP_A=[212,172,55]; cP_B=[255,220,120]; cN_A=cP_A; cN_B=cP_B; sizePulse=1.0+0.05*Math.sin(t*2.0); drawNucGlow=true; }
       if(atom.style.pearl170){ sizePulse=1.0+0.06*Math.sin(t*1.6); }
+      if(drawNucGlow){ drawSoftGlowAt(p, 0,0,0, NUCLEUS_R0*1.05, [255,200,90], 1.0); }
 
       for(const q of atom.nucleusPoints){
         p.push(); p.translate(q.x,q.y,q.z);
@@ -1039,12 +1064,14 @@ function startSketch(blk){
     function drawElectrons(t){
       if(atom.style.specialCrosshair){
         const scale = Math.max(0.85, atom.style.eSizeScale*0.9);
+
         for(let i=0;i<atom.shells.length;i++){
           const r=atom.radii[i], baseSpeed=atom.speeds[i];
           for(let j=0;j<atom.shells[i];j++){
             const m=atom.eMeta[i][j];
             let th=atom.electronAngles[i][j];
 
+            // bullet #1
             let a=r*(1+m.e*0.35), b=r*(1-m.e*0.35), pre=t*m.pre+m.phase;
             let v=rotateAroundAxis(m.v,m.u,pre), w=rotateAroundAxis(m.w,m.u,pre);
             let pt=vadd(vmul(v,a*Math.cos(th)), vmul(w,b*Math.sin(th)));
@@ -1057,13 +1084,13 @@ function startSketch(blk){
             drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble);
             p.pop();
 
+            // bullet #2 opposite phase
             const th2 = th + Math.PI;
             const pt2=vadd(vmul(v,a*Math.cos(th2)), vmul(w,b*Math.sin(th2)));
             const d2 = vadd( vmul(v,-a*Math.sin(th2)), vmul(w, b*Math.cos(th2)) );
             const dN2=vnorm(d2);
             const yaw2=Math.atan2(dN2[0], dN2[2]);  const pitch2=Math.asin(-dN2[1]);
             const tumble2 = tumble + 1.7;
-
             p.push(); p.translate(pt2[0],pt2[1],pt2[2]); p.rotateY(yaw2); p.rotateX(pitch2);
             drawBulletPrimitive(p, [205,173,63],[180,185,192], scale, [18,14], tumble2);
             p.pop();
@@ -1084,6 +1111,7 @@ function startSketch(blk){
 
       const isFireE = (overrides.electron ?? atom.setModes.electrons)===9;
 
+      const info = [];
       for(let i=0;i<atom.shells.length;i++){
         const r=atom.radii[i], baseSpeed=atom.speeds[i];
         for(let j=0;j<atom.shells[i];j++){
@@ -1096,15 +1124,107 @@ function startSketch(blk){
           const pt=vmul(basePt, wob);
           const mixT=((j%7)/7)*0.35; const cA=mixRGB(baseColA, baseColB, mixT), cB=baseColB;
           const rElectron = Math.max(0.8, ELECTRON_R * sizeScale);
+          info.push({i,j, pt, r:rElectron, cA,cB, objSeed:m.objSeed, baseSpeed, m});
+        }
+      }
 
-          p.push(); p.translate(pt[0],pt[1],pt[2]);
-          drawOrbMat(cA, cB, rElectron, t, 1.0, eMode, m.objSeed, [52,36]);
+      if(atom.style.pearl170){
+        if(p.millis()*0.001 - atom._lastCollCheck > 0.06){
+          atom._lastCollCheck = p.millis()*0.001;
+          const cell = 12, buckets = new Map();
+          const bucketKey=(pp)=>`${Math.round(pp[0]/cell)}|${Math.round(pp[1]/cell)}|${Math.round(pp[2]/cell)}`;
+          for(let idx=0; idx<info.length; idx++){ const k=bucketKey(info[idx].pt); if(!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(idx); }
+          const dist2=(a,b)=>{const dx=a[0]-b[0],dy=a[1]-b[1],dz=a[2]-b[2];return dx*dx+dy*dy+dz*dz;}; const MD2=MERGE_DIST*MERGE_DIST;
+          for(const arr of buckets.values()){
+            for(let x=0;x<arr.length;x++){
+              const A=info[arr[x]], idA=eID(A.i,A.j); if(atom._merge.has(idA)) continue;
+              for(let y=x+1;y<arr.length;y++){
+                const B=info[arr[y]], idB=eID(B.i,B.j); if(atom._merge.has(idB)) continue;
+                if(dist2(A.pt,B.pt)<=MD2){
+                  const mid=[(A.pt[0]+B.pt[0])/2,(A.pt[1]+B.pt[1])/2,(A.pt[2]+B.pt[2])/2];
+                  const color=mixRGB(A.cA,B.cA,0.5);
+                  atom._merge.set(idA,{partner:idB,state:'merging',t0:p.millis()*0.001,mid,color});
+                  atom._merge.set(idB,{partner:idA,state:'merging',t0:p.millis()*0.001,mid,color});
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      const idxById = new Map(); for(const it of info) idxById.set(eID(it.i,it.j), it);
+      const drawn = new Set();
+
+      for(const it of info){
+        const id=eID(it.i,it.j); if(drawn.has(id)) continue;
+        const rec = atom.style.pearl170 ? atom._merge.get(id) : null;
+
+        if(!rec){
+          p.push(); p.translate(it.pt[0],it.pt[1],it.pt[2]);
+          drawOrbMat(it.cA, it.cB, it.r, p.millis()*0.001, 1.0, eMode, it.objSeed, electronDetail);
           p.pop();
+          const R=Math.hypot(it.pt[0],it.pt[1],it.pt[2])||1;
+          emitFireAt(it.pt[0],it.pt[1],it.pt[2], it.pt[0]/R,it.pt[1]/R,it.pt[2]/R, it.cA,it.cB, isFireE);
+          drawn.add(id); continue;
+        }
 
-          const R=Math.hypot(pt[0],pt[1],pt[2])||1;
-          emitFireAt(pt[0],pt[1],pt[2], pt[0]/R,pt[1]/R,pt[2]/R, cA,cB, isFireE);
+        const mate = idxById.get(rec.partner); if(!mate){ atom._merge.delete(id); continue; }
+        const mateRec = atom._merge.get(rec.partner); if(!mateRec){ atom._merge.delete(id); continue; }
+        const leader = (id < rec.partner) ? id : rec.partner; const isLeader=(id===leader);
+        const now=p.millis()*0.001, dtState=now-rec.t0;
 
-          atom.electronAngles[i][j] += baseSpeed * m.spMul;
+        if(rec.state==='merging'){
+          const u=clamp(dtState/MERGE_DUR,0,1), ease=0.5-0.5*Math.cos(Math.PI*u);
+          const Apos=[ it.pt[0]*(1-ease)+rec.mid[0]*ease, it.pt[1]*(1-ease)+rec.mid[1]*ease, it.pt[2]*(1-ease)+rec.mid[2]*ease ];
+          const Bpos=[ mate.pt[0]*(1-ease)+rec.mid[0]*ease, mate.pt[1]*(1-ease)+rec.mid[1]*ease, mate.pt[2]*(1-ease)+rec.mid[2]*ease ];
+          const rGrowA=it.r*(1.0+0.25*ease), rGrowB=mate.r*(1.0+0.25*ease);
+          p.push(); p.translate(Apos[0],Apos[1],Apos[2]); drawOrbMat(it.cA,it.cB,rGrowA,now,1.0,eMode,it.objSeed,electronDetail); p.pop();
+          p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]); drawOrbMat(mate.cA,mate.cB,rGrowB,now,1.0,eMode,mate.objSeed,electronDetail); p.pop();
+          drawSoftGlowAt(p, rec.mid[0],rec.mid[1],rec.mid[2], (rGrowA+rGrowB)*0.6, rec.color, 0.6*ease);
+          drawn.add(id); drawn.add(rec.partner);
+          if(u>=1){ rec.state='merged'; rec.t0=now; mateRec.state='merged'; mateRec.t0=now; }
+          continue;
+        }
+
+        if(rec.state==='merged'){
+          if(isLeader){
+            const rNow=Math.max(it.r, mate.r)*2.0;
+            p.push(); p.translate(rec.mid[0],rec.mid[1],rec.mid[2]); drawOrbMat(rec.color,rec.color,rNow,now,1.0,eMode,it.objSeed,electronDetail); p.pop();
+            drawSoftGlowAt(p, rec.mid[0],rec.mid[1],rec.mid[2], rNow*1.15, rec.color, 0.9);
+            drawn.add(id); drawn.add(rec.partner);
+            if(dtState>=MERGED_HOLD){ rec.state='unmerging'; rec.t0=now; mateRec.state='unmerging'; mateRec.t0=now; }
+          } else { drawn.add(id); }
+          continue;
+        }
+
+        if(rec.state==='unmerging'){
+          const v=clamp(dtState/UNMERGE_DUR,0,1), easeOut=smoothstep(0,1,v), mid=rec.mid;
+          const Apos=[ mid[0]*(1-easeOut)+it.pt[0]*easeOut, mid[1]*(1-easeOut)+it.pt[1]*easeOut, mid[2]*(1-easeOut)+it.pt[2]*easeOut ];
+          const Bpos=[ mid[0]*(1-easeOut)+mate.pt[0]*easeOut, mid[1]*(1-easeOut)+mate.pt[1]*easeOut, mid[2]*(1-easeOut)+mate.pt[2]*easeOut ];
+          const rNowA=it.r*(2.0-1.0*easeOut), rNowB=mate.r*(2.0-1.0*easeOut);
+          p.push(); p.translate(Apos[0],Apos[1],Apos[2]); drawOrbMat(it.cA,it.cB,rNowA,now,1.0,eMode,it.objSeed,electronDetail); p.pop();
+          p.push(); p.translate(Bpos[0],Bpos[1],Bpos[2]); drawOrbMat(mate.cA,mate.cB,rNowB,now,1.0,eMode,mate.objSeed,electronDetail); p.pop();
+          const glowStrength=Math.max(0,0.6*(1.0-easeOut)); drawSoftGlowAt(p,(Apos[0]+Bpos[0])/2,(Apos[1]+Bpos[1])/2,(Apos[2]+Bpos[2])/2, Math.max(rNowA,rNowB)*1.1, rec.color, glowStrength);
+          drawn.add(id); drawn.add(rec.partner);
+          if(v>=1){ atom._merge.delete(id); atom._merge.delete(rec.partner); }
+          continue;
+        }
+
+        atom._merge.delete(id);
+      }
+
+      // angle updates (palindrome ping-pong)
+      for(let i=0;i<atom.shells.length;i++){
+        for(let j=0;j<atom.shells[i];j++){
+          const m=atom.eMeta[i][j];
+          const dir = (atom.style.palindrome ? atom._eDir[i]?.[j] ?? 1 : 1);
+          atom.electronAngles[i][j] += atom.speeds[i] * m.spMul * dir;
+          if(atom.style.palindrome){
+            const turns = Math.floor(atom.electronAngles[i][j]/TAU);
+            if(turns > (atom._eTurns[i][j] || 0)){ atom._eDir[i][j] = -dir; }
+            atom._eTurns[i][j] = turns;
+          }
         }
       }
     }
@@ -1112,12 +1232,11 @@ function startSketch(blk){
     p.draw=()=>{
       const t=p.millis()*0.001;
       const dt=Math.max(0.001, Math.min(0.05, p.deltaTime/1000));
-
-      // (1) Repaint the 2D layer (bitmap + overlays) every frame
-      drawEmojiFrame(t);
-
-      // (2) Transparent WEBGL frame (no opaque background!)
+      // Transparent clear keeps 2D layer visible
       p.clear();
+
+      // Update bitmap/overlays
+      drawEmojiFrame(t);
 
       const fovy=p.radians(55), aspect=p.width/p.height, near=0.1, far=30000;
       p.perspective(fovy,aspect,near,far);
@@ -1145,22 +1264,59 @@ function startSketch(blk){
   p5Instance=new p5(sketch, container);
 }
 
-/* ---------- networking / buttons / boot ---------- */
+/* ---------- networking / bitmap fetch ---------- */
 const API='https://mempool.space/api';
 async function fetchText(u){
-  try{
-    const r=await fetch(u);
-    if(!r.ok) throw new Error(r.status+' '+u);
-    return (await r.text()).trim();
-  }catch(err){
-    console.warn('fetchText error:', err);
-    throw err;
-  }
+  const r=await fetch(u);
+  if(!r.ok) throw new Error(r.status+' '+u);
+  return (await r.text()).trim();
 }
 async function fetchJSON(u){
   const r=await fetch(u); if(!r.ok) throw new Error(r.status+' '+u); return r.json();
 }
 
+/* Tx pagination with tx_count + safe 404 stop */
+async function fetchAllBlockTxs(blockHash, txCount){
+  let idx = 0, all = [];
+  while (true) {
+    if (Number.isFinite(txCount) && idx >= txCount) break;
+    const url = `${API}/block/${blockHash}/txs/${idx}`;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) {
+        if (r.status === 404) break; // end-of-pages
+        throw new Error(`${r.status} ${url}`);
+      }
+      const page = await r.json();
+      if (!Array.isArray(page) || page.length === 0) break;
+      all = all.concat(page);
+      idx += page.length;
+      if (all.length > 5000) break; // safety cap
+    } catch (e) {
+      console.warn('fetchAllBlockTxs halted:', e.message || e);
+      break;
+    }
+  }
+  return all;
+}
+
+let lastBitmapTxs = [];
+async function prepareBitmapForBlock(blockHash, txCount, isHalving, isPearl170){
+  try{
+    const txs = await fetchAllBlockTxs(blockHash, txCount);
+    lastBitmapTxs = txs;
+    buildBitmapCache(txs);
+    lastIsHalving = !!isHalving;
+    lastIsPearl170 = !!isPearl170;
+  }catch(e){
+    console.warn('Bitmap background failed:', e);
+    lastIsHalving = !!isHalving;
+    lastIsPearl170 = !!isPearl170;
+    bitmapCtx.clearRect(0,0,bitmapCache.width,bitmapCache.height);
+  }
+}
+
+/* ---------- buttons / boot ---------- */
 const progress = $('#progress');
 function showProgress(msg){ progress.style.display='block'; progress.textContent=msg; }
 function hideProgress(){ progress.style.display='none'; }
@@ -1171,15 +1327,17 @@ async function loadBlockByHeight(height){
     const hash=await fetchText(API+'/block-height/'+height);
     showProgress('Fetching header…');
     const blk=await fetchJSON(API+'/block/'+hash);
+
+    // Prepare bitmap background before 3D
+    await prepareBitmapForBlock(
+      hash,
+      blk.tx_count,
+      (blk.height>0 && blk.height%210000===0) && blk.height!==170,
+      blk.height===170
+    );
+
     hideProgress();
-
-    // reset overrides
     selProton.value=''; selNeutron.value=''; selElectron.value=''; overrides={proton:null,neutron:null,electron:null};
-
-    // Prepare 2D background cache FIRST (so it’s ready for draw loop)
-    await prepareBitmapForBlock(hash, (blk.height>0 && blk.height%210000===0) && blk.height!==170, blk.height===170);
-
-    // then start WEBGL atom (which will be transparent over the bitmap)
     startSketch(blk);
   }catch(e){ showProgress('Error: '+e.message); }
 }
