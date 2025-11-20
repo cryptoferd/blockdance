@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Pixel Slide Puzzle Upscaler</title>
+  <style>
+    body{
+      margin:0; background:#000; color:#fff; font-family:ui-monospace,Menlo,Consolas,monospace;
+      display:flex; flex-direction:column; align-items:center; gap:10px; padding:12px;
+    }
+    #ui{
+      width:min(980px, 100%);
+      display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+      background:#0c0c0c; border:1px solid #222; border-radius:10px; padding:8px 10px;
+      box-shadow:0 6px 20px rgba(0,0,0,.5);
+    }
+    input{
+      flex:1; min-width:220px; padding:8px 10px; border-radius:8px;
+      background:#111; color:#fff; border:1px solid #333; outline:none;
+    }
+    button{
+      padding:8px 12px; border-radius:8px; border:1px solid #444;
+      background:#161616; color:#fff; cursor:pointer;
+    }
+    button:hover{ background:#1e1e1e; }
+    label{ font-size:12px; opacity:.8; display:flex; gap:6px; align-items:center; }
+    #canvas-wrap{ width:100%; display:flex; justify-content:center; }
+    small{ opacity:.7; }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <input id="imgUrl"
+      placeholder="Paste pixel-art image URL (png with transparency works best)"
+      value="https://ord-mirror.magiceden.dev/content/2af2ee55764a9c841ba97e99b35c7977cdd7e328230f1ac5c3d92a69c4b82479i0"/>
+    <button id="loadBtn">Load Image</button>
+
+    <label>Scale
+      <input id="scale" type="range" min="6" max="40" value="18"/>
+      <span id="scaleVal">18</span>
+    </label>
+
+    <label>Moves/step
+      <input id="density" type="range" min="1" max="12" value="6"/>
+      <span id="densityVal">6</span>
+    </label>
+
+    <label>Scramble steps
+      <input id="scrambleSteps" type="range" min="50" max="1200" value="400"/>
+      <span id="scrambleStepsVal">400</span>
+    </label>
+
+    <button id="pauseBtn">Pause</button>
+    <small id="status">No image loaded.</small>
+  </div>
+
+  <div id="canvas-wrap"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+  <script>
+    // ------------------ CONFIG ------------------
+    const STEP_DURATION_MS = 180;   // duration of one slide step
+    const ALPHA_EMPTY_THRESH = 10;  // alpha <= this treated as empty
+    const BG_GUESS_IF_NO_ALPHA = true;
+
+    // ------------------ STATE -------------------
+    let img;
+    let grid = null;         // current grid: {filled:boolean, col:[r,g,b,a]}
+    let originalGrid = null; // saved original
+    let w=0, h=0;            // grid size
+    let scalePx = 18;
+
+    let running = true;
+    let phase = "idle";      // "scramble" -> "return" -> "idle"
+    let scrambleTargetSteps = 400;
+
+    // per-step animation state
+    let stepStartTime = 0;   // millis()
+    let fromGrid = null;
+    let toGrid = null;
+    let movers = [];         // [{sx,sy,tx,ty,col}]
+    let history = [];        // stack of move-lists for reversal
+    let scrambleStepsDone = 0;
+
+    // UI helpers
+    const urlEl = () => document.getElementById("imgUrl");
+    const statusEl = () => document.getElementById("status");
+    function setStatus(t){ statusEl().textContent = t; }
+
+    // ------------------ P5 GLOBAL MODE ----------------
+    function setup(){
+      const c = createCanvas(10,10);
+      c.parent("canvas-wrap");
+      noSmooth(); // crisp pixels
+      frameRate(60);
+      setStatus("Loading default image...");
+    }
+
+    function draw(){
+      background(0);
+      if(!grid) return;
+
+      // resize if needed
+      const desiredW = w * scalePx;
+      const desiredH = h * scalePx;
+      if(width !== desiredW || height !== desiredH){
+        resizeCanvas(desiredW, desiredH);
+        noSmooth();
+      }
+
+      // animate active step
+      if(fromGrid && toGrid){
+        const t = constrain((millis() - stepStartTime) / STEP_DURATION_MS, 0, 1);
+
+        // draw stable pixels
+        const movingSources = new Set(movers.map(m => m.sy*w + m.sx));
+        for(let y=0;y<h;y++){
+          for(let x=0;x<w;x++){
+            const idx = y*w+x;
+            const cell = fromGrid[idx];
+            if(!cell.filled) continue;
+            if(movingSources.has(idx)) continue;
+            drawCell(x,y, cell.col);
+          }
+        }
+
+        // draw movers interpolated
+        for(const m of movers){
+          const lx = lerp(m.sx, m.tx, t);
+          const ly = lerp(m.sy, m.ty, t);
+          drawCell(lx, ly, m.col, true);
+        }
+
+        // finish step
+        if(t >= 1){
+          grid = toGrid;
+          fromGrid = null;
+          toGrid = null;
+          movers = [];
+
+          if(phase === "scramble"){
+            scrambleStepsDone++;
+            if(scrambleStepsDone >= scrambleTargetSteps || !hasAnyLegalMove(grid)){
+              phase = "return";
+              setStatus("Returning to original...");
+            }
+            beginStepScramble();
+          } else if(phase === "return"){
+            if(history.length === 0){
+              phase = "idle";
+              setStatus("Done. Back to original.");
+            } else {
+              beginStepReturn();
+            }
+          }
+        }
+        return;
+      }
+
+      // not animating: draw current grid
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const cell = grid[y*w+x];
+          if(cell.filled) drawCell(x,y, cell.col);
+        }
+      }
+
+      // begin steps if running
+      if(running){
+        if(phase === "scramble") beginStepScramble();
+        if(phase === "return" && history.length>0) beginStepReturn();
+      }
+    }
+
+    function drawCell(gx, gy, col, isFloat=false){
+      const px = gx * scalePx;
+      const py = gy * scalePx;
+      noStroke();
+      fill(col[0],col[1],col[2],col[3]);
+      const rx = isFloat ? Math.round(px) : px;
+      const ry = isFloat ? Math.round(py) : py;
+      rect(rx, ry, scalePx, scalePx);
+    }
+
+    // ------------------ GRID HELPERS ------------------
+    function cloneGrid(g){
+      return g.map(c => ({ filled:c.filled, col:[...c.col] }));
+    }
+
+    function countEmpties(g){
+      let n=0; for(const c of g) if(!c.filled) n++; return n;
+    }
+
+    function hasAnyLegalMove(g){
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const idx=y*w+x;
+          if(!g[idx].filled) continue;
+          for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+            const nx=x+dx, ny=y+dy;
+            if(nx<0||ny<0||nx>=w||ny>=h) continue;
+            if(!g[ny*w+nx].filled) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function getCandidateMoves(g){
+      const moves=[];
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const idx=y*w+x;
+          if(!g[idx].filled) continue;
+          for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+            const nx=x+dx, ny=y+dy;
+            if(nx<0||ny<0||nx>=w||ny>=h) continue;
+            const nidx=ny*w+nx;
+            if(!g[nidx].filled){
+              moves.push({sx:x, sy:y, tx:nx, ty:ny, col:g[idx].col});
+            }
+          }
+        }
+      }
+      return moves;
+    }
+
+    function pickParallelMoves(candidates, maxMoves){
+      // shuffle
+      for(let i=candidates.length-1;i>0;i--){
+        const j=Math.floor(Math.random()*(i+1));
+        [candidates[i],candidates[j]]=[candidates[j],candidates[i]];
+      }
+      const usedSrc=new Set(), usedTgt=new Set(), chosen=[];
+      for(const m of candidates){
+        const sKey=m.sy*w+m.sx, tKey=m.ty*w+m.tx;
+        if(usedSrc.has(sKey) || usedTgt.has(tKey)) continue;
+        usedSrc.add(sKey); usedTgt.add(tKey);
+        chosen.push(m);
+        if(chosen.length>=maxMoves) break;
+      }
+      return chosen;
+    }
+
+    function applyMoves(g, moveList){
+      const ng = cloneGrid(g);
+      for(const m of moveList){
+        const sIdx=m.sy*w+m.sx;
+        ng[sIdx].filled=false;
+        ng[sIdx].col=[0,0,0,0];
+      }
+      for(const m of moveList){
+        const tIdx=m.ty*w+m.tx;
+        ng[tIdx].filled=true;
+        ng[tIdx].col=[...m.col];
+      }
+      return ng;
+    }
+
+    // ------------------ STEP FLOW ------------------
+    function beginStepScramble(){
+      if(fromGrid || toGrid) return;
+
+      const candidates = getCandidateMoves(grid);
+      if(candidates.length===0){
+        phase="return";
+        setStatus("No more moves. Returning...");
+        return;
+      }
+
+      const maxMoves = Number(document.getElementById("density").value);
+      const chosen = pickParallelMoves(candidates, maxMoves);
+      if(chosen.length===0) return;
+
+      fromGrid = cloneGrid(grid);
+      toGrid = applyMoves(grid, chosen);
+      movers = chosen;
+      history.push(chosen);
+      stepStartTime = millis();
+    }
+
+    function beginStepReturn(){
+      if(fromGrid || toGrid) return;
+      const last = history.pop();
+      if(!last){ phase="idle"; return; }
+
+      const inverted = last.map(m => ({
+        sx:m.tx, sy:m.ty,
+        tx:m.sx, ty:m.sy,
+        col:m.col
+      }));
+
+      fromGrid = cloneGrid(grid);
+      toGrid = applyMoves(grid, inverted);
+      movers = inverted;
+      stepStartTime = millis();
+    }
+
+    // ------------------ IMAGE LOADING ------------------
+    function loadImageFromUrl(url){
+      return new Promise((resolve, reject)=>{
+        img = loadImage(url, resolve, reject); // GLOBAL MODE loadImage works here
+      });
+    }
+
+    function buildGridFromImage(p5img){
+      p5img.loadPixels();
+      w = p5img.width;
+      h = p5img.height;
+      const g = new Array(w*h);
+
+      let anyTransparent=false;
+      const freq=new Map();
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const idx=(y*w+x)*4;
+          const r=p5img.pixels[idx];
+          const gg=p5img.pixels[idx+1];
+          const b=p5img.pixels[idx+2];
+          const a=p5img.pixels[idx+3];
+          if(a<=ALPHA_EMPTY_THRESH) anyTransparent=true;
+
+          const key=`${r},${gg},${b},${a}`;
+          freq.set(key,(freq.get(key)||0)+1);
+
+          g[y*w+x]={ filled:a>ALPHA_EMPTY_THRESH, col:[r,gg,b,a] };
+        }
+      }
+
+      // Guess background if no alpha
+      if(!anyTransparent && BG_GUESS_IF_NO_ALPHA){
+        let bgKey=null, bgCount=-1;
+        for(const [k,c] of freq){
+          if(c>bgCount){ bgCount=c; bgKey=k; }
+        }
+        if(bgKey){
+          const [br,bg,bb,ba]=bgKey.split(",").map(Number);
+          for(const cell of g){
+            if(cell.col[0]===br && cell.col[1]===bg && cell.col[2]===bb && cell.col[3]===ba){
+              cell.filled=false;
+              cell.col=[0,0,0,0];
+            }
+          }
+        }
+      }
+
+      // ensure empties exist
+      if(countEmpties(g)===0){
+        for(let i=0;i<Math.min(4,g.length);i++){
+          g[i].filled=false; g[i].col=[0,0,0,0];
+        }
+      }
+
+      return g;
+    }
+
+    // ------------------ UI WIRING ------------------
+    async function doLoad(){
+      const url=urlEl().value.trim();
+      if(!url){ setStatus("Please paste an image URL."); return; }
+
+      setStatus("Loading image...");
+      try{
+        await loadImageFromUrl(url);
+        grid = buildGridFromImage(img);
+        originalGrid = cloneGrid(grid);
+        history=[];
+        scrambleStepsDone=0;
+        scrambleTargetSteps=Number(document.getElementById("scrambleSteps").value);
+
+        phase="scramble";
+        setStatus("Scrambling pixels...");
+      }catch(e){
+        console.error(e);
+        setStatus("Failed to load image. Check CORS/URL.");
+      }
+    }
+
+    document.getElementById("loadBtn").onclick = doLoad;
+
+    document.getElementById("pauseBtn").onclick = () => {
+      running=!running;
+      document.getElementById("pauseBtn").textContent = running ? "Pause" : "Resume";
+      setStatus(running ? "Resumed." : "Paused.");
+    };
+
+    const scaleSlider=document.getElementById("scale");
+    scaleSlider.oninput=()=>{
+      scalePx=Number(scaleSlider.value);
+      document.getElementById("scaleVal").textContent=scalePx;
+    };
+
+    const densitySlider=document.getElementById("density");
+    densitySlider.oninput=()=>{
+      document.getElementById("densityVal").textContent=densitySlider.value;
+    };
+
+    const scrambleStepsSlider=document.getElementById("scrambleSteps");
+    scrambleStepsSlider.oninput=()=>{
+      document.getElementById("scrambleStepsVal").textContent=scrambleStepsSlider.value;
+      scrambleTargetSteps=Number(scrambleStepsSlider.value);
+    };
+
+    // auto-load on start
+    window.addEventListener("load", () => doLoad());
+  </script>
+</body>
+</html>
