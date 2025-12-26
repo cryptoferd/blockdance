@@ -3,59 +3,100 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>H2O Molecule VR (p5 + WebXR)</title>
+  <title>H2O Molecule VR (Quest 2)</title>
+
+  <!-- Stop favicon.ico 404 noise -->
+  <link rel="icon" href="data:," />
+
   <style>
     html, body { margin:0; height:100%; background:#000; overflow:hidden; }
-    #overlayHint{
-      position:fixed; left:12px; bottom:12px; color:#fff; font-family:system-ui, sans-serif;
-      background:rgba(0,0,0,0.45); padding:10px 12px; border-radius:10px; max-width: 520px;
+    #hint{
+      position:fixed; left:12px; bottom:12px; z-index:2;
+      color:#fff; font-family:system-ui, sans-serif; font-size:14px;
+      background:rgba(0,0,0,0.45); padding:10px 12px; border-radius:12px;
+      max-width:520px; line-height:1.35;
     }
+    #hint b { font-weight:700; }
   </style>
 
-  <!-- p5.js (used here to draw a HUD texture) -->
+  <!-- p5.js (only used to draw an in-VR HUD texture) -->
   <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+
+  <!--
+    HARD FIX for: "Cannot redefine property: ethereum"
+    If some injected/extra script (like evmAsk.js) tries to redefine window.ethereum,
+    make it non-configurable early so redefine attempts won't run (and we also avoid including evmAsk at all).
+    Note: we DO NOT create ethereum here. We just protect it if it exists.
+  -->
+  <script>
+    (function protectEthereum() {
+      try {
+        if ("ethereum" in window) {
+          const desc = Object.getOwnPropertyDescriptor(window, "ethereum");
+          // If it's already defined, ensure it's not redefined by others
+          if (desc && desc.configurable) {
+            Object.defineProperty(window, "ethereum", {
+              value: window.ethereum,
+              writable: desc.writable ?? false,
+              enumerable: desc.enumerable ?? true,
+              configurable: false
+            });
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+  </script>
 </head>
+
 <body>
-  <div id="overlayHint">
-    Desktop: click-drag to look, scroll to zoom. <br>
-    Quest 2: open this page in Oculus Browser → press “Enter VR”. <br>
-    In VR: point at the molecule and hold trigger to grab/release.
+  <div id="hint">
+    <b>Desktop:</b> drag to look, scroll to zoom. <br/>
+    <b>Quest 2:</b> open in Oculus Browser → press <b>Enter VR</b>. <br/>
+    <b>VR:</b> point at molecule + hold trigger to grab/release.
   </div>
 
   <script type="module">
+    // ✅ FIX for: Failed to resolve module specifier "three"
+    // Use explicit CDN URLs (no bundler needed).
     import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
     import { VRButton } from "https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js";
     import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
     import { XRControllerModelFactory } from "https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js";
 
     // ---------------------------
-    // Basic Three.js + WebXR setup
+    // Three.js + WebXR setup
     // ---------------------------
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x000000, 2, 18);
 
     const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 200);
-    camera.position.set(0, 1.4, 2.2);
+    camera.position.set(0, 1.45, 2.25);
 
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
+
+    // VR Button (Quest 2 will show Enter VR)
     document.body.appendChild(VRButton.createButton(renderer));
 
-    // Controls for desktop (ignored in VR)
+    // Desktop orbit controls (ignored in VR)
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 1.35, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
     controls.update();
 
-    // Lights
+    // Lighting
     scene.add(new THREE.HemisphereLight(0x88aaff, 0x110011, 0.9));
     const key = new THREE.DirectionalLight(0xffffff, 1.25);
     key.position.set(2, 4, 2);
     scene.add(key);
 
-    // Floor reference
+    // Floor + grid reference
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(50, 50),
       new THREE.MeshStandardMaterial({ color: 0x060606, roughness: 1 })
@@ -68,7 +109,7 @@
     grid.position.y = 0.001;
     scene.add(grid);
 
-    // Simple starfield for immersion
+    // Starfield for immersion
     {
       const starCount = 1500;
       const pos = new Float32Array(starCount * 3);
@@ -87,31 +128,24 @@
     }
 
     // ---------------------------
-    // H2O molecule (group)
+    // H2O molecule
     // ---------------------------
     const molecule = new THREE.Group();
     molecule.position.set(0, 1.35, 0);
     scene.add(molecule);
 
-    // Dimensions (in meters-ish VR units)
-    const bondLength = 0.55;
-    const bondAngleDeg = 104.5;
+    const bondLength = 0.55;       // visual units (VR meters-ish)
+    const bondAngleDeg = 104.5;    // H-O-H
     const halfAngle = THREE.MathUtils.degToRad(bondAngleDeg / 2);
 
-    // Atom materials
     const matO = new THREE.MeshStandardMaterial({ color: 0xff2b2b, roughness: 0.35, metalness: 0.05 });
     const matH = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.55, metalness: 0.02 });
     const matBond = new THREE.MeshStandardMaterial({ color: 0x8aa1ff, roughness: 0.6, metalness: 0.05 });
 
-    // Geometries
-    const geoO = new THREE.SphereGeometry(0.22, 40, 24);
-    const geoH = new THREE.SphereGeometry(0.14, 32, 18);
-
-    // Oxygen at origin
-    const oxygen = new THREE.Mesh(geoO, matO);
+    const oxygen = new THREE.Mesh(new THREE.SphereGeometry(0.22, 40, 24), matO);
+    oxygen.material.emissive = new THREE.Color(0x330000);
     molecule.add(oxygen);
 
-    // Hydrogen positions based on bond angle
     const h1Pos = new THREE.Vector3(
       Math.sin(halfAngle) * bondLength,
       0,
@@ -123,24 +157,25 @@
       Math.cos(halfAngle) * bondLength
     );
 
-    const hydrogen1 = new THREE.Mesh(geoH, matH);
+    const hydrogen1 = new THREE.Mesh(new THREE.SphereGeometry(0.14, 32, 18), matH);
     hydrogen1.position.copy(h1Pos);
-    const hydrogen2 = new THREE.Mesh(geoH, matH);
+    hydrogen1.material.emissive = new THREE.Color(0x101010);
+
+    const hydrogen2 = new THREE.Mesh(new THREE.SphereGeometry(0.14, 32, 18), matH);
     hydrogen2.position.copy(h2Pos);
+    hydrogen2.material.emissive = new THREE.Color(0x101010);
+
     molecule.add(hydrogen1, hydrogen2);
 
-    // Helper: cylinder bond between two points
     function makeBond(a, b) {
       const dir = new THREE.Vector3().subVectors(b, a);
       const len = dir.length();
       const geo = new THREE.CylinderGeometry(0.04, 0.04, len, 18, 1, true);
       const bond = new THREE.Mesh(geo, matBond);
 
-      // position at midpoint
       const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
       bond.position.copy(mid);
 
-      // orient cylinder to point from a to b (cylinder default is Y axis)
       bond.quaternion.setFromUnitVectors(
         new THREE.Vector3(0, 1, 0),
         dir.clone().normalize()
@@ -151,32 +186,17 @@
     molecule.add(makeBond(new THREE.Vector3(0,0,0), h1Pos));
     molecule.add(makeBond(new THREE.Vector3(0,0,0), h2Pos));
 
-    // Slight emissive glow for readability
-    oxygen.material.emissive = new THREE.Color(0x330000);
-    hydrogen1.material.emissive = new THREE.Color(0x101010);
-    hydrogen2.material.emissive = new THREE.Color(0x101010);
-
     // ---------------------------
-    // p5 HUD -> texture -> floating plane in VR
+    // p5 HUD -> CanvasTexture -> floating plane
     // ---------------------------
-    let hudG; // p5.Graphics
     const hudW = 512, hudH = 256;
+    let hudG = null;
 
-    // Create p5 in "instance mode" so we can draw offscreen
-    new window.p5((p) => {
-      p.setup = () => {
-        // offscreen buffer
-        hudG = p.createGraphics(hudW, hudH);
-        // hide the default p5 canvas (we're not using it)
-        const c = p.createCanvas(1, 1);
-        c.elt.style.display = "none";
-      };
-      p.draw = () => {};
-    });
-
-    // Make a Three.js texture from the p5 graphics canvas
+    // create a dummy texture now; we swap its image once p5 is ready
     const hudTex = new THREE.CanvasTexture(document.createElement("canvas"));
-    // HUD plane
+    hudTex.minFilter = THREE.LinearFilter;
+    hudTex.magFilter = THREE.LinearFilter;
+
     const hudPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(0.9, 0.45),
       new THREE.MeshBasicMaterial({ map: hudTex, transparent: true })
@@ -184,49 +204,51 @@
     hudPlane.position.set(0, 1.7, -1.2);
     scene.add(hudPlane);
 
-    function updateHudTexture(timeSec) {
+    // p5 instance mode
+    new window.p5((p) => {
+      p.setup = () => {
+        hudG = p.createGraphics(hudW, hudH);
+        const c = p.createCanvas(1, 1);
+        c.elt.style.display = "none";
+      };
+      p.draw = () => {};
+    });
+
+    function updateHud(timeSec) {
       if (!hudG) return;
 
       hudG.clear();
       hudG.noStroke();
-
-      // Background panel
       hudG.fill(0, 0, 0, 170);
       hudG.rect(0, 0, hudW, hudH, 18);
 
-      // Title
       hudG.fill(255);
       hudG.textAlign(hudG.CENTER, hudG.TOP);
       hudG.textSize(34);
       hudG.text("H₂O — Water Molecule", hudW/2, 16);
 
-      // Stats
       hudG.textAlign(hudG.LEFT, hudG.TOP);
       hudG.textSize(20);
       hudG.fill(220);
       hudG.text(`Bond angle: ${bondAngleDeg.toFixed(1)}°`, 22, 78);
       hudG.text(`Bond length (visual): ${bondLength.toFixed(2)} units`, 22, 108);
 
-      // Hint
       hudG.fill(180);
       hudG.textSize(18);
-      hudG.text("VR: Grab with trigger • Move closer • Rotate with your hand", 22, 158);
+      hudG.text("VR: Trigger = grab • Move/rotate with controller", 22, 158);
 
-      // Little pulse bar for “life”
       const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.3);
       hudG.fill(120, 180, 255, 200);
       hudG.rect(22, 205, (hudW - 44) * pulse, 18, 8);
 
-      // push pixels to Three texture
       hudTex.image = hudG.elt;
       hudTex.needsUpdate = true;
     }
 
-    // Keep HUD facing camera
     function billboardHUD() {
-      const v = new THREE.Vector3();
-      camera.getWorldPosition(v);
-      hudPlane.lookAt(v);
+      const camPos = new THREE.Vector3();
+      camera.getWorldPosition(camPos);
+      hudPlane.lookAt(camPos);
     }
 
     // ---------------------------
@@ -235,27 +257,21 @@
     const controllerModelFactory = new XRControllerModelFactory();
     const raycaster = new THREE.Raycaster();
     const tempMatrix = new THREE.Matrix4();
-
-    let grabbedBy = null; // controller object that holds the molecule
+    let grabbedBy = null;
 
     function buildController(i) {
       const controller = renderer.xr.getController(i);
-      controller.userData.selecting = false;
 
       // visible ray
       const lineGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(0, 0, -1)
       ]);
-      const lineMat = new THREE.LineBasicMaterial();
-      const line = new THREE.Line(lineGeo, lineMat);
+      const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial());
       line.scale.z = 2.0;
       controller.add(line);
 
       controller.addEventListener("selectstart", () => {
-        controller.userData.selecting = true;
-
-        // Raycast against the molecule
         tempMatrix.identity().extractRotation(controller.matrixWorld);
         raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
         raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
@@ -264,11 +280,11 @@
         if (hits.length) {
           grabbedBy = controller;
 
-          // Re-parent molecule to controller while preserving world transform
+          // Preserve world transform while re-parenting
+          molecule.updateMatrixWorld(true);
           const worldPos = new THREE.Vector3();
           const worldQuat = new THREE.Quaternion();
           const worldScale = new THREE.Vector3();
-          molecule.updateMatrixWorld(true);
           molecule.matrixWorld.decompose(worldPos, worldQuat, worldScale);
 
           controller.add(molecule);
@@ -279,14 +295,11 @@
       });
 
       controller.addEventListener("selectend", () => {
-        controller.userData.selecting = false;
-
         if (grabbedBy === controller) {
-          // Drop molecule back into scene
+          molecule.updateMatrixWorld(true);
           const worldPos = new THREE.Vector3();
           const worldQuat = new THREE.Quaternion();
           const worldScale = new THREE.Vector3();
-          molecule.updateMatrixWorld(true);
           molecule.matrixWorld.decompose(worldPos, worldQuat, worldScale);
 
           scene.add(molecule);
@@ -303,35 +316,32 @@
       const grip = renderer.xr.getControllerGrip(i);
       grip.add(controllerModelFactory.createControllerModel(grip));
       scene.add(grip);
-
-      return controller;
     }
 
     buildController(0);
     buildController(1);
 
     // ---------------------------
-    // Animation loop
+    // Animate
     // ---------------------------
-    const baseRot = molecule.rotation.clone();
-    function animate(t) {
+    const baseRotY = molecule.rotation.y;
+
+    renderer.setAnimationLoop((t) => {
       const timeSec = t * 0.001;
 
-      // Subtle “molecular vibration” when not grabbed
       if (!grabbedBy) {
-        molecule.rotation.y = baseRot.y + Math.sin(timeSec * 0.6) * 0.25;
+        molecule.rotation.y = baseRotY + Math.sin(timeSec * 0.6) * 0.25;
         oxygen.scale.setScalar(1.0 + Math.sin(timeSec * 2.2) * 0.015);
         hydrogen1.position.copy(h1Pos).add(new THREE.Vector3(0, Math.sin(timeSec * 3.0) * 0.01, 0));
         hydrogen2.position.copy(h2Pos).add(new THREE.Vector3(0, Math.sin(timeSec * 3.2 + 1.3) * 0.01, 0));
       }
 
-      // HUD updates
-      updateHudTexture(timeSec);
+      updateHud(timeSec);
       billboardHUD();
 
+      controls.update();
       renderer.render(scene, camera);
-    }
-    renderer.setAnimationLoop(animate);
+    });
 
     // Resize
     window.addEventListener("resize", () => {
